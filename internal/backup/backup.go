@@ -121,6 +121,13 @@ func NewService(db *database.DB, conversations *conversation.Store, preferences 
 // Every message of every conversation is read, which is a lot of small
 // queries for a heavy account — acceptable because this runs when a person
 // presses a button, not on any hot path.
+//
+// The conversation list is read through ListForExport rather than List. List
+// is the interface's page and clamps, so asking it for MaxConversations
+// returned DefaultListLimit threads and said nothing, and an account with
+// more than sixty conversations was handed those sixty as its complete
+// history. MaxConversations remains the ceiling here because it is also the
+// ceiling an import accepts.
 func (s *Service) Export(ctx context.Context, account user.User) (Document, error) {
 	document := Document{
 		Format:        Format,
@@ -134,7 +141,7 @@ func (s *Service) Export(ctx context.Context, account user.User) (Document, erro
 		document.Preferences = preferences
 	}
 
-	threads, err := s.conversations.List(ctx, account.ID, MaxConversations)
+	threads, err := s.conversations.ListForExport(ctx, account.ID, MaxConversations)
 	if err != nil {
 		return Document{}, fmt.Errorf("backup: list conversations: %w", err)
 	}

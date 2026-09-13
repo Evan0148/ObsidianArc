@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -407,5 +408,51 @@ func TestConcurrentImportsCannotPassTheStorageCeilingTogether(t *testing.T) {
 	}
 	if stored == 0 {
 		t.Error("every concurrent import was refused; the lock should serialise them, not block them")
+	}
+}
+
+// Export asked conversation.List for two thousand conversations, and List is
+// the interface's page: it clamps anything above MaxListLimit back to
+// DefaultListLimit. An account with more than sixty threads was handed the
+// sixty most recent ones as its complete history, with nothing in the document
+// to say the rest existed — the one place the loss is least recoverable.
+func TestExportCarriesEveryConversationNotJustOnePage(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+
+	total := conversation.DefaultListLimit + 5
+	for i := 0; i < total; i++ {
+		f.write(t, f.account, fmt.Sprintf("Thread %02d", i), "hello")
+	}
+
+	document, err := f.service.Export(ctx, f.account)
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	if len(document.Conversations) != total {
+		t.Fatalf("exported %d conversations, want all %d",
+			len(document.Conversations), total)
+	}
+
+	// And the interface still clamps, so this is a second reading of the same
+	// query rather than the cap having been lifted for everybody. The clamp
+	// catches a request above MaxListLimit, which is exactly the one the
+	// export used to make.
+	page, err := f.conversations.List(ctx, f.account.ID, 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page) != conversation.DefaultListLimit {
+		t.Errorf("List returned %d for a request of 500, want the page cap of %d",
+			len(page), conversation.DefaultListLimit)
+	}
+
+	// The export's own reader returns every one of them at that same request.
+	every, err := f.conversations.ListForExport(ctx, f.account.ID, 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(every) != total {
+		t.Errorf("ListForExport returned %d, want all %d", len(every), total)
 	}
 }
