@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -202,22 +203,50 @@ func (h *Handlers) resetHealth(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return httpx.Internal(err)
 	}
-	reenabled := 0
-	for _, m := range models {
-		if m.AutoDisabled {
-			on, off := true, false
-			if _, err := h.models.Update(ctx, m.ID, model.Update{
-				Enabled:      &on,
-				AutoDisabled: &off,
-			}); err == nil {
-				reenabled++
-			}
-		}
-	}
+	reenabled, refused := reenableAutoDisabled(ctx, models, h.models.Update)
 
-	return httpx.WriteJSON(w, http.StatusOK, map[string]any{
+	response := map[string]any{
 		"reset_at":         now,
 		"probes_cleared":   dropped,
 		"models_reenabled": reenabled,
-	})
+	}
+	// Only when there is something to say, so the ordinary response does not
+	// grow a field that is always empty.
+	if len(refused) > 0 {
+		response["models_not_reenabled"] = refused
+	}
+	return httpx.WriteJSON(w, http.StatusOK, response)
+}
+
+// reenableAutoDisabled clears the checker's own switch on every model it set,
+// and returns the ones whose write was refused.
+//
+// The count on its own was a lie in the making: a database that refused the
+// update left the model disabled while the endpoint still answered 200 with a
+// smaller number, so an operator could not tell a model that was already
+// healthy from one the reset failed to reach. Naming them makes a partial
+// reset legible, and each failure is logged with its cause.
+//
+// The update is a parameter rather than the store so that both halves — the
+// one that succeeds and the one that does not — are reachable without a
+// database.
+func reenableAutoDisabled(
+	ctx context.Context,
+	models []model.Model,
+	update func(context.Context, string, model.Update) (model.Model, error),
+) (reenabled int, refused []string) {
+	for _, m := range models {
+		if !m.AutoDisabled {
+			continue
+		}
+		on, off := true, false
+		if _, err := update(ctx, m.ID, model.Update{Enabled: &on, AutoDisabled: &off}); err != nil {
+			slog.ErrorContext(ctx, "could not re-enable a model after a health reset",
+				"error", err, "model", m.ID)
+			refused = append(refused, m.ID)
+			continue
+		}
+		reenabled++
+	}
+	return reenabled, refused
 }
