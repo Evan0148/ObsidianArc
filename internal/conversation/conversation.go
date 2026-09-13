@@ -310,8 +310,43 @@ type AppendInput struct {
 }
 
 func (s *Store) Append(ctx context.Context, q database.Queryer, in AppendInput) (Message, error) {
-	if q == nil {
-		q = s.db
+	// A caller that already has a transaction passes it in and gets the same
+	// lock inside that one; appendIn takes it first, before the maximum is
+	// read, so the two paths cannot disagree about the order.
+	if q != nil {
+		return s.appendIn(ctx, q, in)
+	}
+
+	// The sequence number is read and then written, so the two have to be one
+	// transaction holding the conversation's row. Two turns on one
+	// conversation — two tabs, or a resend while the first is still streaming
+	// — otherwise read the same MAX(seq) and choose the same position, and
+	// ux_messages_seq turns the loser into a unique-constraint error: the
+	// reader gets a turn that failed for no reason they can act on, and
+	// because the append returns before the usage is recorded, the turn never
+	// reaches the ledger either.
+	var record Message
+	err := s.db.Tx(ctx, func(tx *database.Tx) error {
+		var err error
+		record, err = s.appendIn(ctx, tx, in)
+		return err
+	})
+	if err != nil {
+		return Message{}, err
+	}
+	return record, nil
+}
+
+func (s *Store) appendIn(ctx context.Context, q database.Queryer, in AppendInput) (Message, error) {
+	// The lock, first, before the maximum below is read. A no-op update is the
+	// portable spelling AGENTS.md names for a row lock: it changes nothing,
+	// the engine does not optimise it away, and a second appender waits here
+	// instead of reading the same maximum. On PostgreSQL it is a row lock; on
+	// SQLite it is the write transaction the whole append now runs inside.
+	if _, err := q.Exec(ctx,
+		`UPDATE conversations SET updated_at = updated_at WHERE id = ? AND user_id = ?`,
+		in.ConversationID, in.UserID); err != nil {
+		return Message{}, fmt.Errorf("conversation: lock for append: %w", err)
 	}
 
 	var next int
