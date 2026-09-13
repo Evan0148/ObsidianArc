@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/text"
 )
 
 // Shared plumbing: base-URL handling, the Server-Sent Events reader, inline
@@ -290,15 +292,19 @@ func extractErrorMessage(payload []byte) string {
 		return strings.TrimSpace(stringly.Error)
 	}
 
-	text := strings.TrimSpace(string(payload))
+	body := strings.TrimSpace(string(payload))
 	// An HTML error page (a proxy, a login wall) is noise in a chat bubble.
-	if strings.HasPrefix(text, "<") {
+	if strings.HasPrefix(body, "<") {
 		return ""
 	}
-	if len(text) > 400 {
-		return text[:400] + "…"
+	// Cut on a rune boundary. This is whatever the gateway wrote and is not
+	// necessarily UTF-8; a byte offset can land inside a multi-byte character,
+	// and the invalid bytes that produces are logged, stored, and — on
+	// PostgreSQL — refused outright.
+	if cut := text.Truncate(body, 400); cut != body {
+		return cut + "…"
 	}
-	return text
+	return body
 }
 
 func readErrorBody(response *http.Response) []byte {
