@@ -128,10 +128,41 @@ func (s *Store) Create(ctx context.Context, q database.Queryer, userID, title, m
 	return record, nil
 }
 
+// List is a page of the conversations a user owns, newest first.
+//
+// It clamps: every caller it was written for is a screen, and a screen that
+// asks for more than a page is asking the wrong question. Use ListForExport
+// for the one caller that genuinely means "all of them".
 func (s *Store) List(ctx context.Context, userID string, limit int) ([]Conversation, error) {
 	if limit <= 0 || limit > MaxListLimit {
 		limit = DefaultListLimit
 	}
+	return s.list(ctx, userID, limit)
+}
+
+// ListForExport is every conversation a user owns, up to the caller's own
+// ceiling, with no page clamp.
+//
+// The export asks for all of them and used to go through List, which quietly
+// rewrote its request for two thousand into sixty. Nobody was told: the
+// document simply held the sixty most recent threads and called itself
+// complete, so the feature whose whole purpose is handing somebody their own
+// history handed them a sixth of it. ResetGroup records the same failure on
+// the quota side — a page size on a bulk path is a silent cap on how much of
+// the data the path reaches.
+//
+// The limit is still a limit, because the export document has a ceiling of
+// its own; it is just the caller's rather than a screen's.
+func (s *Store) ListForExport(ctx context.Context, userID string, limit int) ([]Conversation, error) {
+	if limit <= 0 {
+		limit = MaxListLimit
+	}
+	return s.list(ctx, userID, limit)
+}
+
+// list is the one query behind both, so a change to the ordering or the
+// projection cannot land on one path and miss the other.
+func (s *Store) list(ctx context.Context, userID string, limit int) ([]Conversation, error) {
 	rows, err := s.db.Query(ctx,
 		`SELECT `+conversationColumns+` FROM conversations
 		 WHERE user_id = ? ORDER BY pinned DESC, updated_at DESC, id DESC LIMIT ?`,
