@@ -247,6 +247,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	var (
 		livenessMu   sync.Mutex
 		livenessAt   time.Time
+		livenessRev  uint64
 		livenessSeen map[string]model.Liveness
 	)
 	modelHandlers.Liveness = func(ctx context.Context) map[string]model.Liveness {
@@ -258,7 +259,8 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 
 		livenessMu.Lock()
 		defer livenessMu.Unlock()
-		if time.Since(livenessAt) < 30*time.Second {
+		revision := healthStore.Revision()
+		if time.Since(livenessAt) < 30*time.Second && livenessRev == revision {
 			return livenessSeen
 		}
 
@@ -281,20 +283,25 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 
 		seen := make(map[string]model.Liveness, len(rates))
 		for modelID, rate := range rates {
-			// Too little evidence to say anything with. Silence is the
-			// honest answer, and a warning nobody can act on is worse.
-			if rate.Total < health.MinSamplesToJudge {
+			// A figure is an observation, so one real sample is enough to
+			// publish it. Warnings still need the same evidence floor as an
+			// automatic disable: a single bad request should not brand a model
+			// unstable beside every reader's picker.
+			enoughToJudge := rate.Total >= health.MinSamplesToJudge
+			if !show && !enoughToJudge {
 				continue
 			}
 			share := rate.Share()
-			entry := model.Liveness{Unstable: warnBelow > 0 && share*100 < float64(warnBelow)}
+			entry := model.Liveness{
+				Unstable: enoughToJudge && warnBelow > 0 && share*100 < float64(warnBelow),
+			}
 			if show {
 				value := share
 				entry.Uptime = &value
 			}
 			seen[modelID] = entry
 		}
-		livenessSeen, livenessAt = seen, time.Now()
+		livenessSeen, livenessAt, livenessRev = seen, time.Now(), revision
 		return seen
 	}
 	modelHandlers.Routes(mux)
@@ -370,7 +377,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 			if m.AutoDisabled {
 				item.State = "down"
 			}
-			if hasRate && rate.Total >= health.MinSamplesToJudge {
+			if hasRate && rate.Total > 0 {
 				share := rate.Share()
 				item.Uptime = &share
 				item.Total = rate.Total
@@ -382,15 +389,6 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 					item.State = "degraded"
 				} else {
 					item.State = "up"
-				}
-			} else if hasRate && rate.Total > 0 {
-				share := rate.Share()
-				item.Uptime = &share
-				item.Total = rate.Total
-				if m.AutoDisabled {
-					item.State = "down"
-				} else {
-					item.State = "unknown"
 				}
 			}
 

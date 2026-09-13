@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/adapter"
@@ -92,9 +93,17 @@ type ErrorCount struct {
 // quietly failing all afternoon.
 const MinSamplesToJudge = 5
 
-type Store struct{ db *database.DB }
+type Store struct {
+	db       *database.DB
+	revision atomic.Uint64
+}
 
 func NewStore(db *database.DB) *Store { return &Store{db: db} }
+
+// Revision changes when probe evidence changes. Readers use it to invalidate
+// their short-lived aggregate cache immediately after a manual test, without
+// making every ordinary model-list request query the whole evidence window.
+func (s *Store) Revision() uint64 { return s.revision.Load() }
 
 // Record writes the result of a probe.
 func (s *Store) Record(ctx context.Context, modelID string, ok bool, code, message string, latency time.Duration) error {
@@ -106,6 +115,7 @@ func (s *Store) Record(ctx context.Context, modelID string, ok bool, code, messa
 	if err != nil {
 		return fmt.Errorf("health: record probe: %w", err)
 	}
+	s.revision.Add(1)
 	return nil
 }
 
@@ -263,6 +273,9 @@ func (s *Store) Prune(ctx context.Context, before int64) (int64, error) {
 		return 0, fmt.Errorf("health: prune: %w", err)
 	}
 	dropped, _ := result.RowsAffected()
+	if dropped > 0 {
+		s.revision.Add(1)
+	}
 	return dropped, nil
 }
 
@@ -401,6 +414,7 @@ func (s *Store) Reset(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("health: reset: %w", err)
 	}
 	dropped, _ := result.RowsAffected()
+	s.revision.Add(1)
 	return dropped, nil
 }
 

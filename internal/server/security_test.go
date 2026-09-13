@@ -1016,6 +1016,23 @@ func TestManualHealthProbeRequestsEveryModel(t *testing.T) {
 		}
 	}
 
+	saved := in.do(http.MethodPut, "/api/admin/settings", map[string]string{
+		"health.show_users": "true",
+	}, admin)
+	if saved.Code != http.StatusOK {
+		t.Fatalf("publish health figures = %d: %s", saved.Code, saved.Body.String())
+	}
+	type pickerModels struct {
+		Models []struct {
+			DisplayName string   `json:"display_name"`
+			Uptime      *float64 `json:"uptime"`
+		} `json:"models"`
+	}
+	beforeProbe := decode[pickerModels](t, in.do(http.MethodGet, "/api/models", nil, admin))
+	if len(beforeProbe.Models) != 1 || beforeProbe.Models[0].Uptime != nil {
+		t.Fatalf("model picker before probe = %+v, want one model without uptime", beforeProbe.Models)
+	}
+
 	response := in.do(http.MethodPost, "/api/admin/health/probe", nil, admin)
 	if response.Code != http.StatusOK {
 		t.Fatalf("POST /api/admin/health/probe = %d: %s", response.Code, response.Body.String())
@@ -1069,5 +1086,32 @@ func TestManualHealthProbeRequestsEveryModel(t *testing.T) {
 		if record.Status.State != "up" || record.Status.SystemSamples != 1 {
 			t.Errorf("model %d status = %+v", i, record.Status)
 		}
+	}
+
+	listed := decode[pickerModels](t, in.do(http.MethodGet, "/api/models", nil, admin))
+	if len(listed.Models) != 1 || listed.Models[0].Uptime == nil || *listed.Models[0].Uptime != 1 {
+		t.Errorf("model picker listing hid a real sample: %+v", listed.Models)
+	}
+
+	uptime := decode[struct {
+		Models []struct {
+			DisplayName string   `json:"display_name"`
+			Uptime      *float64 `json:"uptime"`
+			State       string   `json:"state"`
+			Total       int      `json:"total"`
+		} `json:"models"`
+	}](t, in.do(http.MethodGet, "/api/uptime", nil, admin))
+	foundUptime := false
+	for _, record := range uptime.Models {
+		if record.DisplayName == "Probe Model 0" &&
+			record.Uptime != nil {
+			foundUptime = true
+			if *record.Uptime != 1 || record.State != "up" || record.Total != 1 {
+				t.Errorf("uptime page treated one real sample as no data: %+v", record)
+			}
+		}
+	}
+	if !foundUptime {
+		t.Error("uptime page omitted the model's real sample")
 	}
 }

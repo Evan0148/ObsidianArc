@@ -8,6 +8,7 @@
 import { onMounted, ref } from 'vue';
 import { adminApi, type ModelHealth } from '@/admin/api';
 import { ApiError } from '@/api/client';
+import { loadModels } from '@/chat/useModels';
 import OaBadge from '@/components/OaBadge.vue';
 import OaConfirmButton from '@/components/OaConfirmButton.vue';
 import OaFormSection from '@/components/OaFormSection.vue';
@@ -79,7 +80,7 @@ async function resetUptime(): Promise<void> {
     await adminApi.resetHealth();
     flashSuccess.value = t('resetUptimeDone');
     window.setTimeout(() => { flashSuccess.value = ''; }, 3000);
-    await load();
+    await Promise.all([load(), loadModels()]);
   } catch (failure) {
     flash.value = failure instanceof ApiError ? failure.message : String(failure);
   } finally {
@@ -104,7 +105,7 @@ async function probeAllModels(): Promise<void> {
       failed: result.failed,
     });
     window.setTimeout(() => { flashSuccess.value = ''; }, 5000);
-    await load();
+    await Promise.all([load(), loadModels()]);
   } catch (failure) {
     flash.value = failure instanceof ApiError ? failure.message : String(failure);
   } finally {
