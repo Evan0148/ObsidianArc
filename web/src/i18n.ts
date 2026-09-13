@@ -100,6 +100,7 @@ const en = {
   imageFailed: 'That image could not be read.',
   imageNotAnImage: 'That is not an image.',
   imageFormats: 'Images must be PNG, JPEG, WebP or GIF.',
+  generatedImage: 'Generated image',
   streamMissing: 'The server did not return a stream.',
   imagesUnsupported: 'This model cannot read images. Pick a vision-capable model, or edit the message and remove the picture.',
   streamFallback: 'Streaming was not available this time, so the whole answer arrived at once — {reason}.',
