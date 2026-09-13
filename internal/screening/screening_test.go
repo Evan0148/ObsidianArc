@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/adapter"
 )
@@ -211,5 +212,28 @@ func TestEachModeHasADifferentFailureDecision(t *testing.T) {
 		if verdict.Decision != want {
 			t.Errorf("%s: decision = %q, want %q", mode, verdict.Decision, want)
 		}
+	}
+}
+
+// The clip bounds somebody else's output for a log line, and that output is
+// not necessarily ASCII — a model answering in Chinese is the ordinary case.
+// The byte offset this used to take could split a character, putting invalid
+// bytes into the one sentence an operator has to diagnose the review from.
+func TestClipKeepsTheTailOfAnAnswerValid(t *testing.T) {
+	// 19 ASCII bytes then a three-byte character, so a cut at byte 20 lands
+	// inside it.
+	value := strings.Repeat("a", 19) + "中" + "tail"
+
+	got := clip(value, 20)
+	if !utf8.ValidString(got) {
+		t.Fatalf("clip produced invalid UTF-8: %q", got)
+	}
+	if runes := len([]rune(got)); runes != 21 {
+		t.Errorf("kept %d runes, want 20 plus the ellipsis", runes)
+	}
+
+	// An answer that already fits is returned trimmed, with no ellipsis.
+	if got := clip("  allow  ", 20); got != "allow" {
+		t.Errorf("clip(%q, 20) = %q, want %q", "  allow  ", got, "allow")
 	}
 }
