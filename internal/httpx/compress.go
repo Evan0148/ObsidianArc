@@ -4,6 +4,7 @@ import (
 	"compress/gzip"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -168,22 +169,47 @@ func mediaType(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
-// acceptsGzip reads the header without weighing q-values: the only thing that
-// matters is whether gzip is named and not explicitly refused with q=0.
+// acceptsGzip reads the header the way HTTP defines it: the entry naming gzip
+// outranks a wildcard wherever each appears, and only a quality of exactly
+// zero refuses gzip.
+//
+// Both halves of that were wrong before, in opposite directions. Returning on
+// the first entry that matched either name meant "*;q=0, gzip" was refused —
+// but that header explicitly allows gzip, because the specific entry outranks
+// the wildcard. And the quality was matched as a string prefix, so
+// "gzip;q=0.001" read as a refusal: it is the faintest possible acceptance,
+// not a rejection.
 func acceptsGzip(header string) bool {
+	wildcard, seen := 0.0, false
 	for _, part := range strings.Split(header, ",") {
-		fields := strings.Split(strings.TrimSpace(part), ";")
-		name := strings.ToLower(strings.TrimSpace(fields[0]))
-		if name != "gzip" && name != "*" {
-			continue
-		}
-		for _, parameter := range fields[1:] {
-			parameter = strings.ToLower(strings.ReplaceAll(parameter, " ", ""))
-			if parameter == "q=0" || strings.HasPrefix(parameter, "q=0.0") {
-				return false
+		fields := strings.Split(part, ";")
+		switch strings.ToLower(strings.TrimSpace(fields[0])) {
+		case "gzip":
+			return qualityOf(fields[1:]) > 0
+		case "*":
+			// Remembered rather than returned: a later gzip entry is more
+			// specific and decides on its own.
+			if !seen {
+				wildcard, seen = qualityOf(fields[1:]), true
 			}
 		}
-		return true
 	}
-	return false
+	return seen && wildcard > 0
+}
+
+// qualityOf reads the q parameter. An absent parameter means 1, which is what
+// makes a bare "gzip" acceptable, and a value that will not parse is treated
+// as absent rather than as a refusal — a malformed header should not cost the
+// client its compression.
+func qualityOf(parameters []string) float64 {
+	for _, parameter := range parameters {
+		key, value, found := strings.Cut(strings.ToLower(strings.ReplaceAll(parameter, " ", "")), "=")
+		if !found || key != "q" {
+			continue
+		}
+		if parsed, err := strconv.ParseFloat(value, 64); err == nil {
+			return parsed
+		}
+	}
+	return 1
 }

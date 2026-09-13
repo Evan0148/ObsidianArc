@@ -285,6 +285,22 @@ func TestAcceptEncodingIsReadCorrectly(t *testing.T) {
 		"gzip;q=0":             false,
 		"identity, gzip;q=0.0": false,
 		"br, gzip ; q=0":       false,
+		// gzip is named specifically, and a specific entry outranks the
+		// wildcard wherever the two appear.
+		"*;q=0, gzip":        true,
+		"gzip, *;q=0":        true,
+		"*, gzip;q=0":        false,
+		"*;q=0, gzip;q=0":    false,
+		"*;q=0.5":            true,
+		"*;q=0.5, gzip;q=0":  false,
+		"*;q=0, gzip;q=0.01": true,
+		// A quality below 0.1 is faint, not absent: only exactly zero is a
+		// refusal. The old string-prefix test read every 0.0x as zero.
+		"gzip;q=0.001": true,
+		"gzip;q=0.09":  true,
+		// A malformed quality is not a refusal.
+		"gzip;q=soon": true,
+		"gzip;q=":     true,
 	} {
 		if got := acceptsGzip(header); got != want {
 			t.Errorf("acceptsGzip(%q) = %v, want %v", header, got, want)

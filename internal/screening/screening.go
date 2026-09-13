@@ -360,10 +360,16 @@ func parse(raw string) (Verdict, bool) {
 }
 
 // clip keeps a log line to one line's worth of somebody else's output.
+//
+// The cut goes through text.Truncate so it lands on a character boundary: a
+// model answering in Chinese is the ordinary case here, and the byte offset
+// this used to take could split a character and put invalid bytes into the
+// error the operator is meant to read.
 func clip(value string, limit int) string {
 	value = strings.TrimSpace(value)
-	if len(value) <= limit {
+	cut := text.Truncate(value, limit)
+	if cut == value {
 		return value
 	}
-	return value[:limit] + "…"
+	return cut + "…"
 }

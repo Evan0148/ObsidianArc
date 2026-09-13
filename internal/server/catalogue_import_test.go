@@ -106,3 +106,73 @@ func TestAnEmptyCatalogueIsRefused(t *testing.T) {
 		t.Errorf("status = %d, want 400: %s", response.Code, response.Body.String())
 	}
 }
+
+// The editor refuses a model that routes to itself, and a route whose target
+// is itself routed: resolution is one hop, so the second would silently call a
+// model other than the one the file names. A file can be hand-written or come
+// from another instance, so the import refuses the same two — and it decides
+// from the file rather than from the database, because which entry the loop
+// reaches first must not be what decides whether a chain is noticed.
+func TestARouteThatWouldLoopOrChainIsRefused(t *testing.T) {
+	in := newInstance(t)
+	admin := in.register("founder", "a-good-password")
+
+	if res := in.do(http.MethodPost, "/api/admin/providers", map[string]any{
+		"name": "Upstream", "kind": "openai",
+		"base_url": "https://api.example.com/v1", "api_key": "sk-test-key-0123",
+	}, admin); res.Code != http.StatusCreated {
+		t.Fatalf("create provider: %d %s", res.Code, res.Body.String())
+	}
+
+	// Front routes to Middle, which routes to Back: written in the order that
+	// would hide the chain from a check that read the database.
+	file := []any{
+		map[string]any{
+			"provider": "Upstream", "model_id": "vendor/front", "display_name": "Front",
+			"enabled":  true,
+			"route_to": map[string]any{"provider": "Upstream", "model_id": "vendor/middle"},
+		},
+		map[string]any{
+			"provider": "Upstream", "model_id": "vendor/middle", "display_name": "Middle",
+			"enabled":  true,
+			"route_to": map[string]any{"provider": "Upstream", "model_id": "vendor/back"},
+		},
+		map[string]any{
+			"provider": "Upstream", "model_id": "vendor/back", "display_name": "Back",
+			"enabled": true,
+		},
+		map[string]any{
+			"provider": "Upstream", "model_id": "vendor/loop", "display_name": "Loop",
+			"enabled":  true,
+			"route_to": map[string]any{"provider": "Upstream", "model_id": "vendor/loop"},
+		},
+	}
+
+	result := decode[map[string]any](t, in.do(http.MethodPost, "/api/admin/models/import",
+		map[string]any{"models": file}, admin))
+	if result["created"] != 4.0 {
+		t.Errorf("created = %v, want all four rows to land", result["created"])
+	}
+	if skipped, _ := result["skipped"].([]any); len(skipped) != 2 {
+		t.Errorf("skipped = %v, want the chained route and the self-route", skipped)
+	}
+
+	listing := decode[map[string]any](t, in.do(http.MethodGet, "/api/admin/models", nil, admin))
+	rows, _ := listing["models"].([]any)
+	byName := map[string]map[string]any{}
+	for _, entry := range rows {
+		row, _ := entry.(map[string]any)
+		byName[row["display_name"].(string)] = row
+	}
+	if got := byName["Front"]["route_to_id"]; got != "" {
+		t.Errorf("Front routes to %v, want no route: its target is routed itself", got)
+	}
+	if got := byName["Loop"]["route_to_id"]; got != "" {
+		t.Errorf("Loop routes to %v, want no route: a model cannot route to itself", got)
+	}
+	// The single hop that is legal still lands.
+	if byName["Middle"]["route_to_id"] != byName["Back"]["id"] {
+		t.Errorf("Middle routes to %v, want Back's id %v",
+			byName["Middle"]["route_to_id"], byName["Back"]["id"])
+	}
+}

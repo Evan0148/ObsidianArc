@@ -203,8 +203,8 @@ function describe(value: MessageStats): string {
               <img
                 :src="attachmentURL(img.id)"
                 class="ai-chat-generated-img"
-                :alt="props.message.content || 'Generated image'"
-                @click="zoomedImage = { url: attachmentURL(img.id), alt: props.message.content || '' }"
+                :alt="props.message.content || t('generatedImage')"
+                @click="zoomedImage = { url: attachmentURL(img.id), alt: props.message.content || t('generatedImage') }"
               />
               <div class="ai-chat-generated-bar">
                 <a

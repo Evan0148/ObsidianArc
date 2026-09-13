@@ -27,6 +27,7 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/adapter"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/database"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/id"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/text"
 )
 
 // State is what an operator sees against a model's name.
@@ -343,12 +344,21 @@ func Code(err error) string {
 	}
 }
 
+// truncate bounds one stored message, with the cut delegated to text.Truncate
+// so it lands on a rune boundary. A byte-offset cut is what this used to do,
+// and an upstream error is routinely multi-byte UTF-8 — a Chinese provider's
+// message, a quoted response body. Cutting one of those mid-character produced
+// bytes PostgreSQL refuses, so the INSERT failed and the probe sample was
+// dropped: the evidence disappeared exactly when a model was failing loudly.
 func truncate(value string, limit int) string {
 	value = strings.TrimSpace(value)
-	if len(value) <= limit {
+	cut := text.Truncate(value, limit)
+	// text.Truncate returns its input untouched when it already fits, which is
+	// what distinguishes "this was cut" from "this was the whole message".
+	if cut == value {
 		return value
 	}
-	return value[:limit] + "…"
+	return cut + "…"
 }
 
 // Rate is how often one model answered, over some window.

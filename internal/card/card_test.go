@@ -1,6 +1,7 @@
 package card
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -397,5 +398,30 @@ func TestHeldSeparatesSpentFromExpiredFromLeft(t *testing.T) {
 	}
 	if empty.Total != 0 || empty.Cards == nil || len(empty.Cards) != 0 {
 		t.Errorf("an account with no cards gave %+v", empty)
+	}
+}
+
+// 256 is not a multiple of the 31-symbol alphabet, so `int(b) % 31` makes the
+// first eight symbols more likely than the rest. Those bytes are rejected
+// instead, which is what these two draws check: one that has to skip them and
+// still succeed, and one that has nothing left once they are gone.
+func TestCodeSymbolsSkipTheSkewedTailOfTheByteRange(t *testing.T) {
+	// 248 = 8*31, the largest multiple of 31 at or below 256, so 248..255 are
+	// the bytes that cannot map evenly onto the alphabet.
+	skewed := []byte{248, 249, 250, 251, 252, 253, 254, 255}
+
+	if _, err := drawSymbols(bytes.NewReader(skewed), 4, 31); err == nil {
+		t.Fatal("a stream of only rejected bytes produced symbols anyway")
+	}
+
+	// The same rejected tail, followed by bytes that are usable: the tail must
+	// be skipped whole rather than folded in with a modulo.
+	stream := append(append([]byte{}, skewed...), 0, 1, 2, 3)
+	picked, err := drawSymbols(bytes.NewReader(stream), 4, 31)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []byte{0, 1, 2, 3}; !bytes.Equal(picked, want) {
+		t.Fatalf("picked %v, want %v — the rejected bytes were not skipped", picked, want)
 	}
 }

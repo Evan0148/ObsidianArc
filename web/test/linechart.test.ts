@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createApp, h, type App } from 'vue';
+import { createApp, h, nextTick, type App } from 'vue';
 import OaLineChart from '../src/components/OaLineChart.vue';
+import { changeLanguage, t } from '../src/composables/useI18n';
 
 describe('OaLineChart', () => {
   let app: App | null = null;
@@ -12,10 +13,11 @@ describe('OaLineChart', () => {
     document.body.appendChild(host);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     app?.unmount();
     app = null;
     document.body.textContent = '';
+    await changeLanguage('en');
   });
 
   it('renders empty message when there are no traffic samples', () => {
@@ -57,5 +59,31 @@ describe('OaLineChart', () => {
 
     const dots = host.querySelectorAll('.oa-linechart-dot');
     expect(dots.length).toBe(3);
+  });
+
+  // The axis end is a word, not a format placeholder like the two offsets
+  // beside it, so it has to be translated. The chart is drawn by both the
+  // public uptime panel and the admin availability screen.
+  it('labels the end of the axis in the reader\'s language', async () => {
+    await changeLanguage('en');
+    app = createApp({
+      render: () =>
+        h(OaLineChart, {
+          points: [
+            { at: Date.now() - 3600000, uptime: 1.0, total: 10 },
+            { at: Date.now(), uptime: 1.0, total: 10 },
+          ],
+          state: 'up',
+        }),
+    });
+    app.mount(host);
+
+    const labels = () => Array.from(host.querySelectorAll('.oa-linechart-label')).map((node) => node.textContent?.trim());
+    expect(labels().at(-1)).toBe(t('chartNow'));
+
+    await changeLanguage('zh');
+    await nextTick();
+    expect(labels().at(-1)).toBe(t('chartNow'));
+    expect(labels().at(-1)).not.toBe('Now');
   });
 });

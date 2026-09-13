@@ -21,6 +21,15 @@ import "strings"
 // line — where surrounding whitespace is part of what was actually sent and
 // is not this function's business to remove.
 func Truncate(value string, limit int) string {
+	// A limit that is not positive keeps nothing. Without this the slice
+	// below would be runes[:limit], which panics for a negative limit — in a
+	// helper whose entire job is to survive whatever length a caller hands
+	// it. The constants at today's call sites are all positive, so this is a
+	// guard rather than a bug fix, and it is here because the next caller is
+	// the one that decides whether that stays true.
+	if limit <= 0 {
+		return ""
+	}
 	runes := []rune(value)
 	if len(runes) <= limit {
 		return value

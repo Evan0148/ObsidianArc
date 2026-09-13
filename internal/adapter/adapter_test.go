@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/config"
 )
@@ -766,5 +767,33 @@ func TestGenerateImageOpenAIAndAnthropic(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for anthropic image generation")
+	}
+}
+
+// The error body is whatever the gateway wrote, and need not be UTF-8. A byte
+// offset cut can land inside a multi-byte character; the invalid bytes then
+// reach the log, the stored usage record and — on PostgreSQL — the INSERT.
+func TestErrorMessageIsCutOnACharacterBoundary(t *testing.T) {
+	// 399 ASCII bytes then a three-byte character, so a cut at byte 400 lands
+	// inside that character rather than between two of them.
+	message := strings.Repeat("a", 399) + "中" + strings.Repeat("b", 50)
+
+	got := extractErrorMessage([]byte(message))
+	if !utf8.ValidString(got) {
+		t.Fatalf("extractErrorMessage produced invalid UTF-8: %q", got)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Errorf("a message over the bound was not marked as cut: %q", got)
+	}
+	if runes := len([]rune(got)); runes != 401 {
+		t.Errorf("kept %d runes, want 400 plus the ellipsis", runes)
+	}
+
+	// A plain text body is still trimmed, and an HTML page is still dropped.
+	if got := extractErrorMessage([]byte("  boom  ")); got != "boom" {
+		t.Errorf("a short body = %q, want it trimmed to %q", got, "boom")
+	}
+	if got := extractErrorMessage([]byte("<html>502 Bad Gateway</html>")); got != "" {
+		t.Errorf("an HTML error page = %q, want empty", got)
 	}
 }

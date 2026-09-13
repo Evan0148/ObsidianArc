@@ -82,6 +82,10 @@ const loaded = ref(false);
 const models = ref<AdminModel[]>([]);
 const held = ref<HeldAttachments>({ held: 0, bytes: 0 });
 const flash = ref('');
+// The strip is coloured as a failure by default, because that is what it
+// usually carries. An import and a purge both report success into it, and
+// those read as errors unless the element is told otherwise.
+const flashOK = ref(false);
 const saveLabel = ref('');
 const busy = ref(false);
 const purging = ref(false);
@@ -156,6 +160,7 @@ async function save(): Promise<void> {
   busy.value = true;
   saveLabel.value = t('saving');
   flash.value = '';
+  flashOK.value = false;
   try {
     await adminApi.saveSettings(collect());
     saveLabel.value = t('saved');
@@ -192,6 +197,7 @@ function importSettings(): void {
     })
     .then((result) => {
       if (!result) return;
+      flashOK.value = true;
       flash.value = result.skipped.length
         ? t('importSettingsPartial', { count: result.applied, skipped: result.skipped.join(', ') })
         : t('importSettingsDone', { count: result.applied });
@@ -199,6 +205,7 @@ function importSettings(): void {
       void load();
     })
     .catch((failure: unknown) => {
+      flashOK.value = false;
       flash.value = failure instanceof ApiError ? failure.message : String(failure);
     });
 }
@@ -213,9 +220,11 @@ function purge(): void {
   void adminApi.purgeAttachments()
     .then((result) => {
       held.value = result.attachments;
+      flashOK.value = true;
       flash.value = t('purgeDone', { count: result.purged });
     })
     .catch((failure: unknown) => {
+      flashOK.value = false;
       flash.value = failure instanceof ApiError ? failure.message : String(failure);
     })
     .finally(() => { purging.value = false; });
@@ -441,6 +450,6 @@ onMounted(load);
       <OaSwitchField v-model="form.apiEnabled" :label="t('apiEnabled')" :hint="t('apiEnabledHint')" />
     </section>
 
-    <p class="oa-drawer-flash" :class="{ visible: !!flash }">{{ flash }}</p>
+    <p class="oa-drawer-flash" :class="{ visible: !!flash, ok: flashOK }">{{ flash }}</p>
   </div>
 </template>

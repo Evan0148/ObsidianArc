@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/adapter"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/config"
@@ -193,5 +195,38 @@ func TestFailuresAreGroupedIntoCodesAnOperatorCanActrOn(t *testing.T) {
 	wrapped := fmt.Errorf("chat: %w", context.DeadlineExceeded)
 	if got := Code(wrapped); got != "timeout" {
 		t.Errorf("a wrapped deadline gave %q", got)
+	}
+}
+
+// An upstream error is whatever the provider wrote, and providers write in
+// their own language. The stored message used to be cut by byte offset, so a
+// Chinese error cut at 400 bytes could end mid-character; PostgreSQL then
+// refused the INSERT and the sample was lost — the record of a failing model
+// disappearing because the failure had the wrong alphabet.
+func TestStoredMessagesAreCutOnACharacterBoundary(t *testing.T) {
+	// 399 ASCII bytes then a three-byte character: a cut at 400 lands inside
+	// it, which is the shape the byte-offset version corrupted.
+	message := strings.Repeat("a", 399) + "中" + strings.Repeat("b", 50)
+
+	got := truncate(message, 400)
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncate produced invalid UTF-8: %q", got)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Errorf("truncate(%d bytes, 400) = %q, want it to end in an ellipsis", len(message), got)
+	}
+	if runes := len([]rune(got)); runes != 401 {
+		t.Errorf("kept %d runes, want 400 plus the ellipsis", runes)
+	}
+
+	// A message that fits is returned unchanged, with no ellipsis added.
+	short := "  rate limited  "
+	if got := truncate(short, 400); got != "rate limited" {
+		t.Errorf("truncate(%q, 400) = %q, want it trimmed and untouched", short, got)
+	}
+	// Exactly at the limit is not truncated, so nothing is signalled.
+	exact := strings.Repeat("x", 400)
+	if got := truncate(exact, 400); got != exact {
+		t.Errorf("a message of exactly the limit was changed: %d runes", len([]rune(got)))
 	}
 }

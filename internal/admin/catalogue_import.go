@@ -185,6 +185,17 @@ func (h *Handlers) importModels(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
+	// Every model this file routes away from. A route whose target appears
+	// here would be a second hop, and the order the entries happen to be in
+	// must not decide whether that is noticed — checking the database instead
+	// would pass or fail depending on which entry was applied first.
+	routed := map[modelRef]bool{}
+	for _, entry := range body.Models {
+		if entry.RouteTo != nil && entry.RouteTo.ModelID != "" {
+			routed[modelRef{Provider: fold(entry.Provider), ModelID: fold(entry.ModelID)}] = true
+		}
+	}
+
 	// Second pass: a route can name a model that only came into existence
 	// halfway through the first one.
 	for _, entry := range body.Models {
@@ -204,6 +215,24 @@ func (h *Handlers) importModels(w http.ResponseWriter, r *http.Request) error {
 				skipped = append(skipped, entry.DisplayName+" — route target "+entry.RouteTo.ModelID+" is not here")
 				continue
 			}
+		}
+		// The two routes the editor refuses, refused here too. A file written
+		// by hand or exported from elsewhere can contain either, and both
+		// resolve to something other than what the file says: a self-route is
+		// a loop, and a target that is itself routed is a second hop that
+		// Authorize will not follow.
+		if to == from || routed[target] {
+			skipped = append(skipped, entry.DisplayName+" — a route is one hop, and "+entry.RouteTo.ModelID+" is routed itself")
+			continue
+		}
+		existing, err := h.models.ByID(ctx, to)
+		if err != nil {
+			skipped = append(skipped, entry.DisplayName+" — route: "+plainError(err))
+			continue
+		}
+		if existing.RouteToID != "" {
+			skipped = append(skipped, entry.DisplayName+" — a route is one hop, and "+entry.RouteTo.ModelID+" is routed itself")
+			continue
 		}
 		if _, err := h.models.Update(ctx, from, model.Update{RouteToID: &to}); err != nil {
 			skipped = append(skipped, entry.DisplayName+" — route: "+plainError(err))

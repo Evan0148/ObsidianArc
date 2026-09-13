@@ -439,6 +439,14 @@
   display: block;
 }
 
+// The base rule is the error colour because that is what this strip usually
+// carries. An import and a purge report success into the same element, and
+// telling an operator their settings import failed when it applied is worse
+// than saying nothing.
+.oa-drawer-flash.ok {
+  color: #10b981;
+}
+
 .oa-field {
   display: flex;
   flex-direction: column;
