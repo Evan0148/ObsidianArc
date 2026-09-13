@@ -973,6 +973,7 @@ func TestManualHealthProbeRequestsEveryModel(t *testing.T) {
 	)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
+			Model    string `json:"model"`
 			Messages []struct {
 				Content string `json:"content"`
 			} `json:"messages"`
@@ -985,6 +986,10 @@ func TestManualHealthProbeRequestsEveryModel(t *testing.T) {
 		requestsMu.Lock()
 		requests++
 		requestsMu.Unlock()
+		if body.Model == "probe-model-0" {
+			http.Error(w, "upstream unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"pong"},"finish_reason":"stop"}]}`)
 	}))
@@ -1060,7 +1065,7 @@ func TestManualHealthProbeRequestsEveryModel(t *testing.T) {
 	if err := json.Unmarshal([]byte(doneData), &summary); err != nil {
 		t.Fatalf("decode done event %q: %v", doneData, err)
 	}
-	if summary.Total != 2 || summary.Succeeded != 2 || summary.Failed != 0 {
+	if summary.Total != 2 || summary.Succeeded != 1 || summary.Failed != 1 {
 		t.Errorf("probe summary = %+v", summary)
 	}
 	requestsMu.Lock()
@@ -1073,6 +1078,7 @@ func TestManualHealthProbeRequestsEveryModel(t *testing.T) {
 	healthResponse := in.do(http.MethodGet, "/api/admin/health", nil, admin)
 	healthBody := decode[struct {
 		Models []struct {
+			Name   string `json:"name"`
 			Status struct {
 				State         string `json:"state"`
 				SystemSamples int    `json:"system_samples"`
@@ -1082,15 +1088,27 @@ func TestManualHealthProbeRequestsEveryModel(t *testing.T) {
 	if len(healthBody.Models) != 2 {
 		t.Fatalf("health models = %d, want 2", len(healthBody.Models))
 	}
-	for i, record := range healthBody.Models {
-		if record.Status.State != "up" || record.Status.SystemSamples != 1 {
-			t.Errorf("model %d status = %+v", i, record.Status)
+	for _, record := range healthBody.Models {
+		wantState := "up"
+		if record.Name == "Probe Model 0" {
+			wantState = "down"
+		}
+		if record.Status.State != wantState || record.Status.SystemSamples != 1 {
+			t.Errorf("model %q status = %+v, want %s with one system sample", record.Name, record.Status, wantState)
 		}
 	}
 
 	listed := decode[pickerModels](t, in.do(http.MethodGet, "/api/models", nil, admin))
-	if len(listed.Models) != 1 || listed.Models[0].Uptime == nil || *listed.Models[0].Uptime != 1 {
+	if len(listed.Models) != 1 || listed.Models[0].Uptime == nil || *listed.Models[0].Uptime != 0 {
 		t.Errorf("model picker listing hid a real sample: %+v", listed.Models)
+	}
+	listedWithWarning := decode[struct {
+		Models []struct {
+			Unstable bool `json:"unstable"`
+		} `json:"models"`
+	}](t, in.do(http.MethodGet, "/api/models", nil, admin))
+	if len(listedWithWarning.Models) != 1 || !listedWithWarning.Models[0].Unstable {
+		t.Errorf("model picker suppressed the low-uptime warning before five samples: %+v", listedWithWarning.Models)
 	}
 
 	uptime := decode[struct {
@@ -1106,7 +1124,7 @@ func TestManualHealthProbeRequestsEveryModel(t *testing.T) {
 		if record.DisplayName == "Probe Model 0" &&
 			record.Uptime != nil {
 			foundUptime = true
-			if *record.Uptime != 1 || record.State != "up" || record.Total != 1 {
+			if *record.Uptime != 0 || record.State != "down" || record.Total != 1 {
 				t.Errorf("uptime page treated one real sample as no data: %+v", record)
 			}
 		}

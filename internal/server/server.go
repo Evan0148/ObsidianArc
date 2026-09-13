@@ -283,17 +283,13 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 
 		seen := make(map[string]model.Liveness, len(rates))
 		for modelID, rate := range rates {
-			// A figure is an observation, so one real sample is enough to
-			// publish it. Warnings still need the same evidence floor as an
-			// automatic disable: a single bad request should not brand a model
-			// unstable beside every reader's picker.
-			enoughToJudge := rate.Total >= health.MinSamplesToJudge
-			if !show && !enoughToJudge {
-				continue
-			}
+			// Both the published figure and its configured warning describe
+			// observed evidence, so one real sample is enough. Automatic
+			// disabling keeps its separate evidence floor: that action changes
+			// availability rather than merely telling readers what was observed.
 			share := rate.Share()
 			entry := model.Liveness{
-				Unstable: enoughToJudge && warnBelow > 0 && share*100 < float64(warnBelow),
+				Unstable: warnBelow > 0 && share*100 < float64(warnBelow),
 			}
 			if show {
 				value := share
@@ -382,6 +378,11 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 				item.Uptime = &share
 				item.Total = rate.Total
 				if m.AutoDisabled {
+					item.State = "down"
+				} else if rate.OK == 0 {
+					// With evidence present, zero answers is an outage rather than a
+					// degraded service. The warning threshold only distinguishes
+					// partial reliability from healthy operation.
 					item.State = "down"
 				} else if share >= 0.99 {
 					item.State = "up"
