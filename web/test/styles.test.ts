@@ -58,4 +58,16 @@ describe('stylesheet invariants', () => {
     expect(open?.[1]).toMatch(/transition:[^;]*margin-left/);
     expect(collapsed?.[1]).toMatch(/transition:[^;]*margin-left/);
   });
+
+  // The strip beside the settings form is the error colour by default, and an
+  // import or a purge reports success into that same element. Without a
+  // modifier for the success branches, an operator is told in red that the
+  // settings they just imported failed.
+  it('has a confirmation colour for the settings strip', () => {
+    const rule = rules(builtCss()).find(([selector]) => selector === '.oa-drawer-flash.ok');
+
+    expect(rule, 'no .oa-drawer-flash.ok rule in the shipped stylesheet').toBeTruthy();
+    expect(rule![1]).not.toMatch(/--ai-danger/);
+    expect(rule![1]).toMatch(/#10b981/);
+  });
 });
