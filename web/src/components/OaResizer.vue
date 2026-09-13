@@ -14,7 +14,7 @@
 // column you can resize with a mouse and not with a keyboard is a column half
 // the people cannot resize.
 
-import { onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { rememberWidth, storedWidth } from '@/composables/useStoredWidth';
 
 const props = defineProps<{
@@ -72,13 +72,27 @@ function onMove(event: PointerEvent): void {
   apply(startWidth + (props.edge === 'right' ? delta : -delta));
 }
 
-function onRelease(event: PointerEvent): void {
-  if (!handle.value?.hasPointerCapture(event.pointerId)) return;
-  handle.value.releasePointerCapture(event.pointerId);
+// The flag and the body class come off together, and unconditionally: a drag
+// ends in more ways than it starts. A cancel can arrive with the capture
+// already released, and an unmount takes the handle away entirely — and this
+// used to return early unless the capture was still held, which left
+// `oa-resizing` on the body. That class blocks text selection and holds the
+// col-resize cursor everywhere, so it outlived the drag until a reload.
+function release(): void {
   active.value = false;
   document.body.classList.remove('oa-resizing');
-  rememberWidth(props.storageKey, clamp(currentWidth()));
 }
+
+function onRelease(event: PointerEvent): void {
+  const held = handle.value?.hasPointerCapture(event.pointerId) ?? false;
+  if (held) handle.value?.releasePointerCapture(event.pointerId);
+  release();
+  // Only a real release is a width the reader chose. An unmount or a
+  // cancelled pointer is not a decision to remember.
+  if (held) rememberWidth(props.storageKey, clamp(currentWidth()));
+}
+
+onBeforeUnmount(release);
 
 function onKey(event: KeyboardEvent): void {
   const step = event.shiftKey ? 64 : 16;
