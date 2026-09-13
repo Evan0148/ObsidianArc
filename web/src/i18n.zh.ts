@@ -92,7 +92,7 @@ export const zh: Record<StringKey, string> = {
   imageTooLarge: '这张图片太大了。',
   imageFailed: '这张图片读不出来。',
   imageNotAnImage: '这不是一张图片。',
-  imageFormats: '图片必须是 PNG、JPEG、WebP 或 GIF。',
+  imageFormats: '图片必须是 PNG、JPEG、WebP、AVIF 或 GIF。',
   generatedImage: '生成的图片',
   streamMissing: '服务器没有返回数据流。',
   imagesUnsupported: '这个模型看不了图片。请换一个支持看图的模型，或者编辑这条消息把图片去掉。',

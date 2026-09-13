@@ -35,7 +35,17 @@ export class ImageError extends Error {
   }
 }
 
-const SUPPORTED = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+// Everything else is re-encoded to JPEG before it is sent, so the list is
+// about what the browser can decode, not about what a provider accepts. AVIF
+// is on it because the wallpaper picker offers it in its accept list and the
+// server stores image/avif: without it, choosing the file the dialog had just
+// offered decoded fine and then failed the allowlist with a format error.
+const SUPPORTED = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/avif', 'image/gif']);
+
+/** Whether prepareImage can turn this type into something worth sending. */
+export function isSupportedImageType(type: string): boolean {
+  return SUPPORTED.has(type);
+}
 
 export async function prepareImage(file: File): Promise<PreparedImage> {
   if (!file.type.startsWith('image/')) {
@@ -63,7 +73,7 @@ export async function prepareImage(file: File): Promise<PreparedImage> {
     };
   }
 
-  if (!SUPPORTED.has(file.type)) {
+  if (!isSupportedImageType(file.type)) {
     bitmap.close?.();
     throw new ImageError('unsupported', t('imageFormats'));
   }
