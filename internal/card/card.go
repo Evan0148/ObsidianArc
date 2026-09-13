@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -264,19 +265,58 @@ func generateCode() (string, error) {
 	const alphabet = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
 	const groups, size = 3, 4
 
-	buf := make([]byte, groups*size)
-	if _, err := rand.Read(buf); err != nil {
+	picked, err := drawSymbols(rand.Reader, groups*size, len(alphabet))
+	if err != nil {
 		return "", fmt.Errorf("card: generate code: %w", err)
 	}
 
 	var out strings.Builder
-	for i, b := range buf {
+	for i, symbol := range picked {
 		if i > 0 && i%size == 0 {
 			out.WriteByte('-')
 		}
-		out.WriteByte(alphabet[int(b)%len(alphabet)])
+		out.WriteByte(alphabet[symbol])
 	}
 	return out.String(), nil
+}
+
+// drawSymbols returns count uniform indices into an alphabet width symbols
+// wide, drawn from reader.
+//
+// Deliberately not `int(b) % width`: 256 is not a multiple of 31, so that
+// spelling gives the first eight symbols of this alphabet one extra draw in
+// every 256 — a favourite in a value whose entire job is to be unguessable,
+// and free to remove. Bytes from ceiling up to 255 are rejected and drawn
+// again instead. The reader is a parameter so a test can hand it a stream
+// whose skewed bytes have to be skipped, which a statistical assertion over
+// real randomness could only check by flaking eventually.
+func drawSymbols(reader io.Reader, count, width int) ([]byte, error) {
+	if width < 1 || width > 256 {
+		return nil, fmt.Errorf("card: alphabet width %d", width)
+	}
+
+	// The largest multiple of width at or below 256. Every byte below it maps
+	// onto the alphabet evenly; every byte at or above it is the remainder
+	// that would not.
+	ceiling := 256 - 256%width
+
+	picked := make([]byte, 0, count)
+	batch := make([]byte, count)
+	for len(picked) < count {
+		if _, err := io.ReadFull(reader, batch); err != nil {
+			return nil, err
+		}
+		for _, b := range batch {
+			if int(b) >= ceiling {
+				continue
+			}
+			picked = append(picked, byte(int(b)%width))
+			if len(picked) == count {
+				break
+			}
+		}
+	}
+	return picked, nil
 }
 
 func (s *Store) CreateCode(ctx context.Context, in CodeInput) (Code, error) {
