@@ -29,6 +29,8 @@ const saveLabel = ref('');
 const busy = ref(false);
 const resetting = ref(false);
 const probing = ref(false);
+const probeCompleted = ref(0);
+const probeTotal = ref(0);
 
 const form = ref({
   healthProbe: true,
@@ -87,10 +89,15 @@ async function resetUptime(): Promise<void> {
 
 async function probeAllModels(): Promise<void> {
   probing.value = true;
+  probeCompleted.value = 0;
+  probeTotal.value = 0;
   flash.value = '';
   flashSuccess.value = '';
   try {
-    const result = await adminApi.probeAllModels();
+    const result = await adminApi.probeAllModels((progress) => {
+      probeCompleted.value = progress.completed;
+      probeTotal.value = progress.total;
+    });
     flashSuccess.value = t('probeAllModelsDone', {
       succeeded: result.succeeded,
       total: result.total,
@@ -214,7 +221,13 @@ onMounted(load);
           :disabled="probing"
           @click="probeAllModels"
         >
-          {{ probing ? t('probeAllModelsRunning') : t('probeAllModels') }}
+          {{
+            probing
+              ? probeTotal > 0
+                ? t('probeAllModelsProgress', { completed: probeCompleted, total: probeTotal })
+                : t('probeAllModelsRunning')
+              : t('probeAllModels')
+          }}
         </button>
         <a href="/uptime" target="_blank" class="oa-uptime-action-btn">
           {{ t('viewUptimePage') }}

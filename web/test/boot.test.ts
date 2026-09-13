@@ -56,7 +56,6 @@ const EMPTY_BODIES: Array<[RegExp, unknown]> = [
   [/\/api\/admin\/models/, { models: [] }],
   [/\/api\/admin\/groups/, { groups: [], policies: [] }],
   [/\/api\/admin\/meta/, { provider_kinds: ['openai', 'anthropic'], reasoning_styles: ['auto'] }],
-  [/\/api\/admin\/health\/probe/, { total: 2, succeeded: 1, failed: 1 }],
   [/\/api\/admin\/health/, { hours: 24, models: [], policy: { probe: true, window_mins: 30, disable_after: 0 } }],
   [/\/api\/admin\/usage\/records/, { records: [], total: 0 }],
   [/\/api\/admin\/usage/, {
@@ -129,6 +128,25 @@ const EMPTY_BODIES: Array<[RegExp, unknown]> = [
 function stubServer(): void {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.includes('/api/admin/health/probe')) {
+      const encoder = new TextEncoder();
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(
+            'event: progress\ndata: {"completed":1,"total":2,"succeeded":1,"failed":0}\n\n',
+          ));
+          window.setTimeout(() => {
+            controller.enqueue(encoder.encode(
+              'event: done\ndata: {"completed":2,"total":2,"succeeded":1,"failed":1}\n\n',
+            ));
+            controller.close();
+          }, 50);
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    }
     const match = EMPTY_BODIES.find(([pattern]) => pattern.test(url));
     return new Response(JSON.stringify(match?.[1] ?? {}), {
       status: 200,
@@ -496,6 +514,11 @@ describe('what moves, and what does not', () => {
     expect(probeButton).not.toBeUndefined();
     probeButton?.click();
     await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(probeButton?.textContent?.trim()).toBe(
+      t('probeAllModelsProgress', { completed: 1, total: 2 }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     const calls = vi.mocked(globalThis.fetch).mock.calls;

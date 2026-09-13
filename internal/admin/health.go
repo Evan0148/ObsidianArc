@@ -90,6 +90,24 @@ func (h *Handlers) probeAllHealth(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return httpx.Internal(err)
 	}
+	stream, err := httpx.NewSSE(w)
+	if err != nil {
+		return httpx.Internal(err)
+	}
+
+	type progress struct {
+		Completed int `json:"completed"`
+		Total     int `json:"total"`
+		Succeeded int `json:"succeeded"`
+		Failed    int `json:"failed"`
+	}
+	state := progress{Total: len(records)}
+	if err := stream.Event("progress", state); err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
+		return err
+	}
 
 	type outcome struct {
 		modelID string
@@ -133,22 +151,30 @@ func (h *Handlers) probeAllHealth(w http.ResponseWriter, r *http.Request) error 
 		}()
 	}
 
-	succeeded := 0
 	for range len(records) {
 		result := <-results
+		if ctx.Err() != nil {
+			return nil
+		}
 		if err := h.health.Record(ctx, result.modelID, result.ok, result.code, result.message, result.latency); err != nil {
+			_ = stream.Event("error", map[string]string{"code": "record_failed"})
 			return httpx.Internal(err)
 		}
+		state.Completed++
 		if result.ok {
-			succeeded++
+			state.Succeeded++
+		} else {
+			state.Failed++
+		}
+		if err := stream.Event("progress", state); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
 		}
 	}
 
-	return httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"total":     len(records),
-		"succeeded": succeeded,
-		"failed":    len(records) - succeeded,
-	})
+	return stream.Event("done", state)
 }
 
 // resetHealth resets the instance's uptime baseline, clears past probe samples,

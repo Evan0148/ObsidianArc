@@ -5,9 +5,10 @@
 // key, in either direction beyond writing a new one. The server never sends
 // one back, and there is no field on these types that could carry it.
 
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import type { ApiKey } from '../api/keys';
 import type { UsageSummary } from '../api/usage';
+import { t } from '../composables/useI18n';
 
 // Re-exported so an admin screen imports one module, the way every other
 // shape on this surface already does.
@@ -336,6 +337,13 @@ export interface ModelHealth {
   };
 }
 
+export interface ProbeProgress {
+  completed: number;
+  total: number;
+  succeeded: number;
+  failed: number;
+}
+
 /** What one account is holding in reset cards. */
 export interface CardHolding {
   available: number;
@@ -372,10 +380,8 @@ export const adminApi = {
         reset_at?: number;
       };
     }>(`/api/admin/health?hours=${hours}`),
-  probeAllModels: () =>
-    api.post<{ total: number; succeeded: number; failed: number }>(
-      '/api/admin/health/probe',
-    ),
+  probeAllModels: (onProgress: (progress: ProbeProgress) => void) =>
+    streamProbeAllModels(onProgress),
   resetHealth: () =>
     api.post<{ reset_at: number; probes_cleared: number; models_reenabled: number }>(
       '/api/admin/health/reset',
@@ -503,6 +509,73 @@ export const adminApi = {
     api.patch<{ announcement: Announcement }>(`/api/admin/announcements/${id}`, body),
   deleteAnnouncement: (id: string) => api.delete<void>(`/api/admin/announcements/${id}`),
 };
+
+async function streamProbeAllModels(
+  onProgress: (progress: ProbeProgress) => void,
+): Promise<ProbeProgress> {
+  const response = await fetch('/api/admin/health/probe', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { Accept: 'text/event-stream' },
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as
+      | { error?: { code?: string; message?: string } }
+      | null;
+    throw new ApiError(
+      response.status,
+      body?.error?.code ?? 'probe',
+      body?.error?.message ?? t('probeAllModelsFailed'),
+    );
+  }
+  if (!response.body) throw new ApiError(0, 'stream', t('probeAllModelsFailed'));
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finished: ProbeProgress | null = null;
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let boundary = /\r?\n\r?\n/.exec(buffer);
+    while (boundary) {
+      const result = probeFrame(buffer.slice(0, boundary.index), onProgress);
+      if (result) finished = result;
+      buffer = buffer.slice(boundary.index + boundary[0].length);
+      boundary = /\r?\n\r?\n/.exec(buffer);
+    }
+  }
+  if (!finished) throw new ApiError(0, 'stream', t('probeAllModelsFailed'));
+  return finished;
+}
+
+function probeFrame(
+  frame: string,
+  onProgress: (progress: ProbeProgress) => void,
+): ProbeProgress | null {
+  let event = '';
+  let data = '';
+  for (const line of frame.split(/\r?\n/)) {
+    if (line.startsWith('event:')) event = line.slice(6).trim();
+    else if (line.startsWith('data:')) data += line.slice(5).trim();
+  }
+  if (!data) return null;
+
+  let payload: ProbeProgress;
+  try {
+    payload = JSON.parse(data) as ProbeProgress;
+  } catch {
+    return null;
+  }
+  if (event === 'error') {
+    throw new ApiError(500, 'probe', t('probeAllModelsFailed'));
+  }
+  if (event === 'progress') onProgress(payload);
+  return event === 'done' ? payload : null;
+}
 
 export type { Account, Role, AccountStatus, Conversation, Message };
 

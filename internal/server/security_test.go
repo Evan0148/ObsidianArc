@@ -1020,11 +1020,29 @@ func TestManualHealthProbeRequestsEveryModel(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("POST /api/admin/health/probe = %d: %s", response.Code, response.Body.String())
 	}
-	summary := decode[struct {
+	if contentType := response.Header().Get("Content-Type"); !strings.HasPrefix(contentType, "text/event-stream") {
+		t.Errorf("Content-Type = %q, want event stream", contentType)
+	}
+	streamBody := response.Body.String()
+	for _, want := range []string{`event: progress`, `"completed":0`, `"completed":1`, `"completed":2`, `event: done`} {
+		if !strings.Contains(streamBody, want) {
+			t.Errorf("probe stream missing %q: %s", want, streamBody)
+		}
+	}
+	donePrefix := "event: done\ndata: "
+	doneAt := strings.LastIndex(streamBody, donePrefix)
+	if doneAt < 0 {
+		t.Fatalf("probe stream has no done event: %s", streamBody)
+	}
+	doneData := strings.SplitN(streamBody[doneAt+len(donePrefix):], "\n\n", 2)[0]
+	var summary struct {
 		Total     int `json:"total"`
 		Succeeded int `json:"succeeded"`
 		Failed    int `json:"failed"`
-	}](t, response)
+	}
+	if err := json.Unmarshal([]byte(doneData), &summary); err != nil {
+		t.Fatalf("decode done event %q: %v", doneData, err)
+	}
 	if summary.Total != 2 || summary.Succeeded != 2 || summary.Failed != 0 {
 		t.Errorf("probe summary = %+v", summary)
 	}
