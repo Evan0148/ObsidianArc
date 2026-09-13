@@ -298,11 +298,11 @@ func (h *Handlers) updateSettings(w http.ResponseWriter, r *http.Request) error 
 // importSettings applies an exported settings document.
 //
 // Deliberately more forgiving than the ordinary save above. An export usually
-// comes from another instance, where two of the values are row identifiers —
-// the default registration group and the trial model — that mean nothing
-// here. Rejecting the whole file for those would make the feature useless
-// exactly when it is wanted, so they are dropped and named in the response;
-// everything else is applied.
+// comes from another instance, where some of the values are row identifiers —
+// the default registration group, the trial model, and the model the sign-up
+// reviewer asks — that mean nothing here. Rejecting the whole file for those
+// would make the feature useless exactly when it is wanted, so they are
+// dropped and named in the response; everything else is applied.
 //
 // Unknown keys are skipped rather than refused for the same reason: a
 // document written by a newer release should not be unusable by this one.
@@ -362,16 +362,24 @@ func (h *Handlers) importSettings(w http.ResponseWriter, r *http.Request) error 
 		}
 	}
 
-	// The two identifiers. A dangling one is cleared rather than carried, so
-	// the instance ends up in a state it can describe: "no default group"
-	// beats "a default group that does not exist".
-	if modelID, present := applied[settings.TrialModel]; present && modelID != "" {
+	// The identifiers that name a model, and the one that names a group. A
+	// dangling one is cleared rather than carried, so the instance ends up in
+	// a state it can describe: "no default group" beats "a default group that
+	// does not exist". The list is a loop rather than a block each so that a
+	// fourth identifier is added in one place.
+	for _, key := range []string{settings.TrialModel, settings.SignupReviewModel} {
+		modelID, present := applied[key]
+		if !present || modelID == "" {
+			continue
+		}
 		if !isValidID(modelID) {
-			applied[settings.TrialModel] = ""
-			skipped = append(skipped, settings.TrialModel)
-		} else if _, err := h.models.ByID(r.Context(), modelID); err != nil {
-			applied[settings.TrialModel] = ""
-			skipped = append(skipped, settings.TrialModel)
+			applied[key] = ""
+			skipped = append(skipped, key)
+			continue
+		}
+		if _, err := h.models.ByID(r.Context(), modelID); err != nil {
+			applied[key] = ""
+			skipped = append(skipped, key)
 		}
 	}
 	if groupID, present := applied[settings.RegistrationGroup]; present && groupID != "" {
