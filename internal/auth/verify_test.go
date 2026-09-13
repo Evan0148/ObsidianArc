@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -417,5 +418,84 @@ func TestResendRefusesAnAlreadyVerifiedAccount(t *testing.T) {
 	}
 	if err := f.auth.Resend(ctx, "Arc", account.ID); err != ErrAlreadyVerified {
 		t.Fatalf("err = %v, want ErrAlreadyVerified", err)
+	}
+}
+
+// Resend is a way to make this server mail a stranger, so it is throttled —
+// but only against a client that asks politely. The timestamp was read and
+// then written with nothing holding the two together, so eight requests in
+// parallel all found no outstanding link, all issued one and all sent. The
+// limit has to be one transaction over the owner's row, or it is a limit on
+// sequential requests.
+func TestParallelResendsLeaveWithOneLink(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	// The relay is unreachable on purpose: what is counted below is how many
+	// requests got as far as sending, not whether the send succeeded.
+	f.auth.mailer = mail.New(mail.Config{
+		Host:      "127.0.0.1",
+		Port:      1,
+		From:      "arc@example.com",
+		PublicURL: "https://arc.example.com",
+	})
+	if err := f.settings.Set(ctx, settings.VerifyEmail, "true"); err != nil {
+		t.Fatal(err)
+	}
+	// The first account is exempt from verification, so it goes first and
+	// "later" is the account this is about.
+	if _, _, err := f.auth.Register(ctx, RegisterInput{
+		Username: "founder", Password: "a-good-password",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	account, _, err := f.auth.Register(ctx, RegisterInput{
+		Username: "later", Email: "later@example.com", Password: "a-good-password",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Registration's own link would throttle the first resend, and this is
+	// about the window being open rather than about that one being closed.
+	if _, err := f.db.Exec(ctx,
+		`DELETE FROM email_verifications WHERE user_id = ?`, account.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	const attempts = 8
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		sent    int
+		refused int
+		relay   error
+	)
+	for i := 0; i < attempts; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := f.auth.Resend(ctx, "Arc", account.ID)
+			mu.Lock()
+			defer mu.Unlock()
+			if errors.Is(err, ErrResendTooSoon) {
+				refused++
+				return
+			}
+			// A nil error or a relay failure both mean this request got past
+			// the throttle and tried to send.
+			sent++
+			if err != nil && relay == nil {
+				relay = err
+			}
+		}()
+	}
+	wg.Wait()
+
+	if sent != 1 {
+		t.Errorf("%d of %d resends reached the mail step, want exactly one (relay said: %v)",
+			sent, attempts, relay)
+	}
+	if refused != attempts-1 {
+		t.Errorf("%d resends were refused as too soon, want %d", refused, attempts-1)
 	}
 }
