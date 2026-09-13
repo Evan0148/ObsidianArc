@@ -212,86 +212,109 @@ type Update struct {
 // alone, which is what lets the admin form round-trip a provider without ever
 // receiving the key it is editing.
 func (s *Store) Update(ctx context.Context, providerID string, in Update) (Provider, error) {
-	current, err := s.ByID(ctx, providerID)
-	if err != nil {
-		return Provider{}, err
-	}
-
-	next := current
-	if in.Name != nil {
-		next.Name = *in.Name
-	}
-	if in.Kind != nil {
-		next.Kind = *in.Kind
-	}
-	if in.BaseURL != nil {
-		next.BaseURL = *in.BaseURL
-	}
-	if in.AllowInsecure != nil {
-		next.AllowInsecure = *in.AllowInsecure
-	}
-	if in.Headers != nil {
-		next.Headers = *in.Headers
-	}
-	if in.AnthropicVersion != nil {
-		next.AnthropicVersion = *in.AnthropicVersion
-	}
-	if in.ReasoningStyle != nil {
-		next.ReasoningStyle = *in.ReasoningStyle
-	}
-	if in.TimeoutSeconds != nil {
-		next.TimeoutSeconds = *in.TimeoutSeconds
-	}
-	if in.Enabled != nil {
-		next.Enabled = *in.Enabled
-	}
-	if in.SortOrder != nil {
-		next.SortOrder = *in.SortOrder
-	}
-
-	next, err = validate(next)
-	if err != nil {
-		return Provider{}, err
-	}
-	next.UpdatedAt = time.Now().UnixMilli()
-
-	headers, err := json.Marshal(next.Headers)
-	if err != nil {
-		return Provider{}, fmt.Errorf("provider: encode headers: %w", err)
-	}
-
-	sets := `name = ?, kind = ?, base_url = ?, allow_insecure = ?, headers_json = ?, anthropic_version = ?,
-		reasoning_style = ?, timeout_seconds = ?, enabled = ?, sort_order = ?, updated_at = ?`
-	args := []any{next.Name, next.Kind, next.BaseURL, next.AllowInsecure, string(headers),
-		next.AnthropicVersion, next.ReasoningStyle, next.TimeoutSeconds, next.Enabled,
-		next.SortOrder, next.UpdatedAt}
-
-	if in.APIKey != nil {
-		key := strings.TrimSpace(*in.APIKey)
-		if key == "" {
-			return Provider{}, ErrKeyRequired
+	var next Provider
+	err := s.db.Tx(ctx, func(tx *database.Tx) error {
+		// Models lock this same owner row before they are written. Keeping the
+		// provider change and its cascade behind that lock means a concurrent
+		// model insert cannot land enabled after the cascade has passed.
+		if _, err := tx.Exec(ctx,
+			`UPDATE providers SET updated_at = updated_at WHERE id = ?`, providerID); err != nil {
+			return fmt.Errorf("provider: lock for update: %w", err)
 		}
-		sealed, err := s.box.Seal(key)
+
+		current, err := byID(ctx, tx, providerID)
 		if err != nil {
-			return Provider{}, err
+			return err
 		}
-		next.APIKeyHint = secret.Hint(key)
-		sets += `, api_key_enc = ?, api_key_hint = ?`
-		args = append(args, sealed, next.APIKeyHint)
-	}
 
-	args = append(args, providerID)
-	if _, err := s.db.Exec(ctx, `UPDATE providers SET `+sets+` WHERE id = ?`, args...); err != nil {
-		if isUnique(err) {
-			return Provider{}, ErrNameTaken
+		next = current
+		if in.Name != nil {
+			next.Name = *in.Name
 		}
-		return Provider{}, fmt.Errorf("provider: update: %w", err)
-	}
-	return next, nil
+		if in.Kind != nil {
+			next.Kind = *in.Kind
+		}
+		if in.BaseURL != nil {
+			next.BaseURL = *in.BaseURL
+		}
+		if in.AllowInsecure != nil {
+			next.AllowInsecure = *in.AllowInsecure
+		}
+		if in.Headers != nil {
+			next.Headers = *in.Headers
+		}
+		if in.AnthropicVersion != nil {
+			next.AnthropicVersion = *in.AnthropicVersion
+		}
+		if in.ReasoningStyle != nil {
+			next.ReasoningStyle = *in.ReasoningStyle
+		}
+		if in.TimeoutSeconds != nil {
+			next.TimeoutSeconds = *in.TimeoutSeconds
+		}
+		if in.Enabled != nil {
+			next.Enabled = *in.Enabled
+		}
+		if in.SortOrder != nil {
+			next.SortOrder = *in.SortOrder
+		}
+
+		next, err = validate(next)
+		if err != nil {
+			return err
+		}
+		next.UpdatedAt = time.Now().UnixMilli()
+
+		headers, err := json.Marshal(next.Headers)
+		if err != nil {
+			return fmt.Errorf("provider: encode headers: %w", err)
+		}
+
+		sets := `name = ?, kind = ?, base_url = ?, allow_insecure = ?, headers_json = ?, anthropic_version = ?,
+			reasoning_style = ?, timeout_seconds = ?, enabled = ?, sort_order = ?, updated_at = ?`
+		args := []any{next.Name, next.Kind, next.BaseURL, next.AllowInsecure, string(headers),
+			next.AnthropicVersion, next.ReasoningStyle, next.TimeoutSeconds, next.Enabled,
+			next.SortOrder, next.UpdatedAt}
+
+		if in.APIKey != nil {
+			key := strings.TrimSpace(*in.APIKey)
+			if key == "" {
+				return ErrKeyRequired
+			}
+			sealed, err := s.box.Seal(key)
+			if err != nil {
+				return err
+			}
+			next.APIKeyHint = secret.Hint(key)
+			sets += `, api_key_enc = ?, api_key_hint = ?`
+			args = append(args, sealed, next.APIKeyHint)
+		}
+
+		args = append(args, providerID)
+		if _, err := tx.Exec(ctx, `UPDATE providers SET `+sets+` WHERE id = ?`, args...); err != nil {
+			if isUnique(err) {
+				return ErrNameTaken
+			}
+			return fmt.Errorf("provider: update: %w", err)
+		}
+		if !next.Enabled {
+			if _, err := tx.Exec(ctx,
+				`UPDATE models SET enabled = ?, updated_at = ? WHERE provider_id = ? AND enabled = ?`,
+				false, next.UpdatedAt, providerID, true); err != nil {
+				return fmt.Errorf("provider: disable models: %w", err)
+			}
+		}
+		return nil
+	})
+	return next, err
 }
 
 func (s *Store) ByID(ctx context.Context, providerID string) (Provider, error) {
-	return scan(s.db.QueryRow(ctx, `SELECT `+columns+` FROM providers WHERE id = ?`, providerID))
+	return byID(ctx, s.db, providerID)
+}
+
+func byID(ctx context.Context, q database.Queryer, providerID string) (Provider, error) {
+	return scan(q.QueryRow(ctx, `SELECT `+columns+` FROM providers WHERE id = ?`, providerID))
 }
 
 func (s *Store) List(ctx context.Context) ([]Provider, error) {

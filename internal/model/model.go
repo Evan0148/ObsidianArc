@@ -282,23 +282,45 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (Model, error) {
 	now := time.Now().UnixMilli()
 	record.CreatedAt, record.UpdatedAt = now, now
 
-	_, err = s.db.Exec(ctx, `INSERT INTO models
-		(id, provider_id, model_id, display_name, description, avatar, enabled, hidden, sort_order,
-		 supports_reasoning, supports_images, supports_vision, supports_streaming,
-		 supports_system_prompt, supports_tools, context_window, max_output_tokens,
-		 request_weight, input_token_weight, output_token_weight, reasoning_token_weight,
-		 created_at, updated_at, route_to_id, reasoning_style, reasoning_tiers, api_name, auto_disabled, system_prompt, supports_image_gen,
-		 supports_chat_image_gen)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		record.ID, record.ProviderID, record.ModelID, record.DisplayName, record.Description,
-		record.Avatar, record.Enabled, record.Hidden, record.SortOrder,
-		record.SupportsReasoning, record.SupportsImages, record.SupportsVision,
-		record.SupportsStreaming, record.SupportsSystemPrompt, record.SupportsTools,
-		record.ContextWindow, record.MaxOutputTokens,
-		record.Request, record.InputToken, record.OutputToken, record.ReasoningToken,
-		record.CreatedAt, record.UpdatedAt, routeValue(record.RouteToID), record.ReasoningStyle,
-		encodeTiers(record.ReasoningTiers), record.APIName, record.AutoDisabled, record.SystemPrompt, record.SupportsImageGen,
-		record.SupportsChatImageGen)
+	err = s.db.Tx(ctx, func(tx *database.Tx) error {
+		// A provider being disabled and a model being added are one invariant,
+		// even when two server instances do them at the same time. Both paths
+		// lock this owner row before writing either side.
+		if _, err := tx.Exec(ctx,
+			`UPDATE providers SET updated_at = updated_at WHERE id = ?`, record.ProviderID); err != nil {
+			return fmt.Errorf("model: lock provider: %w", err)
+		}
+		var providerEnabled bool
+		if err := tx.QueryRow(ctx,
+			`SELECT enabled FROM providers WHERE id = ?`, record.ProviderID).Scan(&providerEnabled); err != nil {
+			if database.IsNotFound(err) {
+				return provider.ErrNotFound
+			}
+			return fmt.Errorf("model: read provider: %w", err)
+		}
+		if !providerEnabled {
+			record.Enabled = false
+		}
+
+		_, err := tx.Exec(ctx, `INSERT INTO models
+			(id, provider_id, model_id, display_name, description, avatar, enabled, hidden, sort_order,
+			 supports_reasoning, supports_images, supports_vision, supports_streaming,
+			 supports_system_prompt, supports_tools, context_window, max_output_tokens,
+			 request_weight, input_token_weight, output_token_weight, reasoning_token_weight,
+			 created_at, updated_at, route_to_id, reasoning_style, reasoning_tiers, api_name, auto_disabled, system_prompt, supports_image_gen,
+			 supports_chat_image_gen)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			record.ID, record.ProviderID, record.ModelID, record.DisplayName, record.Description,
+			record.Avatar, record.Enabled, record.Hidden, record.SortOrder,
+			record.SupportsReasoning, record.SupportsImages, record.SupportsVision,
+			record.SupportsStreaming, record.SupportsSystemPrompt, record.SupportsTools,
+			record.ContextWindow, record.MaxOutputTokens,
+			record.Request, record.InputToken, record.OutputToken, record.ReasoningToken,
+			record.CreatedAt, record.UpdatedAt, routeValue(record.RouteToID), record.ReasoningStyle,
+			encodeTiers(record.ReasoningTiers), record.APIName, record.AutoDisabled, record.SystemPrompt, record.SupportsImageGen,
+			record.SupportsChatImageGen)
+		return err
+	})
 	if err != nil {
 		if isUnique(err) {
 			return Model{}, s.whichDuplicate(ctx, record.APIName, record.ID)
@@ -380,23 +402,38 @@ func (s *Store) Update(ctx context.Context, modelID string, in Update) (Model, e
 	if err != nil {
 		return Model{}, err
 	}
-	next.UpdatedAt = time.Now().UnixMilli()
+	err = s.db.Tx(ctx, func(tx *database.Tx) error {
+		if _, err := tx.Exec(ctx,
+			`UPDATE providers SET updated_at = updated_at WHERE id = ?`, next.ProviderID); err != nil {
+			return fmt.Errorf("model: lock provider: %w", err)
+		}
+		var providerEnabled bool
+		if err := tx.QueryRow(ctx,
+			`SELECT enabled FROM providers WHERE id = ?`, next.ProviderID).Scan(&providerEnabled); err != nil {
+			return fmt.Errorf("model: read provider: %w", err)
+		}
+		if !providerEnabled {
+			next.Enabled = false
+		}
+		next.UpdatedAt = time.Now().UnixMilli()
 
-	_, err = s.db.Exec(ctx, `UPDATE models SET
-		model_id = ?, display_name = ?, description = ?, avatar = ?, enabled = ?, hidden = ?, sort_order = ?,
-		supports_reasoning = ?, supports_images = ?, supports_vision = ?, supports_streaming = ?,
-		supports_system_prompt = ?, supports_tools = ?, supports_image_gen = ?, supports_chat_image_gen = ?,
-		context_window = ?, max_output_tokens = ?,
-		request_weight = ?, input_token_weight = ?, output_token_weight = ?, reasoning_token_weight = ?,
-		route_to_id = ?, reasoning_style = ?, reasoning_tiers = ?, api_name = ?, auto_disabled = ?, system_prompt = ?, updated_at = ?
-		WHERE id = ?`,
-		next.ModelID, next.DisplayName, next.Description, next.Avatar, next.Enabled, next.Hidden, next.SortOrder,
-		next.SupportsReasoning, next.SupportsImages, next.SupportsVision, next.SupportsStreaming,
-		next.SupportsSystemPrompt, next.SupportsTools, next.SupportsImageGen, next.SupportsChatImageGen,
-		next.ContextWindow, next.MaxOutputTokens,
-		next.Request, next.InputToken, next.OutputToken, next.ReasoningToken,
-		routeValue(next.RouteToID), next.ReasoningStyle, encodeTiers(next.ReasoningTiers),
-		next.APIName, next.AutoDisabled, next.SystemPrompt, next.UpdatedAt, modelID)
+		_, err := tx.Exec(ctx, `UPDATE models SET
+			model_id = ?, display_name = ?, description = ?, avatar = ?, enabled = ?, hidden = ?, sort_order = ?,
+			supports_reasoning = ?, supports_images = ?, supports_vision = ?, supports_streaming = ?,
+			supports_system_prompt = ?, supports_tools = ?, supports_image_gen = ?, supports_chat_image_gen = ?,
+			context_window = ?, max_output_tokens = ?,
+			request_weight = ?, input_token_weight = ?, output_token_weight = ?, reasoning_token_weight = ?,
+			route_to_id = ?, reasoning_style = ?, reasoning_tiers = ?, api_name = ?, auto_disabled = ?, system_prompt = ?, updated_at = ?
+			WHERE id = ?`,
+			next.ModelID, next.DisplayName, next.Description, next.Avatar, next.Enabled, next.Hidden, next.SortOrder,
+			next.SupportsReasoning, next.SupportsImages, next.SupportsVision, next.SupportsStreaming,
+			next.SupportsSystemPrompt, next.SupportsTools, next.SupportsImageGen, next.SupportsChatImageGen,
+			next.ContextWindow, next.MaxOutputTokens,
+			next.Request, next.InputToken, next.OutputToken, next.ReasoningToken,
+			routeValue(next.RouteToID), next.ReasoningStyle, encodeTiers(next.ReasoningTiers),
+			next.APIName, next.AutoDisabled, next.SystemPrompt, next.UpdatedAt, modelID)
+		return err
+	})
 	if err != nil {
 		if isUnique(err) {
 			return Model{}, s.whichDuplicate(ctx, next.APIName, modelID)

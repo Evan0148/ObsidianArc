@@ -205,6 +205,19 @@ describe('the application, mounted', () => {
       .toBe('Mozilla/5.0 ObsidianArcTest/1.0');
   });
 
+  it('renders the operator-written About introduction as Markdown', async () => {
+    site.value = {
+      ...siteInfo.value,
+      about: { title: 'Lantern', body: '**Private** knowledge for [the team](https://example.com).' },
+    };
+    adopt(ACCOUNT);
+    await mountAt('/about');
+
+    expect(host.querySelector('.oa-about-name')?.textContent).toBe('Lantern');
+    expect(host.querySelector('.oa-about-lede strong')?.textContent).toBe('Private');
+    expect(host.querySelector<HTMLAnchorElement>('.oa-about-lede a')?.href).toBe('https://example.com/');
+  });
+
   it('offers every image size as a tile whose silhouette fits its box', async () => {
     adopt(ACCOUNT);
     await mountAt('/image-lab');

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/adapter"
@@ -245,6 +246,87 @@ func TestAuthorizeRefusesDisabledModelOrProvider(t *testing.T) {
 	}
 	if _, err := f.models.Authorize(ctx, open.ID, record.ID, false); !errors.Is(err, ErrDisabled) {
 		t.Fatalf("disabled provider: want ErrDisabled, got %v", err)
+	}
+}
+
+func TestDisabledProviderKeepsItsModelsDisabled(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	upstream := f.provider(t, "Example")
+	existing := f.model(t, upstream.ID, "existing-model")
+	disabled := false
+	if _, err := f.providers.Update(ctx, upstream.ID, provider.Update{Enabled: &disabled}); err != nil {
+		t.Fatal(err)
+	}
+
+	stored, err := f.models.ByID(ctx, existing.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Enabled {
+		t.Fatal("disabling the provider left its existing model enabled")
+	}
+
+	created := f.model(t, upstream.ID, "new-model")
+	if created.Enabled {
+		t.Fatal("a model added to a disabled provider started enabled")
+	}
+
+	enabled := true
+	updated, err := f.models.Update(ctx, existing.ID, Update{Enabled: &enabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Enabled {
+		t.Fatal("a model under a disabled provider could be enabled")
+	}
+}
+
+func TestDisablingProviderWhileAddingModelLeavesModelDisabled(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	upstream := f.provider(t, "Example")
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errors := make(chan error, 2)
+	var created Model
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		var err error
+		created, err = f.models.Create(ctx, CreateInput{
+			ProviderID:  upstream.ID,
+			ModelID:     "racing-model",
+			DisplayName: "Racing model",
+			Enabled:     true,
+		})
+		errors <- err
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		disabled := false
+		_, err := f.providers.Update(ctx, upstream.ID, provider.Update{Enabled: &disabled})
+		errors <- err
+	}()
+	close(start)
+	wg.Wait()
+	close(errors)
+	for err := range errors {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	stored, err := f.models.ByID(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Enabled {
+		t.Fatal("the concurrently added model remained enabled")
 	}
 }
 

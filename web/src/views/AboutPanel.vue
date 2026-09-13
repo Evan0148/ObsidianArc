@@ -1,16 +1,14 @@
 <script setup lang="ts">
 // The About panel.
 //
-// An instance can be renamed and can describe itself however its operator
-// wants, and the heading and body honour that. The two facts below do not:
-// they name the software rather than the deployment, so a rebranded server
-// still answers "what am I actually running, and where did it come from" —
-// which is the question this panel exists for.
+// An instance can be renamed and can describe itself in Markdown however its
+// operator wants. The facts below do not change with that copy: they identify
+// the software a rebranded server is actually running and where it came from.
 
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { health } from '@/api/client';
-import OaFormSection from '@/components/OaFormSection.vue';
+import OaMarkdown from '@/components/OaMarkdown.vue';
 import OaPanel from '@/components/OaPanel.vue';
 import { t } from '@/composables/useI18n';
 import { formatUptime } from '@/lib/format';
@@ -47,10 +45,7 @@ onMounted(() => {
     <div class="oa-about">
       <!-- Both fall back rather than render empty: an operator who has never
            opened the settings screen still gets a finished page. -->
-      <div class="oa-about-head">
-        <h2 class="oa-about-name">{{ siteInfo.about?.title?.trim() || siteInfo.name }}</h2>
-        <p class="oa-about-lede">{{ siteInfo.about?.body?.trim() || t('aboutBody') }}</p>
-      </div>
+      <h2 class="oa-about-name">{{ siteInfo.about?.title?.trim() || siteInfo.name }}</h2>
 
       <div class="oa-about-facts">
         <div class="oa-about-fact">
@@ -81,7 +76,16 @@ onMounted(() => {
         </div>
       </div>
 
-      <OaFormSection :title="t('aboutBuiltWith')" :hint="t('aboutBuiltWithBody')" />
+      <section class="oa-about-details">
+        <h3 class="oa-drawer-subhead">{{ t('aboutText') }}</h3>
+        <!-- The transcript renderer builds DOM nodes from an allowlist rather
+             than accepting HTML, so operator Markdown gets the same XSS
+             boundary as model output. -->
+        <OaMarkdown
+          class="ai-answer oa-about-lede"
+          :text="siteInfo.about?.body?.trim() || t('aboutBody')"
+        />
+      </section>
     </div>
   </OaPanel>
 </template>

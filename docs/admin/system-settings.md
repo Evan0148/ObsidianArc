@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `site.name` | `Obsidian Arc` | 站点名称 |
 | `site.description` | 空 | 站点说明 |
-| `about.title` / `about.body` | 空 | 关于页面；空值使用内置内容 |
+| `about.title` / `about.body` | 空 | 关于页面标题与 Markdown 详细介绍；空值使用内置内容 |
 | `home.notice` | 空 | 首页纯文本通知 |
 | `home.notice_dismissible` | `true` | 是否允许关闭通知 |
 | `registration.enabled` | `true` | 是否开放注册 |

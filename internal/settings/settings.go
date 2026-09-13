@@ -23,9 +23,9 @@ import (
 const (
 	SiteName        = "site.name"
 	SiteDescription = "site.description"
-	// The About panel's heading and body. Empty is the normal state and means
-	// "use the instance name and the built-in description", so an operator who
-	// never opens this screen still gets a sensible page.
+	// The About panel's heading and Markdown introduction. Empty is the normal
+	// state and means "use the instance name and the built-in introduction",
+	// so an operator who never opens this screen still gets a sensible page.
 	AboutTitle = "about.title"
 	AboutBody  = "about.body"
 	// A standing notice above the chat. Unlike an announcement, which is a

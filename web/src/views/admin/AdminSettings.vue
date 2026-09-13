@@ -292,7 +292,7 @@ onMounted(load);
         :hint="t('aboutHeadingHint')"
         :max-length="60"
       />
-      <OaTextArea v-model="form.aboutText" :label="t('aboutText')" :rows="4" :hint="t('aboutTextHint')" />
+      <OaTextArea v-model="form.aboutText" :label="t('aboutText')" :rows="10" :hint="t('aboutTextHint')" />
       <OaTextArea v-model="form.homeNotice" :label="t('homeNotice')" :rows="3" :hint="t('homeNoticeHint')" />
       <OaSwitchField
         v-model="form.homeNoticeDismissible"
