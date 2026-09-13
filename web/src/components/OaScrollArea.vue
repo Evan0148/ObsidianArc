@@ -12,7 +12,7 @@
 // teardown is the component going away — which is the whole class of leak the
 // old `destroy()` existed to avoid and could be forgotten.
 
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useEventListener, useMutationObserver, useResizeObserver } from '@vueuse/core';
 
 const props = defineProps<{
@@ -104,11 +104,21 @@ useEventListener(window, 'mousemove', (event: MouseEvent) => {
   element.scrollTop = startTop + ((event.clientY - startY) / travel) * (box.scroll - box.client);
 }, { capture: true });
 
-useEventListener(window, 'mouseup', () => {
+// release ends a drag, whether the button came up or this component went away
+// first. One function rather than two so the window listener and the unmount
+// hook cannot disagree about what ending a drag means — and the part that
+// matters is the body's userSelect: left at 'none' it takes text selection
+// away from the whole application until the page is reloaded, which is a high
+// price for closing a panel with the mouse still down.
+function release(): void {
   if (!dragging.value) return;
   dragging.value = false;
   document.body.style.userSelect = '';
-}, { capture: true });
+}
+
+useEventListener(window, 'mouseup', release, { capture: true });
+
+onBeforeUnmount(release);
 
 // A press on the empty part of the track jumps there, centred on the pointer.
 function onTrackDown(event: MouseEvent): void {
