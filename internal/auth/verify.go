@@ -206,18 +206,40 @@ func (s *Service) Resend(ctx context.Context, siteName string, userID string) er
 	}
 
 	// One link every couple of minutes. Without this the resend button is a
-	// way to have this server mail a stranger repeatedly.
-	var createdAt int64
-	err = s.db.QueryRow(ctx,
-		`SELECT created_at FROM email_verifications WHERE user_id = ?`, userID).Scan(&createdAt)
-	if err == nil && time.Since(time.UnixMilli(createdAt)) < maxOutstandingResend {
-		return ErrResendTooSoon
-	}
-	if err != nil && !database.IsNotFound(err) {
-		return fmt.Errorf("auth: read verification: %w", err)
-	}
+	// way to have this server mail a stranger repeatedly — and it only ever
+	// held for a client that asked politely, because the timestamps were read
+	// and written without anything holding them together. Eight requests in
+	// parallel all read the same absent (or old) row, all issued a link, and
+	// all sent: the limit was a limit on sequential requests.
+	//
+	// So the read and the issue are one transaction, and the owner's row is
+	// taken first — the per-account spelling AGENTS.md names, and the shape
+	// the address change already uses for the same limit. The send stays
+	// outside it: a transaction must not be held open across a provider call,
+	// and SMTP is one.
+	var token string
+	err = s.db.Tx(ctx, func(tx *database.Tx) error {
+		if _, err := tx.Exec(ctx,
+			`UPDATE users SET updated_at = updated_at WHERE id = ?`, userID); err != nil {
+			return fmt.Errorf("auth: lock for resend: %w", err)
+		}
 
-	token, err := s.issueVerification(ctx, s.db, userID, account.Email)
+		var createdAt int64
+		switch err := tx.QueryRow(ctx,
+			`SELECT created_at FROM email_verifications WHERE user_id = ?`, userID).
+			Scan(&createdAt); {
+		case err == nil:
+			if time.Since(time.UnixMilli(createdAt)) < maxOutstandingResend {
+				return ErrResendTooSoon
+			}
+		case !database.IsNotFound(err):
+			return fmt.Errorf("auth: read verification: %w", err)
+		}
+
+		var err error
+		token, err = s.issueVerification(ctx, tx, userID, account.Email)
+		return err
+	})
 	if err != nil {
 		return err
 	}
