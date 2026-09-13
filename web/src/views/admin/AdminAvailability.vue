@@ -28,6 +28,7 @@ const flashSuccess = ref('');
 const saveLabel = ref('');
 const busy = ref(false);
 const resetting = ref(false);
+const probing = ref(false);
 
 const form = ref({
   healthProbe: true,
@@ -81,6 +82,26 @@ async function resetUptime(): Promise<void> {
     flash.value = failure instanceof ApiError ? failure.message : String(failure);
   } finally {
     resetting.value = false;
+  }
+}
+
+async function probeAllModels(): Promise<void> {
+  probing.value = true;
+  flash.value = '';
+  flashSuccess.value = '';
+  try {
+    const result = await adminApi.probeAllModels();
+    flashSuccess.value = t('probeAllModelsDone', {
+      succeeded: result.succeeded,
+      total: result.total,
+      failed: result.failed,
+    });
+    window.setTimeout(() => { flashSuccess.value = ''; }, 5000);
+    await load();
+  } catch (failure) {
+    flash.value = failure instanceof ApiError ? failure.message : String(failure);
+  } finally {
+    probing.value = false;
   }
 }
 
@@ -186,9 +207,19 @@ onMounted(load);
     <!-- 5. Current Models Health Overview -->
     <div class="oa-uptime-section-head" style="margin-top: 24px;">
       <OaFormSection id="modelHealthOverview" :title="t('modelHealthOverview')" />
-      <a href="/uptime" target="_blank" class="oa-uptime-action-btn">
-        {{ t('viewUptimePage') }}
-      </a>
+      <div class="oa-uptime-actions">
+        <button
+          type="button"
+          class="oa-uptime-action-btn"
+          :disabled="probing"
+          @click="probeAllModels"
+        >
+          {{ probing ? t('probeAllModelsRunning') : t('probeAllModels') }}
+        </button>
+        <a href="/uptime" target="_blank" class="oa-uptime-action-btn">
+          {{ t('viewUptimePage') }}
+        </a>
+      </div>
     </div>
 
     <div v-if="!models.length" class="oa-field-hint">

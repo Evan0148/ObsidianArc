@@ -2,9 +2,16 @@ package health
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/adapter"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/config"
 )
 
 func fail(at int64, code, source string) Sample {
@@ -96,6 +103,68 @@ func TestNoEvidenceIsUnknownAndNotZero(t *testing.T) {
 	if len(status.Errors) != 0 {
 		t.Errorf("errors = %+v", status.Errors)
 	}
+}
+
+// Probes go through the same typed message conversion as reader turns. A text
+// value without PartText is silently omitted by both adapters, leaving an
+// empty messages array that upstreams correctly reject as a bad request.
+func TestProbeSendsItsPingAsATextMessage(t *testing.T) {
+	for _, kind := range []adapter.Kind{adapter.KindOpenAI, adapter.KindAnthropic} {
+		t.Run(string(kind), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body struct {
+					Messages []struct {
+						Content json.RawMessage `json:"content"`
+					} `json:"messages"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decode probe request: %v", err)
+					http.Error(w, "bad request", http.StatusBadRequest)
+					return
+				}
+				if len(body.Messages) != 1 || !probeContentIsPing(kind, body.Messages[0].Content) {
+					t.Errorf("probe messages = %v, want one user text message containing ping", body.Messages)
+					http.Error(w, "messages must contain text", http.StatusBadRequest)
+					return
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				if kind == adapter.KindAnthropic {
+					_, _ = fmt.Fprint(w, `{"content":[{"type":"text","text":"pong"}],"stop_reason":"end_turn","usage":{}}`)
+					return
+				}
+				_, _ = fmt.Fprint(w, `{"choices":[{"message":{"content":"pong"},"finish_reason":"stop"}]}`)
+			}))
+			defer server.Close()
+
+			registry := adapter.NewRegistry(config.Upstream{
+				DialTimeout:           time.Second,
+				ResponseHeaderTimeout: time.Second,
+				MaxIdleConns:          1,
+				IdleConnTimeout:       time.Second,
+			})
+			_, err := Probe(context.Background(), registry, adapter.Provider{
+				Kind: kind, BaseURL: server.URL + "/v1", APIKey: "test-key",
+			}, adapter.ModelSpec{ModelID: "test-model"})
+			if err != nil {
+				t.Fatalf("probe: %v", err)
+			}
+		})
+	}
+}
+
+func probeContentIsPing(kind adapter.Kind, raw json.RawMessage) bool {
+	if kind == adapter.KindOpenAI {
+		var content string
+		return json.Unmarshal(raw, &content) == nil && content == "ping"
+	}
+
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	return json.Unmarshal(raw, &blocks) == nil && len(blocks) == 1 &&
+		blocks[0].Type == "text" && blocks[0].Text == "ping"
 }
 
 // The codes are what the page groups by, so the mapping is the difference

@@ -238,8 +238,8 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     id: 'modelHealthOverview',
     pageSlug: 'availability',
     titleKey: 'modelHealthOverview',
-    searchKeys: ['viewUptimePage', 'uptimeModels'],
-    keywords: ['可用性监控', '健康度总览', '在线状态', 'uptime', 'health', 'status'],
+    searchKeys: ['probeAllModels', 'viewUptimePage', 'uptimeModels'],
+    keywords: ['全部模型测试', '手动探测', '可用性监控', '健康度总览', '在线状态', 'probe all', 'uptime', 'health', 'status'],
   },
   {
     id: 'secDegradationPolicy',

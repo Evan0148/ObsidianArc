@@ -372,6 +372,10 @@ export const adminApi = {
         reset_at?: number;
       };
     }>(`/api/admin/health?hours=${hours}`),
+  probeAllModels: () =>
+    api.post<{ total: number; succeeded: number; failed: number }>(
+      '/api/admin/health/probe',
+    ),
   resetHealth: () =>
     api.post<{ reset_at: number; probes_cleared: number; models_reenabled: number }>(
       '/api/admin/health/reset',

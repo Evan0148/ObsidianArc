@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -157,6 +158,7 @@ func TestAdminRoutesRequireAnAdministrator(t *testing.T) {
 		{http.MethodGet, "/api/admin/dashboard", nil},
 		{http.MethodGet, "/api/admin/resources", nil},
 		{http.MethodGet, "/api/admin/health", nil},
+		{http.MethodPost, "/api/admin/health/probe", nil},
 		{http.MethodPost, "/api/admin/health/reset", nil},
 		{http.MethodPost, "/api/admin/security/review", map[string]any{"username": "x"}},
 		{http.MethodGet, "/api/admin/security/events", nil},
@@ -961,5 +963,93 @@ func TestHealthResetEndpoint(t *testing.T) {
 	sec, ok := uptimeBody["uptime_sec"].(float64)
 	if !ok || sec > 5 {
 		t.Errorf("uptime_sec after reset = %v, want <= 5", sec)
+	}
+}
+
+func TestManualHealthProbeRequestsEveryModel(t *testing.T) {
+	var (
+		requestsMu sync.Mutex
+		requests   int
+	)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil ||
+			len(body.Messages) != 1 || body.Messages[0].Content != "ping" {
+			http.Error(w, "missing ping", http.StatusBadRequest)
+			return
+		}
+		requestsMu.Lock()
+		requests++
+		requestsMu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"pong"},"finish_reason":"stop"}]}`)
+	}))
+	defer upstream.Close()
+
+	in := newInstance(t)
+	admin := in.register("probe_admin", "password123")
+	createdProvider := in.do(http.MethodPost, "/api/admin/providers", map[string]any{
+		"name": "Probe upstream", "kind": "openai", "base_url": upstream.URL + "/v1", "api_key": "test-key",
+	}, admin)
+	if createdProvider.Code != http.StatusCreated {
+		t.Fatalf("create provider = %d: %s", createdProvider.Code, createdProvider.Body.String())
+	}
+	providerBody := decode[struct {
+		Provider struct {
+			ID string `json:"id"`
+		} `json:"provider"`
+	}](t, createdProvider)
+
+	for i, enabled := range []bool{true, false} {
+		createdModel := in.do(http.MethodPost, "/api/admin/models", map[string]any{
+			"provider_id":  providerBody.Provider.ID,
+			"model_id":     fmt.Sprintf("probe-model-%d", i),
+			"display_name": fmt.Sprintf("Probe Model %d", i),
+			"enabled":      enabled,
+		}, admin)
+		if createdModel.Code != http.StatusCreated {
+			t.Fatalf("create model %d = %d: %s", i, createdModel.Code, createdModel.Body.String())
+		}
+	}
+
+	response := in.do(http.MethodPost, "/api/admin/health/probe", nil, admin)
+	if response.Code != http.StatusOK {
+		t.Fatalf("POST /api/admin/health/probe = %d: %s", response.Code, response.Body.String())
+	}
+	summary := decode[struct {
+		Total     int `json:"total"`
+		Succeeded int `json:"succeeded"`
+		Failed    int `json:"failed"`
+	}](t, response)
+	if summary.Total != 2 || summary.Succeeded != 2 || summary.Failed != 0 {
+		t.Errorf("probe summary = %+v", summary)
+	}
+	requestsMu.Lock()
+	gotRequests := requests
+	requestsMu.Unlock()
+	if gotRequests != 2 {
+		t.Errorf("upstream requests = %d, want 2", gotRequests)
+	}
+
+	healthResponse := in.do(http.MethodGet, "/api/admin/health", nil, admin)
+	healthBody := decode[struct {
+		Models []struct {
+			Status struct {
+				State         string `json:"state"`
+				SystemSamples int    `json:"system_samples"`
+			} `json:"status"`
+		} `json:"models"`
+	}](t, healthResponse)
+	if len(healthBody.Models) != 2 {
+		t.Fatalf("health models = %d, want 2", len(healthBody.Models))
+	}
+	for i, record := range healthBody.Models {
+		if record.Status.State != "up" || record.Status.SystemSamples != 1 {
+			t.Errorf("model %d status = %+v", i, record.Status)
+		}
 	}
 }

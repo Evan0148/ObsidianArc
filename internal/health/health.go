@@ -277,8 +277,11 @@ func (s *Store) Prune(ctx context.Context, before int64) (int64, error) {
 func Probe(ctx context.Context, registry *adapter.Registry, upstream adapter.Provider, spec adapter.ModelSpec) (time.Duration, error) {
 	started := time.Now()
 	_, err := registry.Chat(ctx, upstream, adapter.ChatRequest{
-		Model:     spec,
-		Messages:  []adapter.Message{{Role: adapter.RoleUser, Parts: []adapter.Part{{Text: "ping"}}}},
+		Model: spec,
+		Messages: []adapter.Message{{
+			Role:  adapter.RoleUser,
+			Parts: []adapter.Part{{Kind: adapter.PartText, Text: "ping"}},
+		}},
 		MaxTokens: 1,
 		Stream:    false,
 		// A sink that discards. The non-streaming path still delivers the

@@ -56,6 +56,7 @@ const EMPTY_BODIES: Array<[RegExp, unknown]> = [
   [/\/api\/admin\/models/, { models: [] }],
   [/\/api\/admin\/groups/, { groups: [], policies: [] }],
   [/\/api\/admin\/meta/, { provider_kinds: ['openai', 'anthropic'], reasoning_styles: ['auto'] }],
+  [/\/api\/admin\/health\/probe/, { total: 2, succeeded: 1, failed: 1 }],
   [/\/api\/admin\/health/, { hours: 24, models: [], policy: { probe: true, window_mins: 30, disable_after: 0 } }],
   [/\/api\/admin\/usage\/records/, { records: [], total: 0 }],
   [/\/api\/admin\/usage/, {
@@ -488,6 +489,18 @@ describe('what moves, and what does not', () => {
 
     const body = host.querySelector('.oa-admin-body');
     expect(body).not.toBeNull();
+
+    const probeButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === t('probeAllModels'),
+    );
+    expect(probeButton).not.toBeUndefined();
+    probeButton?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const calls = vi.mocked(globalThis.fetch).mock.calls;
+    expect(calls.some(([input]) => String(input).includes('/api/admin/health/probe'))).toBe(true);
+    expect(body?.textContent).toContain(t('probeAllModelsDone', { total: 2, succeeded: 1, failed: 1 }));
   });
 
   it('gives each backoffice section a fresh body, so its entry actually plays', async () => {

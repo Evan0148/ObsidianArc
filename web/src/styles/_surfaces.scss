@@ -2935,9 +2935,16 @@
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background: var(--ai-surface-container-highest);
     color: var(--ai-text-primary);
+  }
+
+  // A full pass can take several seconds; keeping the control visibly busy
+  // prevents duplicate probe batches while the first one is still running.
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
   }
 
   &:focus-visible {

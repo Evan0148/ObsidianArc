@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -17,6 +18,8 @@ import (
 const (
 	defaultHealthHours = 24
 	maxHealthHours     = 24 * 30
+	manualProbeWorkers = 4
+	manualProbeTimeout = 20 * time.Second
 )
 
 // modelHealth answers with one entry per model, whether or not it has any
@@ -75,6 +78,76 @@ func (h *Handlers) modelHealth(w http.ResponseWriter, r *http.Request) error {
 			"retain_days":   h.settings.Int(settings.HealthRetainDays, 14),
 			"reset_at":      resetAt,
 		},
+	})
+}
+
+// probeAllHealth gives an operator a fresh observation of every configured
+// model, including disabled ones. A manual diagnostic should be able to show
+// that a model is healthy before the operator decides to enable it again.
+func (h *Handlers) probeAllHealth(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	records, err := h.models.ListAll(ctx, "")
+	if err != nil {
+		return httpx.Internal(err)
+	}
+
+	type outcome struct {
+		modelID string
+		ok      bool
+		code    string
+		message string
+		latency time.Duration
+	}
+
+	jobs := make(chan model.Model, len(records))
+	results := make(chan outcome, len(records))
+	for _, record := range records {
+		jobs <- record
+	}
+	close(jobs)
+
+	workers := min(manualProbeWorkers, len(records))
+	for range workers {
+		go func() {
+			for record := range jobs {
+				result := outcome{modelID: record.ID}
+				upstream, resolveErr := h.providers.Resolve(ctx, record.ProviderID)
+				if resolveErr != nil {
+					result.code = "provider_unavailable"
+					result.message = resolveErr.Error()
+					results <- result
+					continue
+				}
+
+				probeCtx, cancel := context.WithTimeout(ctx, manualProbeTimeout)
+				var probeErr error
+				result.latency, probeErr = health.Probe(probeCtx, h.registry, upstream, record.Spec())
+				cancel()
+				result.ok = probeErr == nil
+				if probeErr != nil {
+					result.code = health.Code(probeErr)
+					result.message = probeErr.Error()
+				}
+				results <- result
+			}
+		}()
+	}
+
+	succeeded := 0
+	for range len(records) {
+		result := <-results
+		if err := h.health.Record(ctx, result.modelID, result.ok, result.code, result.message, result.latency); err != nil {
+			return httpx.Internal(err)
+		}
+		if result.ok {
+			succeeded++
+		}
+	}
+
+	return httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"total":     len(records),
+		"succeeded": succeeded,
+		"failed":    len(records) - succeeded,
 	})
 }
 
