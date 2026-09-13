@@ -265,6 +265,61 @@ func TestAnExpiredCardIsNeitherOfferedNorSpent(t *testing.T) {
 	}
 }
 
+// A hand-issued card carries the date the operator chose, not a fresh
+// thirty-day calculation made after the request reached the server.
+func TestGrantUntilKeepsTheChosenExpiry(t *testing.T) {
+	f := newFixture(t)
+	person := f.reader(t, "dated")
+	expires := time.Now().Add(45 * 24 * time.Hour).Truncate(time.Second).UnixMilli()
+
+	granted, err := f.store.GrantUntil(context.Background(), person.ID, 2, expires)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(granted) != 2 {
+		t.Fatalf("granted %d cards, want 2", len(granted))
+	}
+	for _, record := range granted {
+		if record.ExpiresAt != expires {
+			t.Errorf("expires_at = %d, want %d", record.ExpiresAt, expires)
+		}
+	}
+
+	if _, err := f.store.GrantUntil(context.Background(), person.ID, 1,
+		time.Now().Add(-time.Minute).UnixMilli()); !errors.Is(err, ErrInvalidExpiry) {
+		t.Errorf("past expiry gave %v, want ErrInvalidExpiry", err)
+	}
+}
+
+// Automatic use spends the card that would otherwise disappear first, so a
+// later-dated card is not wasted while an earlier one expires.
+func TestSpendNextUsesTheEarliestExpiry(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	person := f.reader(t, "automatic")
+
+	later, err := f.store.GrantUntil(ctx, person.ID, 1, time.Now().Add(60*24*time.Hour).UnixMilli())
+	if err != nil {
+		t.Fatal(err)
+	}
+	earlier, err := f.store.GrantUntil(ctx, person.ID, 1, time.Now().Add(10*24*time.Hour).UnixMilli())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.SpendNext(ctx, nil, person.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	available, err := f.store.Available(ctx, person.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(available) != 1 || available[0].ID != later[0].ID {
+		t.Errorf("available = %+v, want only later card %s; earlier was %s",
+			available, later[0].ID, earlier[0].ID)
+	}
+}
+
 // A card belongs to one account. Somebody else's id is answered the way a
 // card that does not exist is, so the endpoint cannot be used to find out
 // whether one does.

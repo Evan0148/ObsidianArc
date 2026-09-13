@@ -455,7 +455,7 @@ export const adminApi = {
   codeRedemptions: (id: string) =>
     api.get<{ redemptions: CodeRedemption[] }>(`/api/admin/codes/${encodeURIComponent(id)}/redemptions`),
   deleteCode: (id: string) => api.delete<void>(`/api/admin/codes/${id}`),
-  grantCards: (userID: string, body: { cards: number; card_days: number }) =>
+  grantCards: (userID: string, body: { cards: number; expires_at: number }) =>
     api.post<void>(`/api/admin/users/${userID}/cards`, body),
   reorderModels: (ids: string[]) =>
     api.put<void>('/api/admin/models/order', { ids }),

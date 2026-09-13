@@ -16,6 +16,7 @@ import OaIconButton from '@/components/OaIconButton.vue';
 import OaOverlay from '@/components/OaOverlay.vue';
 import OaPanel from '@/components/OaPanel.vue';
 import OaStatGrid from '@/components/OaStatGrid.vue';
+import OaSwitchField from '@/components/OaSwitchField.vue';
 import OaTable from '@/components/OaTable.vue';
 import OaTurnstile from '@/components/OaTurnstile.vue';
 import OaUsageWindow from '@/components/OaUsageWindow.vue';
@@ -25,7 +26,7 @@ import { celebrate } from '@/composables/useConfetti';
 import { t } from '@/composables/useI18n';
 import { IconClose, IconLock, IconPlus } from '@/icons';
 import { compactNumber, relativeTime } from '@/lib/format';
-import { siteInfo } from '@/stores/session';
+import { currentPreferences, siteInfo, syncPreferences } from '@/stores/session';
 
 interface Totals {
   requests: number;
@@ -82,6 +83,10 @@ const spending = ref('');
 
 const enforced = computed(() => summary.value?.windows.filter((window) => window.enforced) ?? []);
 const unlimited = computed(() => !!summary.value && (summary.value.unlimited || !enforced.value.length));
+const autoUseResetCard = computed({
+  get: () => currentPreferences.value['auto_use_reset_card'] === true,
+  set: (enabled: boolean) => syncPreferences({ auto_use_reset_card: enabled }),
+});
 
 const statCards = computed<Stat[]>(() => {
   const value = totals.value;
@@ -313,6 +318,12 @@ onMounted(() => {
           >{{ t('cardUse') }}</button>
         </div>
       </div>
+
+      <OaSwitchField
+        v-model="autoUseResetCard"
+        :label="t('autoUseResetCard')"
+        :hint="t('autoUseResetCardHint')"
+      />
     </div>
 
     <OaFormSection :title="t('secTotals')" />

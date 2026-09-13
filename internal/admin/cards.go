@@ -89,8 +89,9 @@ func (h *Handlers) grantCards(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	var body struct {
-		Cards    int `json:"cards"`
-		CardDays int `json:"card_days"`
+		Cards     int   `json:"cards"`
+		CardDays  int   `json:"card_days"`
+		ExpiresAt int64 `json:"expires_at"`
 	}
 	if err := httpx.DecodeJSON(w, r, &body, 4*1024); err != nil {
 		return err
@@ -99,7 +100,13 @@ func (h *Handlers) grantCards(w http.ResponseWriter, r *http.Request) error {
 		body.Cards = 1
 	}
 
-	granted, err := h.cards.Grant(r.Context(), userID, body.Cards, body.CardDays)
+	var granted []card.Card
+	if body.ExpiresAt > 0 {
+		granted, err = h.cards.GrantUntil(r.Context(), userID, body.Cards, body.ExpiresAt)
+	} else {
+		// Kept for clients from before the date picker existed.
+		granted, err = h.cards.Grant(r.Context(), userID, body.Cards, body.CardDays)
+	}
 	if err != nil {
 		return card.TranslateError(err)
 	}

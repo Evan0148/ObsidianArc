@@ -93,6 +93,11 @@ type Estimate struct {
 
 func (e Estimate) empty() bool { return e.Tokens <= 0 && e.Credits <= 0 }
 
+// AutoReset spends whatever restores this account's allowance. It receives
+// the reservation transaction so the spend, reset and replacement
+// reservation either all happen or none of them do.
+type AutoReset func(context.Context, database.Queryer) (bool, error)
+
 // Reserve claims one request and the turn's worst case against every window
 // that applies, and fails if any of them is already spent.
 //
@@ -108,6 +113,22 @@ func (e Estimate) empty() bool { return e.Tokens <= 0 && e.Credits <= 0 }
 // ended. Reserving the ceiling means the tenth is refused while the first
 // nine are still streaming, and Settle hands back the difference.
 func (s *Service) Reserve(ctx context.Context, account user.User, estimate Estimate) (Reservation, error) {
+	return s.reserve(ctx, account, estimate, nil)
+}
+
+// ReserveWithAutoReset retries one rejected reservation after atomically
+// spending a reset. Locking the account row serialises this choice across
+// server processes; otherwise a burst arriving at an empty allowance could
+// spend several cards for the same reset.
+func (s *Service) ReserveWithAutoReset(
+	ctx context.Context, account user.User, estimate Estimate, reset AutoReset,
+) (Reservation, error) {
+	return s.reserve(ctx, account, estimate, reset)
+}
+
+func (s *Service) reserve(
+	ctx context.Context, account user.User, estimate Estimate, reset AutoReset,
+) (Reservation, error) {
 	policy, err := s.PolicyFor(ctx, nil, account)
 	if err != nil {
 		return Reservation{}, err
@@ -132,78 +153,120 @@ func (s *Service) Reserve(ctx context.Context, account user.User, estimate Estim
 	anchor := account.CreatedAt
 
 	err = s.db.Tx(ctx, func(tx *database.Tx) error {
-		if policy.RPM != nil && *policy.RPM > 0 {
-			counter, err := bump(ctx, tx, key, WindowRPM, bucketStart(WindowRPM, now, anchor), 1, 0, 0)
-			if err != nil {
-				return err
-			}
-			if counter.Requests > *policy.RPM {
-				return &ExceededError{
-					Window: WindowRPM, Dimension: "requests",
-					Used: float64(counter.Requests), Limit: float64(*policy.RPM),
-					ResetsAt: bucketEnd(WindowRPM, now, anchor),
-				}
+		if reset != nil {
+			if _, err := tx.Exec(ctx,
+				`UPDATE users SET updated_at = updated_at WHERE id = ?`, account.ID); err != nil {
+				return fmt.Errorf("quota: lock account for automatic reset: %w", err)
 			}
 		}
 
-		if policy.TPM != nil && *policy.TPM > 0 {
-			counter, err := bump(ctx, tx, key, WindowTPM, bucketStart(WindowTPM, now, anchor),
-				0, estimate.Tokens, 0)
-			if err != nil {
-				return err
-			}
-			if counter.Tokens > *policy.TPM {
-				return &ExceededError{
-					Window: WindowTPM, Dimension: "tokens",
-					Used: float64(counter.Tokens), Limit: float64(*policy.TPM),
-					ResetsAt: bucketEnd(WindowTPM, now, anchor),
-				}
-			}
+		reserveErr := reserveCounters(ctx, tx, policy, key, anchor, estimate, now)
+		if reset == nil || reserveErr == nil {
+			return reserveErr
+		}
+		exceeded, ok := AsExceeded(reserveErr)
+		if !ok || exceeded.Window == WindowRPM || exceeded.Window == WindowTPM {
+			// A reset card restores allowance; spending one on a burst-rate
+			// refusal would trade a permanent item for a limit that clears in a
+			// minute.
+			return reserveErr
 		}
 
-		for _, window := range AllowanceWindows {
-			limits := policy.Windows[window]
-			if !limits.isOn() {
-				continue
-			}
-
-			start := bucketStart(window, now, anchor)
-			counter, err := bump(ctx, tx, key, window, start, 1, estimate.Tokens, estimate.Credits)
-			if err != nil {
-				return err
-			}
-			resets := bucketEnd(window, now, anchor)
-
-			if limits.Requests != nil && *limits.Requests > 0 && counter.Requests > *limits.Requests {
-				return &ExceededError{
-					Window: window, Dimension: "requests",
-					Used: float64(counter.Requests), Limit: float64(*limits.Requests), ResetsAt: resets,
-				}
-			}
-			// The counter now includes this turn's worst case, so the
-			// comparison is "would finishing this put you over" rather than
-			// "were you already over" — which is the question that has an
-			// answer while ten turns are in flight at once.
-			if limits.Tokens != nil && *limits.Tokens > 0 && counter.Tokens > *limits.Tokens {
-				return &ExceededError{
-					Window: window, Dimension: "tokens",
-					Used: float64(counter.Tokens), Limit: float64(*limits.Tokens), ResetsAt: resets,
-				}
-			}
-			if limits.Credits != nil && *limits.Credits > 0 && counter.Credits > *limits.Credits {
-				return &ExceededError{
-					Window: window, Dimension: "credits",
-					Used: counter.Credits, Limit: *limits.Credits, ResetsAt: resets,
-				}
-			}
+		spent, err := reset(ctx, tx)
+		if err != nil {
+			return err
 		}
-		return nil
+		if !spent {
+			return reserveErr
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM usage_counters WHERE scope_key = ?`, key); err != nil {
+			return fmt.Errorf("quota: automatic reset: %w", err)
+		}
+		return reserveCounters(ctx, tx, policy, key, anchor, estimate, now)
 	})
 	if err != nil {
-		// The transaction rolled back, so nothing is outstanding.
+		// The transaction rolled back, so nothing is outstanding and a failed
+		// replacement reservation did not consume the card.
 		return Reservation{}, err
 	}
 	return Reservation{at: now, estimate: estimate, taken: true, anchor: anchor}, nil
+}
+
+func reserveCounters(
+	ctx context.Context,
+	tx database.Queryer,
+	policy Policy,
+	key string,
+	anchor int64,
+	estimate Estimate,
+	now time.Time,
+) error {
+	if policy.RPM != nil && *policy.RPM > 0 {
+		counter, err := bump(ctx, tx, key, WindowRPM, bucketStart(WindowRPM, now, anchor), 1, 0, 0)
+		if err != nil {
+			return err
+		}
+		if counter.Requests > *policy.RPM {
+			return &ExceededError{
+				Window: WindowRPM, Dimension: "requests",
+				Used: float64(counter.Requests), Limit: float64(*policy.RPM),
+				ResetsAt: bucketEnd(WindowRPM, now, anchor),
+			}
+		}
+	}
+
+	if policy.TPM != nil && *policy.TPM > 0 {
+		counter, err := bump(ctx, tx, key, WindowTPM, bucketStart(WindowTPM, now, anchor),
+			0, estimate.Tokens, 0)
+		if err != nil {
+			return err
+		}
+		if counter.Tokens > *policy.TPM {
+			return &ExceededError{
+				Window: WindowTPM, Dimension: "tokens",
+				Used: float64(counter.Tokens), Limit: float64(*policy.TPM),
+				ResetsAt: bucketEnd(WindowTPM, now, anchor),
+			}
+		}
+	}
+
+	for _, window := range AllowanceWindows {
+		limits := policy.Windows[window]
+		if !limits.isOn() {
+			continue
+		}
+
+		start := bucketStart(window, now, anchor)
+		counter, err := bump(ctx, tx, key, window, start, 1, estimate.Tokens, estimate.Credits)
+		if err != nil {
+			return err
+		}
+		resets := bucketEnd(window, now, anchor)
+
+		if limits.Requests != nil && *limits.Requests > 0 && counter.Requests > *limits.Requests {
+			return &ExceededError{
+				Window: window, Dimension: "requests",
+				Used: float64(counter.Requests), Limit: float64(*limits.Requests), ResetsAt: resets,
+			}
+		}
+		// The counter now includes this turn's worst case, so the
+		// comparison is "would finishing this put you over" rather than
+		// "were you already over" — which is the question that has an
+		// answer while ten turns are in flight at once.
+		if limits.Tokens != nil && *limits.Tokens > 0 && counter.Tokens > *limits.Tokens {
+			return &ExceededError{
+				Window: window, Dimension: "tokens",
+				Used: float64(counter.Tokens), Limit: float64(*limits.Tokens), ResetsAt: resets,
+			}
+		}
+		if limits.Credits != nil && *limits.Credits > 0 && counter.Credits > *limits.Credits {
+			return &ExceededError{
+				Window: window, Dimension: "credits",
+				Used: counter.Credits, Limit: *limits.Credits, ResetsAt: resets,
+			}
+		}
+	}
+	return nil
 }
 
 // Reservation is what Reserve charged, and the moment it charged it.

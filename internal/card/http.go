@@ -170,6 +170,8 @@ func translate(err error) error {
 		return httpx.BadRequest("Leave the code empty when generating more than one.")
 	case errors.Is(err, ErrInvalidCount):
 		return httpx.BadRequest("At least one card is required.")
+	case errors.Is(err, ErrInvalidExpiry):
+		return httpx.BadRequest("Choose a card expiry in the future, within ten years.")
 	}
 	return httpx.Internal(err)
 }

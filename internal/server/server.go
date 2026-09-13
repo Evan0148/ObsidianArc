@@ -109,6 +109,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	requestLog := reqlog.NewStore(db)
 	securityLog := securityevents.NewStore(db)
 	keys := apikey.NewStore(db)
+	cards := card.NewStore(db)
 	quotaService := quota.NewService(db, quota.NewStore(db), settingsService)
 	chatService := chat.NewService(db, conversations, models, registry, settingsService)
 
@@ -141,7 +142,26 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		// reservation carries the moment it was charged and is given back
 		// there rather than wherever the answer happened to finish.
 		tokens, credits := chosen.WorstCase()
-		reserved, err := quotaService.Reserve(ctx, account, quota.Estimate{Tokens: tokens, Credits: credits})
+		estimate := quota.Estimate{Tokens: tokens, Credits: credits}
+		autoReset, err := preferences.Bool(ctx, account.ID, user.AutoUseResetCard)
+		if err != nil {
+			freeSlot()
+			return nil, err
+		}
+
+		var reserved quota.Reservation
+		if autoReset {
+			reserved, err = quotaService.ReserveWithAutoReset(ctx, account, estimate,
+				func(ctx context.Context, q database.Queryer) (bool, error) {
+					err := cards.SpendNext(ctx, q, account.ID)
+					if errors.Is(err, card.ErrNotFound) {
+						return false, nil
+					}
+					return err == nil, err
+				})
+		} else {
+			reserved, err = quotaService.Reserve(ctx, account, estimate)
+		}
 		if err != nil {
 			freeSlot()
 			if translated := quota.TranslateError(err); translated != nil {
@@ -467,7 +487,6 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	quota.NewHandlers(quotaService).Routes(mux)
 	usage.NewHandlers(usageStore).Routes(mux)
 
-	cards := card.NewStore(db)
 	cardHandlers := card.NewHandlers(cards)
 	// What spending a card actually buys. The card package does not know the
 	// counters exist; this is the one line that connects the two.

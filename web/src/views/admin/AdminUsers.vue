@@ -118,7 +118,17 @@ const transcriptTitle = ref('');
 const apiRestrictionTouched = ref(false);
 
 const grantCount = ref<number | null>(1);
+const grantExpiresAt = ref(defaultGrantExpiry());
 const grantLabel = ref('');
+
+function dateTimeLocal(at: number): string {
+  const date = new Date(at);
+  return new Date(at - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+function defaultGrantExpiry(): string {
+  return dateTimeLocal(Date.now() + 30 * 24 * 3_600_000);
+}
 
 const form = ref({
   nickname: '', email: '', qq: '', bio: '', avatar: '',
@@ -196,6 +206,7 @@ async function open(id: string): Promise<void> {
   keys.value = null;
   grantLabel.value = '';
   grantCount.value = 1;
+  grantExpiresAt.value = defaultGrantExpiry();
 
   let detail;
   try {
@@ -326,8 +337,13 @@ function grant(): void {
   const row = account.value;
   if (!row) return;
   const count = grantCount.value ?? 1;
+  const expiresAt = new Date(grantExpiresAt.value).getTime();
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    panelError.value = t('grantCardExpiryInvalid');
+    return;
+  }
   grantLabel.value = '…';
-  void adminApi.grantCards(row.id, { cards: count, card_days: 30 })
+  void adminApi.grantCards(row.id, { cards: count, expires_at: expiresAt })
     .then(() => { grantLabel.value = t('granted', { count }); })
     .catch((failure: unknown) => {
       grantLabel.value = '';
@@ -552,6 +568,13 @@ const state = { q: '', role: '', status: '', group: '' };
         :label="t('grantCards')"
         :min="1"
         :hint="t('grantCardsHint')"
+      />
+      <OaTextField
+        v-model="grantExpiresAt"
+        :label="t('grantCardExpiry')"
+        :hint="t('grantCardExpiryHint')"
+        type="datetime-local"
+        required
       />
       <button type="button" class="oa-btn" :disabled="!!grantLabel" @click="grant">
         {{ grantLabel || t('grantCards') }}

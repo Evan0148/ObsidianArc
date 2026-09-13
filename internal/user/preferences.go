@@ -18,8 +18,9 @@ import (
 // should not mean a migration, and none of it is ever queried or joined on.
 // The `users` row, which is read on every authenticated request, stays small.
 //
-// The server does not interpret most of these. It stores what the client
-// sends, bounded in size and shape, and hands it back.
+// The server does not interpret most of these. The one behavioural preference
+// is named below; everything else is stored bounded in size and shape and
+// handed back to the client.
 type Preferences struct {
 	Theme            string          `json:"theme,omitempty"`
 	Accent           string          `json:"accent,omitempty"`
@@ -31,7 +32,10 @@ type Preferences struct {
 	Language         string          `json:"language,omitempty"`
 	SendOnEnter      *bool           `json:"send_on_enter,omitempty"`
 	RailCollapsed    *bool           `json:"rail_collapsed,omitempty"`
+	AutoUseResetCard *bool           `json:"auto_use_reset_card,omitempty"`
 }
+
+const AutoUseResetCard = "auto_use_reset_card"
 
 // MaxPreferencesBytes bounds the document. Generous enough for an inline
 // wallpaper thumbnail, small enough that it cannot be used as free storage.
@@ -56,6 +60,29 @@ func (p *PreferenceStore) Get(ctx context.Context, userID string) (json.RawMessa
 		return json.RawMessage(`{}`), nil
 	}
 	return json.RawMessage(raw), nil
+}
+
+// Bool reads the small set of preferences that affect server behaviour.
+// Unknown or malformed values stay off, matching a new account rather than
+// allowing arbitrary JSON to change whether something is spent.
+func (p *PreferenceStore) Bool(ctx context.Context, userID, key string) (bool, error) {
+	raw, err := p.Get(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	current := map[string]json.RawMessage{}
+	if err := json.Unmarshal(raw, &current); err != nil {
+		return false, nil
+	}
+	value, ok := current[key]
+	if !ok {
+		return false, nil
+	}
+	var enabled bool
+	if err := json.Unmarshal(value, &enabled); err != nil {
+		return false, nil
+	}
+	return enabled, nil
 }
 
 // Merge applies a partial update, so a client that changes the theme does not

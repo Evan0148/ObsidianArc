@@ -131,6 +131,91 @@ func TestReserveStopsAtTheRequestLimit(t *testing.T) {
 	}
 }
 
+// A burst that all observed the old exhausted allowance spends one card,
+// then rechecks the reset counters under the account lock. Without that
+// recheck, each waiting request would consume another card for the same reset.
+func TestConcurrentAutomaticResetSpendsOneCard(t *testing.T) {
+	service, db := newService(t)
+	ctx := context.Background()
+	const userID = "auto-reset-user"
+	if _, err := db.Exec(ctx,
+		`INSERT INTO users (id, username, username_lower, password_hash, role, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		userID, userID, userID, "x", user.RoleUser, user.StatusActive, 1, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Policies().Save(ctx, Policy{
+		Scope:   ScopeGlobal,
+		Windows: map[Window]Limits{Window5H: limits(true, ptrInt(10), nil, nil)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	person := account(userID, "")
+	for range 10 {
+		if _, err := service.Reserve(ctx, person, Estimate{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var (
+		wait    sync.WaitGroup
+		mu      sync.Mutex
+		spent   int
+		allowed int
+	)
+	for range 5 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			_, err := service.ReserveWithAutoReset(ctx, person, Estimate{},
+				func(context.Context, database.Queryer) (bool, error) {
+					mu.Lock()
+					spent++
+					mu.Unlock()
+					return true, nil
+				})
+			if err == nil {
+				mu.Lock()
+				allowed++
+				mu.Unlock()
+			}
+		}()
+	}
+	wait.Wait()
+
+	if allowed != 5 {
+		t.Errorf("allowed %d requests, want 5", allowed)
+	}
+	if spent != 1 {
+		t.Errorf("spent %d cards for one exhausted allowance, want 1", spent)
+	}
+}
+
+func TestAutomaticResetDoesNotSpendForMinuteRateLimit(t *testing.T) {
+	service, _ := newService(t)
+	ctx := context.Background()
+	if _, err := service.Policies().Save(ctx, Policy{Scope: ScopeGlobal, RPM: ptrInt(1)}); err != nil {
+		t.Fatal(err)
+	}
+	person := account("rate-limited", "")
+	if _, err := service.Reserve(ctx, person, Estimate{}); err != nil {
+		t.Fatal(err)
+	}
+	spent := 0
+	_, err := service.ReserveWithAutoReset(ctx, person, Estimate{},
+		func(context.Context, database.Queryer) (bool, error) {
+			spent++
+			return true, nil
+		})
+	exceeded, ok := AsExceeded(err)
+	if !ok || exceeded.Window != WindowRPM {
+		t.Fatalf("rate limit gave %v", err)
+	}
+	if spent != 0 {
+		t.Errorf("spent %d cards on a minute rate limit", spent)
+	}
+}
+
 // One account's usage must not count against another's.
 func TestLimitsAreScopedToTheAccount(t *testing.T) {
 	service, _ := newService(t)

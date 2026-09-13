@@ -38,17 +38,18 @@ const (
 )
 
 var (
-	ErrNotFound     = errors.New("card: not found")
-	ErrUsed         = errors.New("card: already used")
-	ErrExpired      = errors.New("card: expired")
-	ErrCodeUnknown  = errors.New("card: no such code")
-	ErrCodeExpired  = errors.New("card: that code has expired")
-	ErrCodeEmpty    = errors.New("card: that code has been fully redeemed")
-	ErrCodeUsed     = errors.New("card: this account has already redeemed that code")
-	ErrCodeTaken    = errors.New("card: that code already exists")
-	ErrInvalidCode  = errors.New("card: a code is required")
-	ErrInvalidCount = errors.New("card: at least one card is required")
-	ErrNamedBatch   = errors.New("card: a batch is generated, so it cannot be given a code of its own")
+	ErrNotFound      = errors.New("card: not found")
+	ErrUsed          = errors.New("card: already used")
+	ErrExpired       = errors.New("card: expired")
+	ErrCodeUnknown   = errors.New("card: no such code")
+	ErrCodeExpired   = errors.New("card: that code has expired")
+	ErrCodeEmpty     = errors.New("card: that code has been fully redeemed")
+	ErrCodeUsed      = errors.New("card: this account has already redeemed that code")
+	ErrCodeTaken     = errors.New("card: that code already exists")
+	ErrInvalidCode   = errors.New("card: a code is required")
+	ErrInvalidCount  = errors.New("card: at least one card is required")
+	ErrInvalidExpiry = errors.New("card: expiry must be in the future")
+	ErrNamedBatch    = errors.New("card: a batch is generated, so it cannot be given a code of its own")
 )
 
 // Card is one reset, as its owner sees it.
@@ -189,16 +190,52 @@ func (s *Store) Spend(ctx context.Context, userID, cardID string) error {
 	return ErrExpired
 }
 
+// SpendNext marks the available card that expires first. The conditional
+// update is the ownership check and the spend in one statement, so two
+// servers cannot both consume the same card while handling one account.
+func (s *Store) SpendNext(ctx context.Context, q database.Queryer, userID string) error {
+	if q == nil {
+		q = s.db
+	}
+	now := time.Now().UnixMilli()
+	result, err := q.Exec(ctx,
+		`UPDATE usage_cards SET used_at = ?
+		 WHERE id = (
+		   SELECT id FROM usage_cards
+		   WHERE user_id = ? AND used_at = ? AND expires_at > ?
+		   ORDER BY expires_at, id LIMIT 1
+		 ) AND user_id = ? AND used_at = ? AND expires_at > ?`,
+		now, userID, 0, now, userID, 0, now)
+	if err != nil {
+		return fmt.Errorf("card: spend next: %w", err)
+	}
+	if affected, _ := result.RowsAffected(); affected != 1 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // Grant hands cards to one account without a code in between.
 func (s *Store) Grant(ctx context.Context, userID string, count, days int) ([]Card, error) {
+	now := time.Now()
+	return s.grant(ctx, userID, count, now.Add(time.Duration(clampDays(days))*24*time.Hour).UnixMilli(), now.UnixMilli())
+}
+
+// GrantUntil is the administrative spelling: the operator chose the expiry
+// itself rather than a duration whose exact resulting date was implicit.
+func (s *Store) GrantUntil(ctx context.Context, userID string, count int, expiresAt int64) ([]Card, error) {
+	now := time.Now().UnixMilli()
+	if expiresAt <= now || expiresAt > now+int64(MaxDays)*24*3600*1000 {
+		return nil, ErrInvalidExpiry
+	}
+	return s.grant(ctx, userID, count, expiresAt, now)
+}
+
+func (s *Store) grant(ctx context.Context, userID string, count int, expires, now int64) ([]Card, error) {
 	if count < 1 {
 		return nil, ErrInvalidCount
 	}
 	count = min(count, MaxCards)
-	days = clampDays(days)
-
-	now := time.Now().UnixMilli()
-	expires := now + int64(days)*24*3600*1000
 
 	out := make([]Card, 0, count)
 	err := s.db.Tx(ctx, func(tx *database.Tx) error {
