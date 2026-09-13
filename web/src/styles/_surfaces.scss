@@ -1545,6 +1545,9 @@
 .oa-settings-panel input[type='email'],
 .oa-settings-panel input[type='password'],
 .oa-settings-panel input[type='number'],
+/* Native date controls do not inherit the text-input selector, although the
+   administrator grant form uses one as the same kind of field. */
+.oa-settings-panel input[type='datetime-local'],
 .oa-settings-panel textarea {
   box-sizing: border-box;
   width: 100%;
@@ -1556,6 +1559,20 @@
   font: inherit;
   font-size: 12.5px;
   transition: background-color 0.15s ease;
+}
+
+.oa-settings-panel input[type='datetime-local'] {
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .oa-settings-panel input[type='datetime-local'] {
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] .oa-settings-panel input[type='datetime-local'] {
+  color-scheme: dark;
 }
 
 .oa-settings-panel .oa-select {

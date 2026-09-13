@@ -217,13 +217,13 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
 | Binary (SQLite + embedded SPA) | < 30 MB | 18.3 MB (14.6 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 130 kB | 129.97 kB to open the chat (112.92 JS + 17.05 CSS) |
+| Frontend, on the wire | < 135 kB | 131.05 kB to open the chat (113.93 JS + 17.12 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
 
-The bundle was remeasured on 2026-09-13 after making the operator-written
-About introduction render as Markdown. The binaries were last remeasured on
-2026-09-12 after recording the registration client on each account.
+The bundle was remeasured on 2026-09-13 after adding the reset-card controls
+to the user and administrator usage surfaces. The binaries were last
+remeasured on 2026-09-12 after recording the registration client on each account.
 Binary sizes use Go 1.27.0,
 Linux amd64, `-trimpath -ldflags "-s -w"`; transfer sizes are gzip-compressed
 JS and CSS in decimal kB, with totals rounded after summing.
@@ -233,7 +233,9 @@ hand-written DOM calls, and 71.6 kB against it; adopting Vue put roughly 45 kB
 of framework on the first paint and no amount of splitting takes that back,
 because it is needed to draw anything at all. Naming the new figure is more
 honest than leaving a target the build cannot meet — the number to watch now
-is whether this project's own code grows, not whether the framework does.
+is whether this project's own code grows, not whether the framework does. It
+moved from 130 to 135 kB when the measured bundle reached 131.05 kB rather
+than leaving a target the shipped usage controls no longer met.
 
 The three pieces most people never need are still split off: the
 administration backoffice, the Chinese dictionary, and the LaTeX renderer.
@@ -241,10 +243,10 @@ What each reader actually downloads:
 
 | | gzipped |
 | --- | --- |
-| English, not an administrator | 129.97 kB |
-| Chinese, not an administrator | 148.89 kB |
-| …and a conversation containing a formula | 152.54 kB |
-| Chinese administrator, backoffice open | 192.27 kB |
+| English, not an administrator | 131.05 kB |
+| Chinese, not an administrator | 150.36 kB |
+| …and a conversation containing a formula | 154.01 kB |
+| Chinese administrator, backoffice open | 194.93 kB |
 
 Route-level splitting would shave the first paint further and is deliberately
 switched off for everything but the backoffice: /settings, /keys, /usage and

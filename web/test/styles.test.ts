@@ -70,4 +70,13 @@ describe('stylesheet invariants', () => {
     expect(rule![1]).not.toMatch(/--ai-danger/);
     expect(rule![1]).toMatch(/#10b981/);
   });
+
+  it('styles the administrator card expiry like every other field', () => {
+    const rule = rules(builtCss()).find(([selector]) =>
+      selector.includes(".oa-settings-panel input[type=datetime-local]"));
+
+    expect(rule, 'the datetime field was left as a native browser box').toBeTruthy();
+    expect(rule![1]).toMatch(/background-color:var\(--ai-field-bg\)/);
+    expect(rule![1]).toMatch(/border-radius:11px/);
+  });
 });
