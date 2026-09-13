@@ -1106,6 +1106,7 @@ const en = {
   chartBar: 'Bars',
   chartPie: 'A pie',
   chartOther: 'Everything else',
+  chartNow: 'Now',
   secTopUsers: 'Busiest accounts',
 
   // --- the model control

@@ -240,7 +240,7 @@ const activeInfo = computed(() => {
         -12h
       </text>
       <text :x="width - padR" :y="height - 4" text-anchor="end" class="oa-linechart-label">
-        Now
+        {{ t('chartNow') }}
       </text>
     </svg>
   </div>

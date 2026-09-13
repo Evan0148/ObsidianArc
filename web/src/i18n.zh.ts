@@ -1084,6 +1084,7 @@ export const zh: Record<StringKey, string> = {
   chartBar: '柱形图',
   chartPie: '饼图',
   chartOther: '其余全部',
+  chartNow: '现在',
   secTopUsers: '用量最多的账户',
 
   // --- the model control
