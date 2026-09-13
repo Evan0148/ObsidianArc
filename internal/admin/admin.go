@@ -161,6 +161,7 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /api/admin/usage/reset", protected(h.resetQuota))
 	mux.Handle("GET /api/admin/codes", protected(h.listCodes))
 	mux.Handle("POST /api/admin/codes", protected(h.createCode))
+	mux.Handle("GET /api/admin/codes/{id}/redemptions", protected(h.codeRedemptions))
 	mux.Handle("DELETE /api/admin/codes/{id}", protected(h.deleteCode))
 	mux.Handle("POST /api/admin/users/{id}/cards", protected(h.grantCards))
 

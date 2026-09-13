@@ -71,6 +71,16 @@ type Code struct {
 	CreatedAt int64  `json:"created_at"`
 }
 
+// Redemption identifies who claimed one card from a code and when. It is an
+// administrative view; the account-facing card API never exposes another
+// user's identity.
+type Redemption struct {
+	UserID     string `json:"user_id"`
+	Username   string `json:"username"`
+	Nickname   string `json:"nickname"`
+	RedeemedAt int64  `json:"redeemed_at"`
+}
+
 type Store struct{ db *database.DB }
 
 func NewStore(db *database.DB) *Store { return &Store{db: db} }
@@ -331,6 +341,35 @@ func (s *Store) ListCodes(ctx context.Context) ([]Code, error) {
 		out = append(out, record)
 	}
 	return out, rows.Err()
+}
+
+// CodeRedemptions lists the current accounts that claimed a code, newest
+// first. Deleted accounts are absent because account deletion deliberately
+// cascades their redemption record along with the rest of their data.
+func (s *Store) CodeRedemptions(ctx context.Context, codeID string) ([]Redemption, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT r.user_id, u.username, u.nickname, r.created_at
+		FROM redemptions r
+		JOIN users u ON u.id = r.user_id
+		WHERE r.code_id = ?
+		ORDER BY r.created_at DESC`, codeID)
+	if err != nil {
+		return nil, fmt.Errorf("card: list code redemptions: %w", err)
+	}
+	defer rows.Close()
+
+	out := []Redemption{}
+	for rows.Next() {
+		var record Redemption
+		if err := rows.Scan(&record.UserID, &record.Username, &record.Nickname, &record.RedeemedAt); err != nil {
+			return nil, fmt.Errorf("card: scan code redemption: %w", err)
+		}
+		out = append(out, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("card: list code redemptions: %w", err)
+	}
+	return out, nil
 }
 
 func (s *Store) DeleteCode(ctx context.Context, codeID string) error {

@@ -1,17 +1,18 @@
 <script setup lang="ts">
 // Redemption codes: a batch of usage resets behind a string somebody types.
 //
-// The cards themselves are not listed here. A code is the thing an operator
-// creates and hands out; where its cards ended up is a question about
-// accounts, and it is answered in the account panel.
+// A code is the thing an operator creates and hands out. Its detail panel
+// names the accounts that redeemed it; the account panel answers the inverse
+// question, which cards one person still holds.
 
 import { computed, onMounted, ref } from 'vue';
-import { adminApi, type RedemptionCode } from '@/admin/api';
+import { adminApi, type CodeRedemption, type RedemptionCode } from '@/admin/api';
 import { ApiError } from '@/api/client';
 import { copyToClipboard } from '@/chat/markdown';
 import OaBadge from '@/components/OaBadge.vue';
 import OaBadgeRow from '@/components/OaBadgeRow.vue';
 import OaCellStack from '@/components/OaCellStack.vue';
+import OaFormSection from '@/components/OaFormSection.vue';
 import OaNumberField from '@/components/OaNumberField.vue';
 import OaPanel from '@/components/OaPanel.vue';
 import OaTable from '@/components/OaTable.vue';
@@ -39,6 +40,9 @@ const busy = ref(false);
 const panelError = ref('');
 const minted = ref<RedemptionCode[] | null>(null);
 const copyLabel = ref('');
+const redemptions = ref<CodeRedemption[]>([]);
+const redemptionsLoading = ref(false);
+const redemptionsError = ref('');
 
 const form = ref({
   count: 1 as number | null,
@@ -72,8 +76,25 @@ function open(row: RedemptionCode | null): void {
   minted.value = null;
   panelError.value = '';
   copyLabel.value = '';
+  redemptions.value = [];
+  redemptionsError.value = '';
+  redemptionsLoading.value = row !== null;
   form.value = { count: 1, code: '', cards: 10, cardDays: 30, expiresDays: null };
   panelOpen.value = true;
+  if (row) void loadRedemptions(row.id);
+}
+
+async function loadRedemptions(codeID: string): Promise<void> {
+  try {
+    const result = await adminApi.codeRedemptions(codeID);
+    if (existing.value?.id === codeID) redemptions.value = result.redemptions ?? [];
+  } catch (failure) {
+    if (existing.value?.id === codeID) {
+      redemptionsError.value = failure instanceof ApiError ? failure.message : String(failure);
+    }
+  } finally {
+    if (existing.value?.id === codeID) redemptionsLoading.value = false;
+  }
 }
 
 async function create(): Promise<void> {
@@ -192,9 +213,24 @@ onMounted(load);
       </div>
     </template>
 
-    <p v-else-if="!creating" class="oa-field-hint">
-      {{ t('codeClaimedSoFar', { claimed: existing!.claimed, cards: existing!.cards }) }}
-    </p>
+    <template v-else-if="!creating">
+      <p class="oa-field-hint">
+        {{ t('codeClaimedSoFar', { claimed: existing!.claimed, cards: existing!.cards }) }}
+      </p>
+      <OaFormSection :title="t('codeRedeemedBy')" />
+      <p v-if="redemptionsLoading" class="oa-field-hint">{{ t('loading') }}</p>
+      <p v-else-if="redemptionsError" class="oa-field-hint">{{ redemptionsError }}</p>
+      <p v-else-if="!redemptions.length" class="oa-field-hint">{{ t('codeNoRedemptions') }}</p>
+      <div v-else class="oa-card-list">
+        <div v-for="redemption in redemptions" :key="redemption.user_id" class="oa-card-row">
+          <OaCellStack
+            :title="redemption.nickname || redemption.username"
+            :sub="`@${redemption.username}`"
+          />
+          <span class="oa-card-expiry">{{ relativeTime(redemption.redeemed_at) }}</span>
+        </div>
+      </div>
+    </template>
 
     <template v-else>
       <OaNumberField

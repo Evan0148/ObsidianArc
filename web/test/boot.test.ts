@@ -66,6 +66,7 @@ const EMPTY_BODIES: Array<[RegExp, unknown]> = [
     by_model: [], by_provider: [], by_user: [], series: [], bucket_ms: 3600000,
   }],
   [/\/api\/admin\/quota\/policies/, { policies: [] }],
+  [/\/api\/admin\/codes\/[^/]+\/redemptions/, { redemptions: [] }],
   [/\/api\/admin\/codes/, { codes: [] }],
   [/\/api\/admin\/announcements/, { announcements: [] }],
   [/\/api\/admin\/logs\/facets/, {
@@ -97,6 +98,15 @@ const EMPTY_BODIES: Array<[RegExp, unknown]> = [
     },
     top_models: [], top_users: [], series: [], bucket_ms: 3600000, recent: [],
   }],
+  [/\/api\/usage\/me\/history/, {
+    totals: {
+      requests: 0, input_tokens: 0, output_tokens: 0, reasoning_tokens: 0,
+      total_tokens: 0, credits: 0, errors: 0,
+    },
+    turns: [],
+  }],
+  [/\/api\/usage\/cards/, { cards: [] }],
+  [/\/api\/usage\/me$/, { unlimited: true, windows: [] }],
   [/\/api\/models/, { models: [] }],
   [/\/api\/uptime/, {
     uptime_sec: 10,
@@ -179,6 +189,7 @@ beforeEach(() => {
 
 afterEach(() => {
   site.value = null;
+  delete window.turnstile;
   app?.unmount();
   app = null;
   host.remove();
@@ -499,6 +510,37 @@ describe('what moves, and what does not', () => {
     await nextTick();
     const closedAccordions = host.querySelectorAll('.oa-uptime-accordion.open');
     expect(closedAccordions.length).toBe(0);
+  });
+
+  it('opens a challenge before sending a redemption code when the operator requires it', async () => {
+    window.turnstile = {
+      render: vi.fn(() => 'redeem-widget'),
+      reset: vi.fn(),
+      remove: vi.fn(),
+    };
+    site.value = {
+      ...siteInfo.value,
+      turnstile_site_key: 'test-site-key',
+      turnstile_on_redeem: true,
+    };
+    adopt(ACCOUNT);
+    await mountAt('/usage');
+
+    host.querySelector<HTMLButtonElement>('.oa-card-head button')!.click();
+    await nextTick();
+    const input = host.querySelector<HTMLInputElement>('.oa-redeem-row input')!;
+    input.value = 'HUMAN';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    host.querySelector<HTMLButtonElement>('.oa-redeem-row button')!.click();
+    await nextTick();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    expect(document.querySelector('.oa-modal-overlay')).not.toBeNull();
+    expect(document.querySelector('.oa-modal-card .oa-auth-title')?.textContent)
+      .toBe(t('redeemChallengeTitle'));
+    const sent = vi.mocked(fetch).mock.calls.some(([request, options]) =>
+      String(request).includes('/api/usage/redeem') && options?.method === 'POST');
+    expect(sent).toBe(false);
   });
 
   it('mounts the admin availability section when navigated to', async () => {

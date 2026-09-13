@@ -53,6 +53,18 @@ func (h *Handlers) createCode(w http.ResponseWriter, r *http.Request) error {
 	return httpx.WriteJSON(w, http.StatusCreated, map[string]any{"codes": codes})
 }
 
+func (h *Handlers) codeRedemptions(w http.ResponseWriter, r *http.Request) error {
+	codeID, err := pathID(r, "id")
+	if err != nil {
+		return err
+	}
+	redemptions, err := h.cards.CodeRedemptions(r.Context(), codeID)
+	if err != nil {
+		return httpx.Internal(err)
+	}
+	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"redemptions": redemptions})
+}
+
 func (h *Handlers) deleteCode(w http.ResponseWriter, r *http.Request) error {
 	codeID, err := pathID(r, "id")
 	if err != nil {

@@ -9,6 +9,7 @@
 
 import { computed, onMounted, ref } from 'vue';
 import { adminApi, type AdminModel, type Group, type SecurityEvent } from '@/admin/api';
+import { fetchSite } from '@/api/auth';
 import { ApiError } from '@/api/client';
 import OaBadge from '@/components/OaBadge.vue';
 import OaFormSection from '@/components/OaFormSection.vue';
@@ -19,6 +20,7 @@ import OaTextArea from '@/components/OaTextArea.vue';
 import OaTextField from '@/components/OaTextField.vue';
 import { t } from '@/composables/useI18n';
 import { absoluteTime } from '@/lib/format';
+import { site } from '@/stores/session';
 import AdminFailure from './AdminFailure.vue';
 import { useAdminView } from './adminView';
 
@@ -54,6 +56,7 @@ const form = ref({
   turnstileOnLogin: false,
   turnstileOnSignup: false,
   turnstileOnAPIKey: false,
+  turnstileOnRedeem: false,
   chatChallengeRequests: 0 as number | null,
   chatChallengeWindowSecs: 60 as number | null,
   chatChallengeClearMins: 30 as number | null,
@@ -93,6 +96,7 @@ function collect(): Record<string, string> {
     'turnstile.on_login': String(form.value.turnstileOnLogin),
     'turnstile.on_signup': String(form.value.turnstileOnSignup),
     'turnstile.on_api_key': String(form.value.turnstileOnAPIKey),
+    'turnstile.on_redeem': String(form.value.turnstileOnRedeem),
     'security.chat_challenge_requests': String(form.value.chatChallengeRequests ?? 0),
     'security.chat_challenge_window_seconds': String(form.value.chatChallengeWindowSecs ?? 60),
     'security.chat_challenge_clear_minutes': String(form.value.chatChallengeClearMins ?? 30),
@@ -110,6 +114,12 @@ async function save(): Promise<void> {
   flash.value = '';
   try {
     await adminApi.saveSettings(collect());
+    try {
+      site.value = await fetchSite();
+    } catch {
+      // The setting is already saved. A failed public-settings refresh should
+      // not report that write as failed; the next page load will fetch it.
+    }
     saveLabel.value = t('saved');
     window.setTimeout(() => { saveLabel.value = ''; }, 1500);
   } catch (failure) {
@@ -215,6 +225,7 @@ async function load(): Promise<void> {
       turnstileOnLogin: values['turnstile.on_login'] === 'true',
       turnstileOnSignup: values['turnstile.on_signup'] === 'true',
       turnstileOnAPIKey: values['turnstile.on_api_key'] === 'true',
+      turnstileOnRedeem: values['turnstile.on_redeem'] === 'true',
       chatChallengeRequests: Number(values['security.chat_challenge_requests'] ?? 0),
       chatChallengeWindowSecs: Number(values['security.chat_challenge_window_seconds'] ?? 60),
       chatChallengeClearMins: Number(values['security.chat_challenge_clear_minutes'] ?? 30),
@@ -334,6 +345,11 @@ onMounted(load);
       v-model="form.turnstileOnAPIKey"
       :label="t('turnstileOnAPIKey')"
       :hint="t('turnstileOnAPIKeyHint')"
+    />
+    <OaSwitchField
+      v-model="form.turnstileOnRedeem"
+      :label="t('turnstileOnRedeem')"
+      :hint="t('turnstileOnRedeemHint')"
     />
     <OaNumberField
       v-model="form.chatChallengeRequests"

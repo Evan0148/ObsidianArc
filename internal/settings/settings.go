@@ -56,6 +56,7 @@ const (
 	TurnstileOnLogin   = "turnstile.on_login"
 	TurnstileOnSignup  = "turnstile.on_signup"
 	TurnstileOnAPIKey  = "turnstile.on_api_key"
+	TurnstileOnRedeem  = "turnstile.on_redeem"
 
 	// Asking a model whether a sign-up looks like a person. The prompt is not
 	// a setting: one that could be edited could be turned into "refuse
@@ -219,6 +220,7 @@ var Defaults = map[string]string{
 	TurnstileOnLogin:  "false",
 	TurnstileOnSignup: "false",
 	TurnstileOnAPIKey: "false",
+	TurnstileOnRedeem: "false",
 	SignupReview:      "false",
 	SignupReviewModel: "",
 	// Loose, normal or strict. Normal refuses what reads as generated and

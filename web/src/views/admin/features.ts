@@ -399,8 +399,8 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     id: 'secTurnstile',
     pageSlug: 'security',
     titleKey: 'secTurnstile',
-    searchKeys: ['turnstileSiteKey', 'turnstileSecretKey', 'turnstileOnLogin', 'turnstileOnSignup', 'turnstileOnAPIKey', 'chatChallengeRequests', 'chatChallengeWindow', 'chatChallengeClearance'],
-    keywords: ['人机验证', 'Cloudflare Turnstile', '验证码', '防刷', '登录验证', '注册验证', 'API Key验证', '对话防刷挑战', 'turnstile', 'captcha', 'bot challenge', 'anti-spam'],
+    searchKeys: ['turnstileSiteKey', 'turnstileSecretKey', 'turnstileOnLogin', 'turnstileOnSignup', 'turnstileOnAPIKey', 'turnstileOnRedeem', 'chatChallengeRequests', 'chatChallengeWindow', 'chatChallengeClearance'],
+    keywords: ['人机验证', 'Cloudflare Turnstile', '验证码', '防刷', '登录验证', '注册验证', 'API Key验证', '兑换码验证', '对话防刷挑战', 'turnstile', 'captcha', 'bot challenge', 'anti-spam'],
   },
   {
     id: 'secSignupReview',

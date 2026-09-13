@@ -58,6 +58,13 @@ export interface RedemptionCode {
   created_at: number;
 }
 
+export interface CodeRedemption {
+  user_id: string;
+  username: string;
+  nickname: string;
+  redeemed_at: number;
+}
+
 export interface GroupModelGrant {
   model_id: string;
   access: 'use' | 'view';
@@ -445,6 +452,8 @@ export const adminApi = {
   codes: () => api.get<{ codes: RedemptionCode[] }>('/api/admin/codes'),
   createCode: (body: Record<string, unknown>) =>
     api.post<{ codes: RedemptionCode[] }>('/api/admin/codes', body),
+  codeRedemptions: (id: string) =>
+    api.get<{ redemptions: CodeRedemption[] }>(`/api/admin/codes/${encodeURIComponent(id)}/redemptions`),
   deleteCode: (id: string) => api.delete<void>(`/api/admin/codes/${id}`),
   grantCards: (userID: string, body: { cards: number; card_days: number }) =>
     api.post<void>(`/api/admin/users/${userID}/cards`, body),

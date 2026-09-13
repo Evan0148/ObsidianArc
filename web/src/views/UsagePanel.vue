@@ -13,16 +13,19 @@ import { ApiError, api } from '@/api/client';
 import { fetchUsage, type UsageSummary } from '@/api/usage';
 import OaFormSection from '@/components/OaFormSection.vue';
 import OaIconButton from '@/components/OaIconButton.vue';
+import OaOverlay from '@/components/OaOverlay.vue';
 import OaPanel from '@/components/OaPanel.vue';
 import OaStatGrid from '@/components/OaStatGrid.vue';
 import OaTable from '@/components/OaTable.vue';
+import OaTurnstile from '@/components/OaTurnstile.vue';
 import OaUsageWindow from '@/components/OaUsageWindow.vue';
 import type { Column } from '@/components/table-types';
 import type { Stat } from '@/components/stat';
 import { celebrate } from '@/composables/useConfetti';
 import { t } from '@/composables/useI18n';
-import { IconPlus } from '@/icons';
+import { IconClose, IconLock, IconPlus } from '@/icons';
 import { compactNumber, relativeTime } from '@/lib/format';
+import { siteInfo } from '@/stores/session';
 
 interface Totals {
   requests: number;
@@ -71,6 +74,10 @@ const redeemOpen = ref(false);
 const redeemCode = ref('');
 const redeeming = ref(false);
 const redeemInput = ref<HTMLInputElement | null>(null);
+const redeemChallenge = ref(false);
+const redeemChallengeError = ref('');
+const redeemGuard = ref<InstanceType<typeof OaTurnstile> | null>(null);
+const pendingRedeemCode = ref('');
 const spending = ref('');
 
 const enforced = computed(() => summary.value?.windows.filter((window) => window.enforced) ?? []);
@@ -152,21 +159,57 @@ async function loadCards(): Promise<void> {
   }
 }
 
-async function redeem(): Promise<void> {
-  const code = redeemCode.value.trim();
-  if (!code) return;
+async function submitRedemption(code: string, turnstile = ''): Promise<void> {
   redeeming.value = true;
   try {
-    await api.post<{ card: Card }>('/api/usage/redeem', { code });
+    await api.post<{ card: Card }>('/api/usage/redeem', {
+      code,
+      ...(turnstile ? { turnstile } : {}),
+    });
     redeemCode.value = '';
     redeemOpen.value = false;
+    redeemChallenge.value = false;
     cardFlash.value = t('redeemed');
     await loadCards();
   } catch (error) {
-    cardFlash.value = error instanceof ApiError ? error.message : String(error);
+    if (turnstile && error instanceof ApiError &&
+        (error.code === 'challenge_failed' || error.code === 'challenge_unavailable')) {
+      redeemChallengeError.value = error.code === 'challenge_failed'
+        ? t('challengeFailed') : t('challengeUnavailable');
+      redeemGuard.value?.reset();
+    } else {
+      redeemChallenge.value = false;
+      cardFlash.value = error instanceof ApiError ? error.message : String(error);
+    }
   } finally {
     redeeming.value = false;
   }
+}
+
+function redeem(): void {
+  const code = redeemCode.value.trim();
+  if (!code || redeeming.value) return;
+  cardFlash.value = '';
+  if (siteInfo.value.turnstile_on_redeem) {
+    pendingRedeemCode.value = code;
+    redeemChallengeError.value = '';
+    redeemChallenge.value = true;
+    return;
+  }
+  void submitRedemption(code);
+}
+
+async function completeRedeemChallenge(): Promise<void> {
+  const token = redeemGuard.value?.token() ?? '';
+  if (!token || redeeming.value) return;
+  redeemChallengeError.value = '';
+  await submitRedemption(pendingRedeemCode.value, token);
+}
+
+function cancelRedeemChallenge(): void {
+  redeemChallenge.value = false;
+  redeemChallengeError.value = '';
+  pendingRedeemCode.value = '';
 }
 
 async function spend(card: Card): Promise<void> {
@@ -285,4 +328,36 @@ onMounted(() => {
       :muted="(row) => row.status !== 'ok'"
     />
   </OaPanel>
+
+  <OaOverlay
+    v-if="redeemChallenge"
+    v-slot="{ close }"
+    overlay-class="oa-modal-overlay"
+    :dismissible="!redeeming"
+    @close="cancelRedeemChallenge"
+  >
+    <div class="oa-auth-card oa-modal-card">
+      <OaIconButton class="oa-icon-btn oa-modal-close" :label="t('close')" @click="close">
+        <IconClose :size="16" />
+      </OaIconButton>
+
+      <div class="oa-auth-brand">
+        <span class="oa-auth-mark"><IconLock :size="15" /></span>
+        <span>{{ siteInfo.name }}</span>
+      </div>
+      <h1 class="oa-auth-title">{{ t('redeemChallengeTitle') }}</h1>
+      <p class="oa-auth-sub">{{ t('redeemChallengeBody') }}</p>
+
+      <div class="oa-auth-form">
+        <OaTurnstile
+          ref="redeemGuard"
+          :site-key="siteInfo.turnstile_site_key ?? ''"
+          @solved="completeRedeemChallenge"
+        />
+        <p v-if="redeemChallengeError" class="oa-auth-error" role="alert">
+          {{ redeemChallengeError }}
+        </p>
+      </div>
+    </div>
+  </OaOverlay>
 </template>

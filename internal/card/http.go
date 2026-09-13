@@ -8,6 +8,7 @@ import (
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/auth"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/httpx"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/turnstile"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/user"
 )
 
@@ -23,6 +24,9 @@ type Handlers struct {
 	// Resolves who is calling, for the guessing limit below. Optional; nil
 	// keys the limit on the account alone.
 	ClientIP func(*http.Request) string
+	// Checked before a code is looked up, so an automated caller cannot use
+	// the endpoint as an oracle when the operator has asked for proof first.
+	Challenge turnstile.Gate
 	// Its own limiter rather than the sign-in one. The buckets are keyed by
 	// address as well as by account, so sharing the map would let somebody
 	// who mistyped six codes lock themselves out of logging in.
@@ -81,7 +85,8 @@ func (h *Handlers) redeem(w http.ResponseWriter, r *http.Request) error {
 	account := auth.MustUser(r.Context())
 
 	var body struct {
-		Code string `json:"code"`
+		Code      string `json:"code"`
+		Turnstile string `json:"turnstile"`
 	}
 	if err := httpx.DecodeJSON(w, r, &body, 4*1024); err != nil {
 		return err
@@ -95,6 +100,9 @@ func (h *Handlers) redeem(w http.ResponseWriter, r *http.Request) error {
 	ip := ""
 	if h.ClientIP != nil {
 		ip = h.ClientIP(r)
+	}
+	if err := h.Challenge.Check(r.Context(), body.Turnstile, ip); err != nil {
+		return redeemChallengeError(err)
 	}
 	attempt, err := h.guesses.Begin(ip, account.ID)
 	if err != nil {
@@ -124,6 +132,19 @@ func (h *Handlers) redeem(w http.ResponseWriter, r *http.Request) error {
 // TranslateError maps this package's sentinels onto responses. Exported so
 // the administrative half answers the same way about the same failures.
 func TranslateError(err error) error { return translate(err) }
+
+func redeemChallengeError(err error) error {
+	switch {
+	case errors.Is(err, turnstile.ErrFailed):
+		return httpx.ForbiddenCode("challenge_failed",
+			"Complete the verification before redeeming a code.")
+	case errors.Is(err, turnstile.ErrUnavailable):
+		return httpx.UnavailableCode("challenge_unavailable",
+			"Verification is unavailable right now. Try again shortly.")
+	default:
+		return httpx.Internal(err)
+	}
+}
 
 func translate(err error) error {
 	switch {

@@ -198,6 +198,44 @@ func TestOneAccountRedeemsACodeOnce(t *testing.T) {
 	}
 }
 
+// Redemption details are administrative identity data, kept out of the code
+// list's hot path and loaded only when an operator opens one code.
+func TestCodeRedemptionsNameTheAccountsThatClaimedIt(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	alice := f.reader(t, "alice")
+	bob := f.reader(t, "bob")
+
+	code, err := f.store.CreateCode(ctx, CodeInput{Code: "WHO", Cards: 10, CardDays: 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.Redeem(ctx, alice.ID, code.Code); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.Redeem(ctx, bob.ID, code.Code); err != nil {
+		t.Fatal(err)
+	}
+
+	records, err := f.store.CodeRedemptions(ctx, code.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("redemptions = %d, want 2", len(records))
+	}
+	seen := map[string]string{}
+	for _, record := range records {
+		seen[record.UserID] = record.Username
+		if record.RedeemedAt <= 0 {
+			t.Errorf("redemption for %q has no time", record.Username)
+		}
+	}
+	if seen[alice.ID] != "alice" || seen[bob.ID] != "bob" {
+		t.Errorf("redemption identities = %+v", seen)
+	}
+}
+
 // An expired card is not offered and cannot be spent. Both halves matter: the
 // listing is what a reader sees, and the spend is what actually decides.
 func TestAnExpiredCardIsNeitherOfferedNorSpent(t *testing.T) {

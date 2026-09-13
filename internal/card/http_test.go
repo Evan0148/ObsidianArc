@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/auth"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/turnstile"
 )
 
 // A redemption code is a secret somebody types, and an administrator may
@@ -78,5 +79,60 @@ func TestRedeemingTheSameCodeTwiceIsNotTreatedAsGuessing(t *testing.T) {
 		if status := ask(); status == http.StatusTooManyRequests {
 			t.Fatal("repeating a real code was counted as guessing")
 		}
+	}
+}
+
+// The browser dialog is presentation; this is the boundary that makes it a
+// requirement. A caller that skips the dialog must not consume the code, and
+// the token that passes is bound to the same address used by the guess limit.
+func TestRedemptionCanRequireTurnstile(t *testing.T) {
+	f := newFixture(t)
+	handlers := NewHandlers(f.store)
+	reader := f.reader(t, "challenged-reader")
+	ctx := context.Background()
+
+	if _, err := f.store.CreateCodes(ctx, CodeInput{Code: "HUMAN", Cards: 1}, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	const address = "203.0.113.12"
+	verified := 0
+	handlers.ClientIP = func(*http.Request) string { return address }
+	handlers.Challenge = turnstile.Gate{
+		Enabled: func() bool { return true },
+		Verify: func(_ context.Context, token, ip string) error {
+			verified++
+			if ip != address {
+				t.Errorf("challenge IP = %q, want %q", ip, address)
+			}
+			if token != "solved" {
+				return turnstile.ErrFailed
+			}
+			return nil
+		},
+	}
+
+	mux := http.NewServeMux()
+	handlers.Routes(mux)
+	ask := func(token string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/api/usage/redeem",
+			strings.NewReader(`{"code":"HUMAN","turnstile":"`+token+`"}`))
+		request.Header.Set("Content-Type", "application/json")
+		request = request.WithContext(auth.WithUser(ctx, reader))
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, request)
+		return recorder
+	}
+
+	withoutProof := ask("")
+	if withoutProof.Code != http.StatusForbidden ||
+		!strings.Contains(withoutProof.Body.String(), `"code":"challenge_failed"`) {
+		t.Fatalf("redemption without proof = %d %s", withoutProof.Code, withoutProof.Body.String())
+	}
+	if withProof := ask("solved"); withProof.Code != http.StatusCreated {
+		t.Fatalf("redemption with proof = %d %s", withProof.Code, withProof.Body.String())
+	}
+	if verified != 2 {
+		t.Errorf("challenge checks = %d, want 2", verified)
 	}
 }

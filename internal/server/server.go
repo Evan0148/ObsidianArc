@@ -477,6 +477,11 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	// So the limit on guessing at redemption codes counts one host's attempts
 	// together, not just one account's.
 	cardHandlers.ClientIP = func(r *http.Request) string { return httpx.ClientIP(r, proxyTrust) }
+	cardHandlers.Challenge = turnstile.Gate{
+		Client:  challengeClient,
+		Enabled: func() bool { return settingsService.Bool(settings.TurnstileOnRedeem) },
+		Secret:  func() string { return settingsService.Get(settings.TurnstileSecretKey) },
+	}
 	cardHandlers.Routes(mux)
 
 	// Programmatic access. The key store is what an account manages from the
@@ -656,6 +661,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 				(settingsService.Bool(settings.TurnstileOnSignup) ||
 					settingsService.Bool(settings.TurnstileOnLogin) ||
 					settingsService.Bool(settings.TurnstileOnAPIKey) ||
+					settingsService.Bool(settings.TurnstileOnRedeem) ||
 					settingsService.Int(settings.ChatChallengeRequests, 0) > 0)
 		}),
 		httpx.SameOrigin(cfg.AllowedOrigins),
