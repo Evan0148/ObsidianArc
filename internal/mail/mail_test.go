@@ -2,10 +2,12 @@ package mail
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net"
+	"net/textproto"
 	"strings"
 	"testing"
 	"time"
@@ -59,5 +61,43 @@ func TestSendRefusesSMTPWithoutSTARTTLS(t *testing.T) {
 	case <-done:
 	case <-ctx.Done():
 		t.Fatal("SMTP test server did not observe the connection closing")
+	}
+}
+
+// Exactly one layer may stuff a leading dot, and it is not compose: the
+// writer Client.Data returns is a textproto.DotWriter, which does it. compose
+// doing it as well sent ".." for a line beginning with ".", and the
+// recipient's unstuffing removes only one — so the reader got a dot nobody
+// typed. The test walks the body through the same writer the send path uses,
+// because the invariant is about the two together.
+func TestALeadingDotIsStuffedExactlyOnce(t *testing.T) {
+	message := compose("sender@example.com", "reader@example.com", Message{
+		Subject: "Verify",
+		Body:    "first line\r\n.second line\r\n.",
+	})
+	// The body as it goes to the writer: everything after the header block.
+	body := message[strings.Index(message, "\r\n\r\n")+4:]
+
+	var wire bytes.Buffer
+	writer := textproto.NewWriter(bufio.NewWriter(&wire)).DotWriter()
+	if _, err := writer.Write([]byte(body)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sent := wire.String()
+
+	if !strings.Contains(sent, "\r\n..second line\r\n") {
+		t.Errorf("a line beginning with one dot was not stuffed exactly once:\n%q", sent)
+	}
+	if strings.Contains(sent, "\r\n...") {
+		t.Errorf("the leading dot was stuffed twice, so the reader gains a dot:\n%q", sent)
+	}
+	if !strings.Contains(sent, "\r\n..\r\n") {
+		t.Errorf("a body line that is only a dot was not stuffed:\n%q", sent)
+	}
+	if !strings.HasSuffix(sent, "\r\n.\r\n") {
+		t.Errorf("the message does not end with the bare terminator:\n%q", sent)
 	}
 }

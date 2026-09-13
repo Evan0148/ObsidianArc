@@ -181,10 +181,16 @@ func compose(from, to string, message Message) string {
 	out.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
 	out.WriteString("Content-Transfer-Encoding: 8bit\r\n")
 	out.WriteString("\r\n")
-	// Bare newlines are illegal in SMTP data, and a leading dot on a line
-	// ends the message early.
-	body := strings.ReplaceAll(strings.ReplaceAll(message.Body, "\r\n", "\n"), "\n", "\r\n")
-	out.WriteString(strings.ReplaceAll(body, "\r\n.", "\r\n.."))
+	// The body travels as written, and the terminating CRLF is what leaves
+	// the writer at the start of a line for its own ".\r\n" below.
+	//
+	// Neither dot-stuffing nor newline conversion happens here because
+	// Client.Data returns a textproto.DotWriter, which already does both.
+	// Doing the dot here as well sent ".." for a body line that began with
+	// ".", and the recipient's unstuffing takes back only one — so the reader
+	// got a dot nobody typed. The comment that used to sit here described the
+	// reader's job, not this one's.
+	out.WriteString(message.Body)
 	out.WriteString("\r\n")
 	return out.String()
 }
