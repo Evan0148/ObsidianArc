@@ -21,13 +21,9 @@ import (
 )
 
 const (
-	// The whole request body. Generous for a long transcript with a couple of
-	// inline images, short of a request that would be a denial of service by
-	// itself.
+	// Bound request memory by bytes: long agent sessions can carry thousands
+	// of short tool turns without filling the model's context.
 	maxBodyBytes = 12 << 20
-	// Messages in one exchange. A client that has more than this to say is
-	// not having a conversation.
-	maxMessages = 400
 	// Tools in one request. An agent with a few MCP servers attached brings
 	// dozens; one that brings hundreds has a configuration problem, not a
 	// task.
@@ -363,10 +359,6 @@ func (h *Handlers) buildRequest(body completionRequest, resolved model.Resolved)
 	if len(body.Messages) == 0 {
 		return adapter.ChatRequest{}, badRequest("messages", "At least one message is required.")
 	}
-	if len(body.Messages) > maxMessages {
-		return adapter.ChatRequest{}, badRequest("messages", "Too many messages in one request.")
-	}
-
 	var system strings.Builder
 	messages := make([]adapter.Message, 0, len(body.Messages))
 

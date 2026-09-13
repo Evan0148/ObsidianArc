@@ -33,6 +33,8 @@ curl https://ai.example.com/v1/messages \
 | `thinking` | 思考配置，需模型支持 |
 | `tools` / `tool_choice` | 工具定义与选择方式 |
 
+请求体上限为 12 MiB，最多 256 个工具。网关不另设消息条数上限；上游仍可能有消息数量、上下文或参数限制。
+
 ## 流式与工具调用
 
 开启 `stream` 后返回 Anthropic 事件结构，如 `message_start`、`content_block_start`、`content_block_delta` 和 `message_stop`。

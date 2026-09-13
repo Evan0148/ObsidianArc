@@ -35,6 +35,8 @@ curl https://ai.example.com/v1/responses \
 
 本端点读取 `max_output_tokens`，不要用 Chat Completions 的 `max_tokens` 替代。
 
+请求体上限为 12 MiB，最多 256 个受支持的函数工具。网关不另设 `input` 数组条目数上限；上游仍可能有消息数量、上下文或参数限制。
+
 ## 返回内容
 
 非流式结果使用 `object: "response"` 和 `output` 数组。文本位于 message 项的 content 中，类型为 `output_text`。

@@ -138,10 +138,6 @@ func (h *Handlers) buildResponsesRequest(body responsesRequest, resolved model.R
 	if len(items) == 0 {
 		return adapter.ChatRequest{}, badRequest("input", "At least one input item is required.")
 	}
-	if len(items) > maxMessages {
-		return adapter.ChatRequest{}, badRequest("input", "Too many input items in one request.")
-	}
-
 	var system strings.Builder
 	if body.Instructions != "" {
 		system.WriteString(body.Instructions)

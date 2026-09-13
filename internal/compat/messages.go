@@ -117,10 +117,6 @@ func (h *Handlers) buildMessagesRequest(body messagesRequest, resolved model.Res
 	if len(body.Messages) == 0 {
 		return adapter.ChatRequest{}, anthropicBadRequest("At least one message is required.")
 	}
-	if len(body.Messages) > maxMessages {
-		return adapter.ChatRequest{}, anthropicBadRequest("Too many messages in one request.")
-	}
-
 	messages := make([]adapter.Message, 0, len(body.Messages))
 	for _, incoming := range body.Messages {
 		blocks, err := readAnthropicContent(incoming.Content)
