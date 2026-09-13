@@ -104,3 +104,25 @@ func TestTrimAndTruncateTrimsBeforeCounting(t *testing.T) {
 		})
 	}
 }
+
+// A limit that is not positive keeps nothing rather than panicking. The
+// guard exists because runes[:limit] is a runtime panic for a negative limit,
+// and a bounding helper that crashes on unexpected input is worse than one
+// that returns something too short: the caller that "knew" its limit was
+// positive is exactly the caller that never tested the other case.
+func TestTruncateWithANonPositiveLimitKeepsNothing(t *testing.T) {
+	for _, limit := range []int{0, -1, -80} {
+		for _, value := range []string{"", "hello", "你好世界文"} {
+			got := Truncate(value, limit)
+			if got != "" {
+				t.Errorf("Truncate(%q, %d) = %q, want empty", value, limit, got)
+			}
+		}
+	}
+
+	// TrimAndTruncate goes through the same guard, and it must not be the
+	// trim that saves it: the limit is what is being tested.
+	if got := TrimAndTruncate("  hello  ", -5); got != "" {
+		t.Errorf("TrimAndTruncate(%q, %d) = %q, want empty", "  hello  ", -5, got)
+	}
+}
