@@ -31,7 +31,7 @@ vi.mock('@/api/chat', () => ({
   }),
 }));
 
-const { activeID, busy, messages, openConversation, pendingID, resetChat, runTurn, showPending } =
+const { activeID, busy, justSentID, messages, openConversation, pendingID, resetChat, runTurn, showPending } =
   await import('../src/chat/useChat');
 const { models, selectedID } = await import('../src/chat/useModels');
 
@@ -92,5 +92,29 @@ describe('switching conversations while a turn runs', () => {
     // overwrite once they have left it.
     expect(activeID.value).toBe('B');
     expect(messages.value.every((message) => message.id === 'B-row')).toBe(true);
+  });
+
+  // The bubble's sent animation is bound to justSentID. It was assigned and
+  // then cleared in the same tick, so Vue painted neither value and the
+  // animation never played for anybody. It survives the turn now, and is
+  // cleared where the message it names stops being on screen.
+  it('keeps the sent marker while the turn it names is on screen', async () => {
+    const running = runTurn({ content: 'hi' });
+
+    const local = messages.value.find((message) => message.content === 'hi');
+    expect(local, 'the optimistic row should be in the transcript').toBeTruthy();
+    expect(justSentID.value).toBe(local!.id);
+
+    start();
+    expect(busy.value).toBe(true);
+    // Still set, which is the whole point: something has to be able to render it.
+    expect(justSentID.value).toBe(local!.id);
+
+    turn.finish?.();
+    await running;
+
+    // Leaving the conversation clears it, because the row it names is gone.
+    await openConversation('B');
+    expect(justSentID.value).toBe('');
   });
 });

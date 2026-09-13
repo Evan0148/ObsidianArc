@@ -357,7 +357,11 @@ export async function runTurn(turn: TurnOptions, turnstile = ''): Promise<'done'
   let turnID = conversationID;
   setFlash('');
   scrollToEnd();
-  justSentID.value = '';
+  // justSentID deliberately stays set for the turn. Clearing it here, in the
+  // same tick as the assignment above, meant neither value was ever painted
+  // and the sent animation in ChatMessage never played at all. What it names
+  // stops being on screen when the screen moves to another conversation or
+  // resets, and those are where it is cleared.
 
   controller = new AbortController();
   let failed = false;
@@ -546,6 +550,7 @@ async function reloadActive(): Promise<void> {
 export async function openConversation(id: string): Promise<void> {
   activeID.value = id;
   editingID.value = '';
+  justSentID.value = '';
   historyOpen.value = false;
   messages.value = [];
   // A short rise says "a different conversation" instead of leaving the
@@ -562,6 +567,7 @@ export function startNewConversation(): void {
   activeID.value = '';
   messages.value = [];
   editingID.value = '';
+  justSentID.value = '';
   historyOpen.value = false;
   // A running turn already holds its own copy of what it sent, so this drops
   // only what is still staged in the composer — and nothing can be staged
@@ -620,6 +626,7 @@ export function resetChat(): void {
   messages.value = [];
   activeID.value = '';
   editingID.value = '';
+  justSentID.value = '';
   draft.value = '';
   flash.value = '';
   chatChallenge.value = null;
