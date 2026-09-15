@@ -16,6 +16,8 @@ export interface Account {
   group_id: string;
   group_expires_at: number;
   group_name: string;
+  /** Markdown written by the operator for members of this group. */
+  group_description?: string;
   status: AccountStatus;
   created_at: number;
   updated_at: number;

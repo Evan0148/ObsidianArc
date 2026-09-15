@@ -423,7 +423,6 @@ const en = {
   defaultBadge: 'default',
   perMinute: '{count}/min',
   groupNamePlaceholder: 'Pro',
-  groupDescriptionHint: 'For your own reference; users never see it.',
   isDefault: 'New accounts join this group',
   isDefaultHint: 'Exactly one group has this. Turning it on here turns it off elsewhere.',
   allowAllModels: 'May use every enabled model',

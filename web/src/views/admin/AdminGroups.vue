@@ -319,7 +319,6 @@ onMounted(load);
       v-model="form.description"
       :label="t('description')"
       :rows="2"
-      :hint="t('groupDescriptionHint')"
     />
     <OaSwitchField v-model="form.isDefault" :label="t('isDefault')" :hint="t('isDefaultHint')" />
     <OaNumberField v-model="form.sortOrder" :label="t('sortOrder')" />

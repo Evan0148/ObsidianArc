@@ -262,6 +262,20 @@ describe('the application, mounted', () => {
     expect(host.querySelector<HTMLAnchorElement>('.oa-about-lede a')?.href).toBe('https://example.com/');
   });
 
+  it('shows the current group and renders its description as Markdown on Usage', async () => {
+    adopt({
+      ...ACCOUNT,
+      group_name: 'Research',
+      group_description: '**Early** access for [members](https://example.com/group).',
+    });
+    await mountAt('/usage');
+
+    expect(host.querySelector('.oa-usage-group-name')?.textContent).toBe('Research');
+    expect(host.querySelector('.oa-usage-group-description strong')?.textContent).toBe('Early');
+    expect(host.querySelector<HTMLAnchorElement>('.oa-usage-group-description a')?.href)
+      .toBe('https://example.com/group');
+  });
+
   it('offers every image size as a tile whose silhouette fits its box', async () => {
     adopt(ACCOUNT);
     await mountAt('/image-lab');

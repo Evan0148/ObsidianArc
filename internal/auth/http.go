@@ -82,7 +82,8 @@ type accountPayload struct {
 	user.User
 	// Flattened onto the account so the interface can label a user's group
 	// without a second request.
-	GroupName string `json:"group_name"`
+	GroupName        string `json:"group_name"`
+	GroupDescription string `json:"group_description"`
 	// What this account's group lets it do with the interface. The client
 	// needs them to decide what to draw; the server checks them again on the
 	// endpoints that act, because a hidden button is not a permission.
@@ -102,6 +103,7 @@ func (h *Handlers) account(r *http.Request, account user.User) accountPayload {
 	if account.GroupID != "" {
 		if found, err := h.groups.ByID(r.Context(), nil, account.GroupID); err == nil {
 			payload.GroupName = found.Name
+			payload.GroupDescription = found.Description
 			payload.AllowStats = found.AllowStats
 			payload.AllowDeleteConversations = found.AllowDeleteConversations
 		}

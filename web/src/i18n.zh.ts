@@ -408,7 +408,6 @@ export const zh: Record<StringKey, string> = {
   defaultBadge: '默认',
   perMinute: '{count}/分钟',
   groupNamePlaceholder: 'Pro',
-  groupDescriptionHint: '仅供你自己参考，用户看不到。',
   isDefault: '新注册账户加入这个组',
   isDefaultHint: '只有一个组能是默认组，在这里打开会自动关掉其他组的。',
   allowAllModels: '可以使用所有已启用的模型',

@@ -13,6 +13,7 @@ import { ApiError, api } from '@/api/client';
 import { fetchUsage, type UsageSummary } from '@/api/usage';
 import OaFormSection from '@/components/OaFormSection.vue';
 import OaIconButton from '@/components/OaIconButton.vue';
+import OaMarkdown from '@/components/OaMarkdown.vue';
 import OaOverlay from '@/components/OaOverlay.vue';
 import OaPanel from '@/components/OaPanel.vue';
 import OaStatGrid from '@/components/OaStatGrid.vue';
@@ -26,7 +27,7 @@ import { celebrate } from '@/composables/useConfetti';
 import { t } from '@/composables/useI18n';
 import { IconClose, IconLock, IconPlus } from '@/icons';
 import { compactNumber, relativeTime } from '@/lib/format';
-import { currentPreferences, siteInfo, syncPreferences } from '@/stores/session';
+import { currentPreferences, currentUser, siteInfo, syncPreferences } from '@/stores/session';
 
 interface Totals {
   requests: number;
@@ -83,6 +84,8 @@ const spending = ref('');
 
 const enforced = computed(() => summary.value?.windows.filter((window) => window.enforced) ?? []);
 const unlimited = computed(() => !!summary.value && (summary.value.unlimited || !enforced.value.length));
+const groupName = computed(() => currentUser.value?.group_name.trim() ?? '');
+const groupDescription = computed(() => currentUser.value?.group_description?.trim() ?? '');
 const autoUseResetCard = computed({
   get: () => currentPreferences.value['auto_use_reset_card'] === true,
   set: (enabled: boolean) => syncPreferences({ auto_use_reset_card: enabled }),
@@ -257,6 +260,17 @@ onMounted(() => {
     :width="460"
     @close="router.push('/')"
   >
+    <section v-if="groupName" class="oa-usage-group">
+      <h1 class="oa-usage-group-name">{{ groupName }}</h1>
+      <!-- Group copy is operator-authored, so it uses the same node-building
+           renderer and XSS boundary as announcements and model output. -->
+      <OaMarkdown
+        v-if="groupDescription"
+        class="ai-answer oa-usage-group-description"
+        :text="groupDescription"
+      />
+    </section>
+
     <OaFormSection :title="t('secAllowance')" />
     <div class="oa-usage-list">
       <p v-if="allowanceError" class="oa-field-hint">{{ allowanceError }}</p>

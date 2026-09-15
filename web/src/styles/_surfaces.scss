@@ -597,6 +597,28 @@
 
 /* --- statistics ---------------------------------------------------------- */
 
+/* The membership leads this screen because it explains why these particular
+   limits apply; the description stays secondary to the operator's tier name. */
+.oa-usage-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.oa-usage-group-name {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.4px;
+}
+
+.oa-usage-group-description {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ai-text-secondary);
+}
+
 /* The allowance bars in the account drawer. The rows are the same ones the
    composer menu draws; only the spacing between them is this screen's
    business. */
