@@ -86,7 +86,7 @@ func TestFirstRegistrationBecomesAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register first: %v", err)
 	}
-	if first.Role != user.RoleAdmin {
+	if first.Role != user.RoleSuperAdmin {
 		t.Errorf("first account role = %q, want admin", first.Role)
 	}
 	if token == "" {
@@ -622,7 +622,7 @@ func TestRegisterQQRequirement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if admin.Role != user.RoleAdmin {
+	if admin.Role != user.RoleSuperAdmin {
 		t.Fatalf("first account role = %q, want admin", admin.Role)
 	}
 

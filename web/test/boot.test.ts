@@ -49,6 +49,9 @@ const ACCOUNT: Account = {
  * and the test would then be measuring the stub.
  */
 const EMPTY_BODIES: Array<[RegExp, unknown]> = [
+  [/\/api\/admin\/references/, { groups: [], models: [], providers: [] }],
+  [/\/api\/admin\/administrators/, { users: [], total: 0 }],
+  [/\/api\/admin\/security\/events/, { events: [], total: 0 }],
   [/\/api\/health/, { status: 'ok', version: 'vtest', uptime_sec: 1 }],
   [/\/api\/announcements/, { announcements: [], unread: 0, popup: null }],
   [/\/api\/conversations/, { conversations: [] }],
@@ -200,6 +203,17 @@ afterEach(() => {
 });
 
 describe('the application, mounted', () => {
+  it('shows a permission message and does not fetch an ungranted administrator page', async () => {
+    adopt({ ...ACCOUNT, role: 'admin', admin_permissions: ['users'] });
+    await mountAt('/admin/providers');
+    expect(host.querySelector('.oa-permission-empty')?.textContent).toContain(t('permissionDeniedTitle'));
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/api/admin/providers'))).toBe(false);
+    await router.push('/admin/users');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(host.querySelector('.oa-permission-empty')).toBeNull();
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/api/admin/users'))).toBe(true);
+  });
   it('shows the sign-in card to a visitor', async () => {
     await mountAt('/login');
     expect(host.querySelector('.oa-auth-card')).not.toBeNull();
@@ -291,7 +305,7 @@ describe('the application, mounted', () => {
   });
 
   it('draws the backoffice for an administrator', async () => {
-    adopt({ ...ACCOUNT, role: 'admin' });
+    adopt({ ...ACCOUNT, role: 'super_admin' });
     await mountAt('/admin/providers');
 
     expect(host.querySelector('.oa-admin-rail')).not.toBeNull();
@@ -362,7 +376,8 @@ describe('what moves, and what does not', () => {
     nickname.value = 'Unsaved nickname';
     nickname.dispatchEvent(new Event('input', { bubbles: true }));
     await search('.oa-settings-search input', 'wallpaper');
-    expect(shown('.oa-range-field')).toHaveLength(4);
+    expect(shown('.oa-wallpaper-upload')).toHaveLength(1);
+    expect(shown('.oa-range-field')).toHaveLength(0);
     await search('.oa-settings-search input', 'nothing-matches-this');
     expect(shown('.oa-settings-panel')).toHaveLength(0);
     expect(host.querySelector('.oa-settings .oa-search-empty')?.textContent).toBe(t('noSearchResults'));
@@ -371,8 +386,9 @@ describe('what moves, and what does not', () => {
     expect(nickname.value).toBe('Unsaved nickname');
     host.querySelector<HTMLButtonElement>('.oa-settings-search button')!.click();
     await nextTick();
-    expect(shown('.oa-settings-panel')).toHaveLength(2);
-    expect(shown('.oa-range-field')).toHaveLength(4);
+    expect(shown('.oa-settings-panel')).toHaveLength(1);
+    expect(shown('.oa-wallpaper-upload')).toHaveLength(1);
+    expect(shown('.oa-range-field')).toHaveLength(0);
     expect(host.querySelector('.oa-panel')).not.toBeNull();
   });
 
@@ -384,14 +400,15 @@ describe('what moves, and what does not', () => {
     expect(shown('.oa-settings-panel')).toHaveLength(0);
     await changeLanguage('zh');
     await nextTick();
-    expect(shown('.oa-range-field')).toHaveLength(4);
+    expect(shown('.oa-wallpaper-upload')).toHaveLength(1);
+    expect(shown('.oa-range-field')).toHaveLength(0);
     expect(host.querySelector<HTMLInputElement>('.oa-settings-search input')?.placeholder).toBe('搜索设置');
     await changeLanguage('en');
   });
 
   it('filters admin navigation and instance settings while retaining unsaved values', async () => {
     await changeLanguage('en');
-    adopt({ ...ACCOUNT, role: 'admin' });
+    adopt({ ...ACCOUNT, role: 'super_admin' });
     await mountAt('/admin/settings');
     await search('.oa-admin-search input', 'providers');
     expect(host.querySelectorAll('.oa-admin-nav')).toHaveLength(1);
@@ -425,7 +442,7 @@ describe('what moves, and what does not', () => {
       removeListener: vi.fn(),
       dispatchEvent: vi.fn(),
     })));
-    adopt({ ...ACCOUNT, role: 'admin' });
+    adopt({ ...ACCOUNT, role: 'super_admin' });
     await mountAt('/admin/settings');
 
     const searchBox = host.querySelector<HTMLElement>('.oa-admin-search')!;
@@ -452,7 +469,7 @@ describe('what moves, and what does not', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await nextTick();
     expect(searchBox.classList.contains('expanded')).toBe(false);
-    expect(host.querySelectorAll('.oa-admin-nav')).toHaveLength(13);
+    expect(host.querySelectorAll('.oa-admin-nav')).toHaveLength(14);
     expect(document.activeElement).toBe(trigger);
   });
 
@@ -474,7 +491,7 @@ describe('what moves, and what does not', () => {
   });
 
   it('mounts the uptime panel when navigated to and toggles accordion cards', async () => {
-    adopt({ ...ACCOUNT, role: 'admin' });
+    adopt({ ...ACCOUNT, role: 'super_admin' });
     await mountAt('/uptime');
     expect(host.querySelector('.oa-panel')).not.toBeNull();
     expect(host.querySelector('.oa-uptime-content')).not.toBeNull();
@@ -545,7 +562,7 @@ describe('what moves, and what does not', () => {
   });
 
   it('mounts the admin availability section when navigated to', async () => {
-    adopt({ ...ACCOUNT, role: 'admin' });
+    adopt({ ...ACCOUNT, role: 'super_admin' });
     await mountAt('/admin/availability');
 
     const body = host.querySelector('.oa-admin-body');
@@ -570,7 +587,7 @@ describe('what moves, and what does not', () => {
   });
 
   it('gives each backoffice section a fresh body, so its entry actually plays', async () => {
-    adopt({ ...ACCOUNT, role: 'admin' });
+    adopt({ ...ACCOUNT, role: 'super_admin' });
     await mountAt('/admin/providers');
 
     const first = host.querySelector('.oa-admin-body');
@@ -625,7 +642,7 @@ describe('what moves, and what does not', () => {
   });
 
   it('gives the backoffice the same pair of controls, beside the title', async () => {
-    adopt({ ...ACCOUNT, role: 'admin' });
+    adopt({ ...ACCOUNT, role: 'super_admin' });
     await mountAt('/admin');
 
     // Both live in the header now. The way out used to sit inside the rail,

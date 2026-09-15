@@ -385,7 +385,7 @@ func TestAdministratorsBypassByDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	admin := user.User{ID: "admin-1", Role: user.RoleAdmin, Status: user.StatusActive}
+	admin := user.User{ID: "admin-1", Role: user.RoleSuperAdmin, Status: user.StatusActive}
 	for attempt := 0; attempt < 5; attempt++ {
 		if _, err := service.Reserve(ctx, admin, Estimate{}); err != nil {
 			t.Fatalf("an administrator was rate limited: %v", err)

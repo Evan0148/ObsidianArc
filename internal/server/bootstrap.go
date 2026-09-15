@@ -130,7 +130,7 @@ func ensureAdmin(
 			Username:     cfg.Bootstrap.Username,
 			Email:        cfg.Bootstrap.Email,
 			PasswordHash: hash,
-			Role:         user.RoleAdmin,
+			Role:         user.RoleSuperAdmin,
 			GroupID:      groupID,
 			Status:       user.StatusActive,
 		})

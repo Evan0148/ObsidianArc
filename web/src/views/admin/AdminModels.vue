@@ -57,8 +57,8 @@ async function copyID(value: string): Promise<void> {
 }
 
 const models = ref<AdminModel[]>([]);
-const providers = ref<Provider[]>([]);
-const groups = ref<Group[]>([]);
+const providers = ref<Pick<Provider, 'id' | 'name' | 'kind' | 'enabled'>[]>([]);
+const groups = ref<Pick<Group, 'id' | 'name'>[]>([]);
 const meta = ref<Meta | null>(null);
 const health = ref(new Map<string, ModelHealth>());
 const error = ref('');
@@ -280,7 +280,6 @@ const status = computed(() => (existing.value ? health.value.get(existing.value.
 const groupItems = computed<ListItem[]>(() => groups.value.map((group) => ({
   value: group.id,
   label: group.name,
-  sub: group.description || undefined,
 })));
 
 // Every other model is a candidate except this one and any that is already
@@ -539,8 +538,8 @@ async function load(): Promise<void> {
   try {
     const [modelsResult, providersResult, groupsResult, metaResult] = await Promise.all([
       adminApi.models(),
-      adminApi.providers(),
-      adminApi.groups(),
+      adminApi.providerOptions(),
+      adminApi.groupOptions(),
       adminApi.meta(),
     ]);
     models.value = modelsResult.models;

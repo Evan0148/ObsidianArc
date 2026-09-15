@@ -204,6 +204,19 @@ func TestFacetsOfferWhatIsThere(t *testing.T) {
 	}
 }
 
+func TestSearchableFacetsIncludeInfrequentAccounts(t *testing.T) {
+	store := newStore(t)
+	for i := 0; i < 125; i++ {
+		store.Record(Entry{At: int64(i + 1), Method: "GET", Path: "/api/auth/me", Status: 200,
+			UserID: fmt.Sprintf("u-%03d", i), Username: fmt.Sprintf("Account %03d", i)})
+	}
+	store.drain(t)
+	values, err := store.Facets(context.Background(), 0)
+	if err != nil || len(values.Users) != 125 {
+		t.Fatalf("account selector has %d options, %v", len(values.Users), err)
+	}
+}
+
 func TestPruneOnlyRemovesWhatIsAskedFor(t *testing.T) {
 	ctx := context.Background()
 	store := newStore(t)

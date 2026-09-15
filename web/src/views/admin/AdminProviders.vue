@@ -24,6 +24,7 @@ import type { Column } from '@/components/table-types';
 import { t, tn } from '@/composables/useI18n';
 import { IconCopy } from '@/icons';
 import { relativeTime } from '@/lib/format';
+import { canAdmin } from '@/stores/session';
 import AdminFailure from './AdminFailure.vue';
 import { reasoningLabel } from './reasoning-labels';
 import { useAdminView } from './adminView';
@@ -351,7 +352,7 @@ onMounted(load);
             <span v-if="entry.configured" class="oa-detect-known">{{ t('alreadyAdded') }}</span>
           </label>
         </div>
-        <div v-if="detected" class="oa-detect-actions">
+        <div v-if="detected && canAdmin('models')" class="oa-detect-actions">
           <button type="button" class="oa-btn primary" @click="addDetected">
             {{ addLabel || t('addSelected') }}
           </button>

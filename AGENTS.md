@@ -1,5 +1,18 @@
 # Working on Obsidian Arc
 
+## Deployment identity
+
+**Chat and Arc are separate systems.** Chat is the independent chat software;
+Arc is the AI chat application. Never treat their services, containers,
+ports, data, or deployment directories as interchangeable.
+
+When the user asks to deploy **Arc**, deploy this repository to the Arc Docker
+Compose project (`/data/obsidian-arc` on the production host) and operate only
+the `obsidian-arc-server` container and its PostgreSQL companion. Do not touch
+the Chat service (`obsidianchat.service`, its `/opt/obsidianchat` releases, or
+its port 8090). When the user asks to repair or deploy **Chat**, operate that
+systemd service only; never substitute the Arc binary or Arc container.
+
 Read this before changing anything. It is the shared context — several agents
 work on this repository at once, and the defects that reach it are almost never
 inside one agent's work. They are between them: two correct halves that

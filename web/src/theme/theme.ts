@@ -24,6 +24,7 @@ import {
 
 const THEME_KEY = 'obsidian-arc-theme';
 const ACCENT_KEY = 'obsidian-arc-accent';
+const BACKGROUND_KEY = 'obsidian-arc-background-accent';
 const WALLPAPER_KEY = 'obsidian-arc-wallpaper';
 // The resolved palette, cached for the inline script in index.html: it has to
 // paint the accent's surfaces before the module loads, and duplicating the
@@ -163,6 +164,16 @@ export function setAccentPreference(pref: AccentPreference): void {
   applyAccent();
 }
 
+export function backgroundAccent(): AccentName | '' {
+  const value = read(BACKGROUND_KEY);
+  return value && Object.hasOwn(ACCENTS, value) ? value as AccentName : '';
+}
+
+export function setBackgroundAccent(value: AccentName | ''): void {
+  write(BACKGROUND_KEY, value);
+  applyAccent();
+}
+
 // Every token the accent decides, for one hue and one scheme. Returned rather
 // than applied so the same function can produce the light and dark palettes
 // the pre-paint cache needs, not just the one being shown.
@@ -179,7 +190,9 @@ function paletteFor(pref: AccentPreference, dark: boolean): Record<string, strin
   return {
     // The surfaces, borders and text: the accent hue is the interface's hue,
     // not a colour applied on top of a violet one.
-    ...accentPalette(base, dark),
+    // Background and controls are separate choices; both use the same ramp
+    // so a pastel background remains legible in either display mode.
+    ...accentPalette(backgroundAccent() ? ACCENTS[backgroundAccent() as AccentName] : base, dark),
     '--ai-primary': primary,
     '--ai-primary-text': onPrimary,
     '--ai-primary-hover': hover,
@@ -240,6 +253,7 @@ export function wallpaper(): Wallpaper | null {
 export function setWallpaper(next: Wallpaper | null): void {
   write(WALLPAPER_KEY, next ? JSON.stringify(next) : '');
   applyWallpaper();
+  notify();
 }
 
 // Only a same-origin path or an inline image. A stored absolute URL would let

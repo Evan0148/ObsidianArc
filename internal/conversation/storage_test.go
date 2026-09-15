@@ -3,10 +3,30 @@ package conversation
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/user"
 )
+
+func TestStorageTableIncludesEveryAccount(t *testing.T) {
+	store, users, _ := attachmentFixture(t)
+	ctx := context.Background()
+	for i := 0; i < 25; i++ {
+		account, err := users.Create(ctx, nil, user.CreateInput{Username: fmt.Sprintf("storage-%02d", i), PasswordHash: "unused"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		uploadBytes(t, store, account.ID, i+1)
+	}
+	rows, err := store.HeldByUser(ctx, 0)
+	if err != nil || len(rows) != 25 {
+		t.Fatalf("storage breakdown: %d, %v", len(rows), err)
+	}
+	if rows[0].Bytes != 25 || rows[24].Bytes != 1 {
+		t.Fatal("storage ranking lost")
+	}
+}
 
 // The resources page answers "who is filling the disk", which a column of
 // ULIDs does not, and which a total does not either.

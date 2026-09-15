@@ -65,7 +65,7 @@ func TestDeleteAllowedFollowsTheGroup(t *testing.T) {
 
 	// An administrator always may: the capability exists to hold an
 	// instance's members to a record, not to lock its operator out of one.
-	operator := user.User{ID: "01BRZ3NDEKTSV4RRFFQ69G5FBW", GroupID: held.ID, Role: user.RoleAdmin}
+	operator := user.User{ID: "01BRZ3NDEKTSV4RRFFQ69G5FBW", GroupID: held.ID, Role: user.RoleSuperAdmin}
 	if err := deleteAllowed(ctx, groups, operator); err != nil {
 		t.Errorf("an administrator was refused: %v", err)
 	}

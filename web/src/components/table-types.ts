@@ -6,7 +6,7 @@ export interface Column<T> {
   text?(row: T): string;
   /** Right-aligns and tabular-numbers the column. */
   numeric?: boolean;
-  /** Hidden below 720px, for the columns a phone has no room for. */
+  /** Visually secondary information; still reachable by horizontal scrolling. */
   secondary?: boolean;
   width?: string;
   /**
@@ -21,4 +21,9 @@ export interface Column<T> {
 export interface SortState {
   column: number;
   descending: boolean;
+}
+
+export interface PageState {
+  page: number;
+  pageSize: number;
 }

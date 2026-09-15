@@ -30,6 +30,7 @@ import (
 type instance struct {
 	t       *testing.T
 	handler http.Handler
+	db      *database.DB
 }
 
 // tweak lets one test ask for an instance that differs in a single respect —
@@ -72,7 +73,7 @@ func newInstance(t *testing.T, tweak ...func(*config.Config)) *instance {
 	if err != nil {
 		t.Fatalf("build server: %v", err)
 	}
-	return &instance{t: t, handler: app.Handler()}
+	return &instance{t: t, handler: app.Handler(), db: db}
 }
 
 type session struct {
@@ -156,6 +157,10 @@ func TestAdminRoutesRequireAnAdministrator(t *testing.T) {
 		body   any
 	}{
 		{http.MethodGet, "/api/admin/dashboard", nil},
+		{http.MethodGet, "/api/admin/references", nil},
+		{http.MethodGet, "/api/admin/administrators", nil},
+		{http.MethodPatch, "/api/admin/administrators/01ARZ3NDEKTSV4RRFFQ69G5FAV", map[string]any{"role": "user"}},
+		{http.MethodGet, "/api/admin/member-options", nil},
 		{http.MethodGet, "/api/admin/resources", nil},
 		{http.MethodGet, "/api/admin/health", nil},
 		{http.MethodPost, "/api/admin/health/probe", nil},
@@ -479,7 +484,7 @@ func TestConcurrentAdminDemotionsCannotRemoveEveryAdministrator(t *testing.T) {
 	second := in.register("second-admin", "another-password")
 
 	promote := in.do(http.MethodPatch, "/api/admin/users/"+second.userID,
-		map[string]any{"role": "admin"}, first)
+		map[string]any{"role": "super_admin"}, first)
 	if promote.Code != http.StatusOK {
 		t.Fatalf("promote second admin: %d %s", promote.Code, promote.Body.String())
 	}
@@ -528,7 +533,7 @@ func TestConcurrentAdminDeletionsCannotRemoveEveryAdministrator(t *testing.T) {
 
 	for _, target := range []*session{second, third} {
 		promote := in.do(http.MethodPatch, "/api/admin/users/"+target.userID,
-			map[string]any{"role": "admin"}, first)
+			map[string]any{"role": "super_admin"}, first)
 		if promote.Code != http.StatusOK {
 			t.Fatalf("promote: %d %s", promote.Code, promote.Body.String())
 		}

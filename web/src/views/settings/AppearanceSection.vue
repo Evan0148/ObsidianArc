@@ -1,27 +1,20 @@
 <script setup lang="ts">
-// Theme, accent and language.
-//
-// The accent picker is the same control it always was — ten dots and a custom
-// hex, one hue clamped per scheme so the choice works against both a white
-// and a near-black background. It is carried over rather than redesigned
-// because it was already the best thing on the settings panel.
-
 import { computed, ref, watch } from 'vue';
+import { Palette } from 'lucide-vue-next';
 import OaSelectField from '@/components/OaSelectField.vue';
 import { changeLanguage, currentLanguage, t, type Language, type StringKey } from '@/composables/useI18n';
 import { useTheme } from '@/composables/useTheme';
-import { ACCENTS, ACCENT_NAMES, baseAccent, normalizeHex, type AccentName } from '@/theme/color-utils';
-import { setAccentPreference, type ThemeMode } from '@/theme/theme';
+import { IconAuto, IconCheck, IconMoon, IconSpark, IconSun } from '@/icons';
+import { ACCENTS, ACCENT_NAMES, accentPalette, baseAccent, normalizeHex, type AccentName } from '@/theme/color-utils';
+import { backgroundAccent, setBackgroundAccent, setAccentPreference, setWallpaper, type ThemeMode } from '@/theme/theme';
 import { persistTheme, syncPreferences } from '@/stores/session';
+import WallpaperSection from './WallpaperSection.vue';
 
 const theme = useTheme();
-
 const preference = computed(() => theme.accent());
 const custom = computed(() => preference.value.accent === 'custom');
 const base = computed(() => baseAccent(preference.value));
-
-// A dot click updates these two as well, so they read as "here is the hex you
-// just picked" rather than freezing on whatever was last typed.
+const background = computed(() => (void theme.version.value, backgroundAccent()));
 const hex = ref(base.value);
 watch(base, (next) => { hex.value = next; });
 
@@ -30,20 +23,29 @@ const labels: Record<AccentName, StringKey> = {
   indigo: 'accentIndigo', blue: 'accentBlue', cyan: 'accentCyan', teal: 'accentTeal',
   green: 'accentGreen', orange: 'accentOrange',
 };
+const backgrounds: Array<{ value: AccentName; label: StringKey }> = [
+  { value: 'orange', label: 'backgroundVanilla' }, { value: 'teal', label: 'backgroundMint' },
+  { value: 'blue', label: 'backgroundCloud' }, { value: 'violet', label: 'backgroundLilac' },
+  { value: 'pink', label: 'backgroundPeach' },
+];
+const modes = [
+  { value: 'auto', label: 'themeAuto', icon: IconAuto },
+  { value: 'light', label: 'themeLight', icon: IconSun },
+  { value: 'dark', label: 'themeDark', icon: IconMoon },
+] as const;
 
 function apply(accent: AccentName | 'custom', value: string): void {
   const normalized = accent === 'custom' ? normalizeHex(value, null) : '';
-  if (accent === 'custom' && !normalized) return;
+  if (accent === 'custom' && !normalized) { hex.value = base.value; return; }
   setAccentPreference({ accent, customAccent: normalized ?? '' });
   syncPreferences({ accent, custom_accent: normalized ?? '' });
 }
-
-function onTheme(mode: ThemeMode): void {
-  // Applied through the session, so the choice follows the account to another
-  // device rather than living only in this browser.
-  persistTheme(mode);
+function chooseBackground(value: AccentName | ''): void {
+  setBackgroundAccent(value);
+  setWallpaper(null);
+  syncPreferences({ background_accent: value, wallpaper: null });
 }
-
+function onTheme(mode: ThemeMode): void { persistTheme(mode); }
 function onLanguage(next: Language): void {
   void changeLanguage(next);
   syncPreferences({ language: next });
@@ -51,54 +53,56 @@ function onLanguage(next: Language): void {
 </script>
 
 <template>
-  <div class="oa-settings-panel">
-    <h2 class="oa-admin-section-title">{{ t('secAppearance') }}</h2>
-
-    <OaSelectField
-      :model-value="theme.mode()"
-      :label="t('theme')"
-      :options="[
-        { value: 'auto', label: t('themeAuto') },
-        { value: 'light', label: t('themeLight') },
-        { value: 'dark', label: t('themeDark') },
-      ]"
-      @update:model-value="onTheme"
-    />
-
-    <span class="oa-field-label">{{ t('accentColour') }}</span>
-    <span class="oa-field-hint">{{ t('accentHint') }}</span>
-
-    <div class="oa-color-grid">
-      <button
-        v-for="name in ACCENT_NAMES"
-        :key="name"
-        type="button"
-        class="oa-color-dot"
-        :class="{ active: !custom && preference.accent === name }"
-        :style="{ backgroundColor: ACCENTS[name] }"
-        :title="t(labels[name])"
-        :aria-label="t(labels[name])"
-        @click="apply(name, preference.customAccent)"
-      />
+  <div class="oa-settings-panel oa-appearance">
+    <header class="oa-appearance-intro">
+      <span class="oa-appearance-kicker"><IconSpark :size="14" />{{ t('secAppearance') }}</span>
+      <h2>{{ t('appearancePreview') }}</h2>
+      <p>{{ t('appearanceIntro') }}</p>
+    </header>
+    <div class="oa-appearance-preview" :aria-label="t('appearancePreviewHint')">
+      <div class="oa-preview-message"><IconSpark :size="17" /><span>{{ t('appearancePreviewHint') }}</span></div>
+      <div class="oa-preview-message sent"><IconCheck :size="14" /><span>{{ t('appearanceIntro') }}</span></div>
     </div>
-
-    <div class="oa-color-custom-row oa-input-row" :class="{ active: custom }">
-      <input type="color" :value="base" @input="apply('custom', ($event.target as HTMLInputElement).value)">
-      <input
-        v-model="hex"
-        type="text"
-        placeholder="#6C4CD6"
-        maxlength="7"
-        @change="apply('custom', hex)"
-      >
-    </div>
-
-    <OaSelectField
-      :model-value="currentLanguage()"
-      :label="t('languageLabel')"
-      :hint="t('languageHint')"
-      :options="[{ value: 'en', label: 'English' }, { value: 'zh', label: '中文' }]"
-      @update:model-value="onLanguage"
-    />
+    <section class="oa-appearance-section">
+      <div class="oa-appearance-heading"><h3>{{ t('chatBackground') }}</h3><button type="button" class="oa-btn" @click="chooseBackground('')">{{ t('reset') }}</button></div>
+      <div class="oa-background-grid">
+        <button v-for="entry in backgrounds" :key="entry.value" type="button" class="oa-background-choice"
+          :class="{ active: background === entry.value && !theme.paper() }"
+          :aria-pressed="background === entry.value && !theme.paper()" @click="chooseBackground(entry.value)">
+          <span class="oa-background-swatch" :style="{ background: accentPalette(ACCENTS[entry.value], theme.dark())['--ai-field-bg'] }">
+            <span v-if="background === entry.value && !theme.paper()" class="oa-background-check"><IconCheck :size="13" /></span>
+          </span>
+          <span>{{ t(entry.label) }}</span>
+        </button>
+      </div>
+      <p class="oa-field-hint">{{ t('backgroundHint') }}</p>
+      <WallpaperSection />
+    </section>
+    <section class="oa-appearance-section">
+      <div class="oa-appearance-heading"><h3>{{ t('controlColours') }}</h3><Palette :size="16" /></div>
+      <div class="oa-color-grid">
+        <button v-for="name in ACCENT_NAMES" :key="name" type="button" class="oa-color-dot"
+          :class="{ active: !custom && preference.accent === name }" :style="{ backgroundColor: ACCENTS[name] }"
+          :title="t(labels[name])" :aria-label="t(labels[name])" :aria-pressed="!custom && preference.accent === name" @click="apply(name, preference.customAccent)">
+          <IconCheck v-if="!custom && preference.accent === name" :size="16" />
+        </button>
+        <label class="oa-custom-colour" :class="{ active: custom }" :title="t('customColour')">
+          <Palette :size="18" /><input type="color" :aria-label="t('customColour')" :value="base" @input="apply('custom', ($event.target as HTMLInputElement).value)">
+        </label>
+      </div>
+      <div v-if="custom" class="oa-field oa-custom-hex"><label>{{ t('customColour') }}<input v-model="hex" type="text" maxlength="7" @change="apply('custom', hex)"></label></div>
+      <p class="oa-field-hint">{{ t('controlColoursHint') }}</p>
+    </section>
+    <section class="oa-appearance-section">
+      <div class="oa-appearance-heading"><h3>{{ t('themeStyle') }}</h3></div>
+      <div class="oa-theme-choices">
+        <button v-for="entry in modes" :key="entry.value" type="button" class="oa-theme-choice"
+          :class="{ active: theme.mode() === entry.value }" :aria-pressed="theme.mode() === entry.value" @click="onTheme(entry.value)">
+          <component :is="entry.icon" :size="18" /><span>{{ t(entry.label) }}</span>
+        </button>
+      </div>
+    </section>
+    <OaSelectField :model-value="currentLanguage()" :label="t('languageLabel')" :hint="t('languageHint')"
+      :options="[{ value: 'en', label: 'English' }, { value: 'zh', label: '中文' }]" @update:model-value="onLanguage" />
   </div>
 </template>

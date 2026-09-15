@@ -23,7 +23,7 @@
 // reach it.
 
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
-import { currentUser, isAdmin, siteInfo } from '@/stores/session';
+import { currentUser, isAdmin, canAdmin, siteInfo } from '@/stores/session';
 import AboutPanel from '@/views/AboutPanel.vue';
 import AuthView from '@/views/AuthView.vue';
 import ImageLabPanel from '@/views/ImageLabPanel.vue';
@@ -98,7 +98,7 @@ router.beforeEach((to) => {
   }
 
   // Uptime is available to admins, and to readers only if published.
-  if (to.path === '/uptime' && !isAdmin.value && !siteInfo.value.health_show_users) {
+  if (to.path === '/uptime' && !canAdmin('availability') && !siteInfo.value.health_show_users) {
     return { path: '/', replace: true };
   }
 

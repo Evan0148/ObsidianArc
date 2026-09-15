@@ -1,6 +1,6 @@
 import { api } from './client';
 
-export type Role = 'user' | 'admin';
+export type Role = 'user' | 'admin' | 'super_admin';
 export type AccountStatus = 'active' | 'disabled';
 
 export interface Account {
@@ -12,6 +12,7 @@ export interface Account {
   avatar: string;
   bio: string;
   role: Role;
+  admin_permissions?: string[];
   group_id: string;
   group_expires_at: number;
   group_name: string;
@@ -19,6 +20,7 @@ export interface Account {
   created_at: number;
   updated_at: number;
   last_login_at: number;
+  last_active_at?: number;
   // False only while an unconfirmed address is holding the account
   // back. True for everyone else, including accounts with no address.
   email_verified: boolean;

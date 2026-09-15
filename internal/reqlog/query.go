@@ -164,9 +164,8 @@ type Option struct {
 
 // Facets reads the distinct values worth filtering on.
 //
-// Each is a grouped scan of an indexed column, capped: an instance with ten
-// thousand accounts should not render ten thousand options, and the ones
-// worth offering are the ones that appear most.
+// Searchable selectors need every distinct value, including accounts outside
+// the most frequent hundred. Counts still put common choices first.
 func (s *Store) Facets(ctx context.Context, since int64) (Facets, error) {
 	out := Facets{
 		Users: []Option{}, Models: []Option{}, ErrorCodes: []Option{}, Statuses: []Option{},
@@ -184,7 +183,7 @@ func (s *Store) Facets(ctx context.Context, since int64) (Facets, error) {
 		rows, err := s.db.Query(ctx,
 			`SELECT `+key+`, MAX(`+label+`), COUNT(*) FROM request_log
 			 WHERE `+key+` <> ''`+extra+window+`
-			 GROUP BY `+key+` ORDER BY COUNT(*) DESC LIMIT 100`, args...)
+			 GROUP BY `+key+` ORDER BY COUNT(*) DESC, `+key, args...)
 		if err != nil {
 			return nil, fmt.Errorf("reqlog: facet %s: %w", key, err)
 		}

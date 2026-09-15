@@ -10,8 +10,9 @@
 // meter or two stacked lines without this component knowing about any of
 // them. `text` is the shortcut for the common case where it is a string.
 
-import { computed, ref } from 'vue';
-import type { Column, SortState } from './table-types';
+import { computed, ref, watch } from 'vue';
+import type { Column, SortState, PageState } from './table-types';
+import OaPagination from './OaPagination.vue';
 
 const props = defineProps<{
   columns: ReadonlyArray<Column<T>>;
@@ -34,13 +35,32 @@ const props = defineProps<{
    * down a position the reader never actually chose.
    */
   reorderable?: boolean;
+  pagination?: PageState & { total: number };
+  busy?: boolean;
 }>();
 
 const emit = defineEmits<{
   (event: 'select', row: T): void;
   (event: 'sort', next: SortState | null): void;
   (event: 'reorder', rows: T[]): void;
+  (event: 'page', next: PageState): void;
 }>();
+
+const local = ref<PageState>({ page: 1, pageSize: 20 });
+const paging = computed(() => props.pagination ?? { ...local.value, total: props.rows.length });
+const start = computed(() => (paging.value.page - 1) * paging.value.pageSize);
+const visible = computed(() => props.pagination ? ordered.value : ordered.value.slice(start.value, start.value + paging.value.pageSize));
+const wrap = ref<HTMLElement | null>(null);
+function changePage(next: PageState): void {
+  if (props.pagination) emit('page', next);
+  else local.value = next;
+  wrap.value?.scrollIntoView?.({ block: 'nearest' });
+}
+watch(() => props.rows, () => {
+  // Filtering may remove the page being read; keep the nearest valid page.
+  local.value.page = Math.min(local.value.page, Math.max(1, Math.ceil(props.rows.length / local.value.pageSize)));
+});
+watch(() => props.sort, () => { local.value.page = 1; });
 
 /**
  * A copy, never the caller's array: the caller is holding the unsorted list
@@ -95,13 +115,14 @@ function toggleSort(index: number): void {
 }
 
 function onDragStart(event: DragEvent, index: number): void {
-  dragging.value = index;
+  dragging.value = index + start.value;
   // Firefox starts no drag at all without a payload on the transfer.
   event.dataTransfer?.setData('text/plain', String(index));
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
 }
 
 function onDragOver(event: DragEvent, index: number): void {
+  index += start.value;
   if (dragging.value === null || dragging.value === index) return;
   // Without preventDefault the browser refuses the drop, which reads as the
   // row springing back for no reason.
@@ -112,6 +133,7 @@ function onDragOver(event: DragEvent, index: number): void {
 }
 
 function onDrop(event: DragEvent, index: number): void {
+  index += start.value;
   event.preventDefault();
   const from = dragging.value;
   clearMarks();
@@ -130,9 +152,13 @@ function clearMarks(): void {
 </script>
 
 <template>
-  <div class="oa-table-wrap">
+  <div class="oa-table-block" :aria-busy="busy">
+  <div ref="wrap" class="oa-table-wrap" tabindex="0">
     <p v-if="!props.rows.length" class="oa-table-empty">{{ props.empty }}</p>
-    <table v-else class="oa-table">
+    <!-- A block establishes the actual table width before fixed column layout.
+         A min-width on the table itself can still leave columns compressed. -->
+    <div v-else :style="{ minWidth: `${props.columns.reduce((sum, col) => sum + (Number.parseInt(col.width ?? '') || 140), 0)}px` }">
+    <table class="oa-table">
       <thead>
         <tr>
           <th
@@ -146,7 +172,7 @@ function clearMarks(): void {
                 desc: props.sort?.column === index && props.sort.descending,
               },
             ]"
-            :style="column.width ? { width: column.width } : undefined"
+            :style="{ width: column.width ?? '140px' }"
             :aria-sort="column.sort ? sortState(index) : undefined"
             :tabindex="column.sort ? 0 : undefined"
             @click="column.sort && toggleSort(index)"
@@ -159,15 +185,15 @@ function clearMarks(): void {
       </thead>
       <tbody>
         <tr
-          v-for="(row, index) in ordered"
+          v-for="(row, index) in visible"
           :key="index"
           :class="{
             muted: props.muted?.(row),
             selectable: props.selectable,
             draggable: draggable,
-            dragging: dragging === index,
-            'drop-before': dropBefore === index,
-            'drop-after': dropAfter === index,
+            dragging: dragging === index + start,
+            'drop-before': dropBefore === index + start,
+            'drop-after': dropAfter === index + start,
           }"
           :draggable="draggable"
           :tabindex="props.selectable ? 0 : undefined"
@@ -185,5 +211,8 @@ function clearMarks(): void {
         </tr>
       </tbody>
     </table>
+    </div>
+  </div>
+  <OaPagination v-bind="paging" :busy="busy" @change="changePage" />
   </div>
 </template>

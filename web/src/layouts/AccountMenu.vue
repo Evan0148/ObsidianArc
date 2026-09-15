@@ -7,7 +7,7 @@ import OaMenuItem from '@/components/OaMenuItem.vue';
 import { t } from '@/composables/useI18n';
 import { IconChart, IconGear, IconImage, IconInfo, IconKey, IconLogout, IconPulse, IconSliders } from '@/icons';
 import { displayName } from '@/lib/account';
-import { forget, siteInfo } from '@/stores/session';
+import { forget, siteInfo, isAdmin, canAdmin } from '@/stores/session';
 
 const props = defineProps<{ account: Account }>();
 
@@ -63,8 +63,8 @@ async function signOut(close: () => void): Promise<void> {
         style="border-bottom: none; padding-top: 0"
       >
         <span class="oa-badge">{{ props.account.group_name }}</span>
-        <span v-if="props.account.role === 'admin'" class="oa-badge oa-badge-muted">
-          {{ t('admin') }}
+        <span v-if="isAdmin" class="oa-badge oa-badge-muted">
+          {{ t(props.account.role === 'super_admin' ? 'superAdmin' : 'admin') }}
         </span>
       </div>
 
@@ -75,7 +75,7 @@ async function signOut(close: () => void): Promise<void> {
         <template #leading><IconImage :size="14" /></template>
       </OaMenuItem>
       <OaMenuItem
-        v-if="props.account.role === 'admin' || siteInfo.health_show_users"
+        v-if="canAdmin('availability') || siteInfo.health_show_users"
         :title="t('uptimeTitle')"
         @click="go(close, '/uptime')"
       >
@@ -91,7 +91,7 @@ async function signOut(close: () => void): Promise<void> {
         <template #leading><IconInfo :size="14" /></template>
       </OaMenuItem>
       <OaMenuItem
-        v-if="props.account.role === 'admin'"
+        v-if="isAdmin"
         :title="t('administration')"
         @click="go(close, '/admin')"
       >

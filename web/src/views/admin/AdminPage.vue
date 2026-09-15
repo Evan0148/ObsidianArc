@@ -22,7 +22,7 @@ import {
 import AppShell from '@/layouts/AppShell.vue';
 import { useRailCollapse } from '@/composables/useRailCollapse';
 import { formatUptime } from '@/lib/format';
-import { isAdmin } from '@/stores/session';
+import { isAdmin, canAdmin } from '@/stores/session';
 import UnauthorizedModal from '@/views/UnauthorizedModal.vue';
 import ChatLayout from '@/layouts/ChatLayout.vue';
 import { provideAdminView } from './adminView';
@@ -41,6 +41,7 @@ import AdminLogs from './AdminLogs.vue';
 import AdminSecurity from './AdminSecurity.vue';
 import AdminSettings from './AdminSettings.vue';
 import AdminAnnouncements from './AdminAnnouncements.vue';
+import AdminAdministrators from './AdminAdministrators.vue';
 
 // Labels are looked up at render rather than stored, because this table is
 // evaluated at import time — before the language is known.
@@ -58,6 +59,7 @@ const PAGES: AdminPageSpec[] = [
   { slug: 'security', label: 'navSecurity', icon: IconLock, component: markRaw(AdminSecurity) },
   { slug: 'settings', label: 'navSettings', icon: IconSliders, component: markRaw(AdminSettings) },
   { slug: 'announcements', label: 'announcements', icon: IconFile, component: markRaw(AdminAnnouncements) },
+  { slug: 'administrators', label: 'manageAdministrators', icon: IconLock, component: markRaw(AdminAdministrators) },
 ];
 
 const route = useRoute();
@@ -331,7 +333,12 @@ onMounted(() => {
         wrap-class="oa-admin-body-wrap"
         :scroll-class="`oa-admin-body enter-${direction}`"
       >
-        <component :is="current.component" :key="bodyKey" />
+        <component v-if="canAdmin(current.slug || 'dashboard')" :is="current.component" :key="bodyKey" />
+        <div v-else class="oa-permission-empty" role="alert">
+          <IconLock :size="28" />
+          <h2>{{ t('permissionDeniedTitle') }}</h2>
+          <p>{{ t('permissionDeniedHint') }}</p>
+        </div>
       </OaScrollArea>
     </div>
   </AppShell>

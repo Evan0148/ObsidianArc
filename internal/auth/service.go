@@ -291,7 +291,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (user.User, st
 
 		role := user.RoleUser
 		if first {
-			role = user.RoleAdmin
+			role = user.RoleSuperAdmin
 		}
 
 		// The first account is never held back: it is the one that turns
@@ -671,7 +671,7 @@ func (s *Service) ChangePassword(ctx context.Context, userID, currentPassword, n
 
 // SetPassword is the administrator's reset: no current password, and every
 // session for that account is dropped.
-func (s *Service) SetPassword(ctx context.Context, userID, newPassword string) error {
+func (s *Service) SetPassword(ctx context.Context, userID, newPassword string, authorize ...func(database.Queryer, user.User) error) error {
 	if err := ValidatePassword(newPassword); err != nil {
 		return err
 	}
@@ -680,6 +680,20 @@ func (s *Service) SetPassword(ctx context.Context, userID, newPassword string) e
 		return err
 	}
 	return s.db.Tx(ctx, func(tx *database.Tx) error {
+		if len(authorize) > 0 {
+			// Role changes use this same lock, so a password reset cannot race
+			// a promotion and silently take over a newly privileged account.
+			if err := settings.Lock(ctx, tx); err != nil {
+				return err
+			}
+			target, err := s.users.ByID(ctx, tx, userID)
+			if err != nil {
+				return err
+			}
+			if err := authorize[0](tx, target); err != nil {
+				return err
+			}
+		}
 		if err := s.users.SetPasswordHash(ctx, tx, userID, hash); err != nil {
 			return err
 		}
@@ -697,6 +711,13 @@ func (s *Service) Authenticate(ctx context.Context, token string) (user.User, Se
 	}
 	if !account.IsActive() {
 		return user.User{}, Session{}, ErrAccountDisabled
+	}
+	if time.Since(time.UnixMilli(account.LastActiveAt)) >= time.Minute {
+		now := time.Now().UnixMilli()
+		if err := s.users.MarkActive(ctx, account.ID, now); err != nil {
+			return user.User{}, Session{}, err
+		}
+		account.LastActiveAt = now
 	}
 
 	if time.Since(time.UnixMilli(session.LastSeenAt)) > s.cfg.TouchInterval {

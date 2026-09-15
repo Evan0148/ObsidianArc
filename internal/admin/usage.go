@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/auth"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/httpx"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/id"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/quota"
@@ -194,7 +195,13 @@ func (h *Handlers) listPolicies(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return httpx.Internal(err)
 	}
-	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"policies": policies})
+	visible := policies[:0]
+	for _, policy := range policies {
+		if canPolicy(auth.MustUser(r.Context()), policy.Scope) {
+			visible = append(visible, policy)
+		}
+	}
+	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"policies": visible})
 }
 
 type policyRequest struct {
@@ -213,6 +220,9 @@ func (h *Handlers) savePolicy(w http.ResponseWriter, r *http.Request) error {
 	var body policyRequest
 	if err := httpx.DecodeJSON(w, r, &body, 16*1024); err != nil {
 		return err
+	}
+	if !canPolicy(auth.MustUser(r.Context()), body.Scope) {
+		return permissionDenied()
 	}
 
 	switch body.Scope {
@@ -249,6 +259,9 @@ func (h *Handlers) savePolicy(w http.ResponseWriter, r *http.Request) error {
 
 func (h *Handlers) deletePolicy(w http.ResponseWriter, r *http.Request) error {
 	scope := quota.Scope(r.PathValue("scope"))
+	if !canPolicy(auth.MustUser(r.Context()), scope) {
+		return permissionDenied()
+	}
 	scopeID := r.URL.Query().Get("scope_id")
 
 	switch scope {

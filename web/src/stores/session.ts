@@ -14,6 +14,7 @@ import { fetchMe, fetchSite, savePreferences, type Account, type Preferences, ty
 import {
   accentPreference,
   setAccentPreference,
+  setBackgroundAccent,
   setThemeMode,
   setWallpaper,
   themeMode,
@@ -58,7 +59,11 @@ const FALLBACK_SITE: SiteInfo = {
 export const currentUser: Ref<Account | null> = account;
 export const currentPreferences: Ref<Preferences> = preferences;
 
-export const isAdmin: ComputedRef<boolean> = computed(() => account.value?.role === 'admin');
+export const isSuperAdmin = computed(() => account.value?.role === 'super_admin');
+export const isAdmin: ComputedRef<boolean> = computed(() => isSuperAdmin.value || account.value?.role === 'admin');
+export function canAdmin(permission: string): boolean {
+  return isSuperAdmin.value || (isAdmin.value && (account.value?.admin_permissions ?? []).includes(permission));
+}
 export const siteInfo: ComputedRef<SiteInfo> = computed(() => site.value ?? FALLBACK_SITE);
 
 export function requireUser(): Account {
@@ -101,6 +106,7 @@ export async function startSession(): Promise<void> {
 // when the server actually has a value: a fresh account should not reset a
 // choice made before signing in.
 function applyServerPreferences(prefs: Preferences): void {
+  if (typeof prefs['background_accent'] === 'string') setBackgroundAccent(prefs['background_accent'] as AccentName | '');
   const theme = prefs['theme'];
   if (theme === 'light' || theme === 'dark' || theme === 'auto') {
     setThemeMode(theme);

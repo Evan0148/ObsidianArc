@@ -2,6 +2,8 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { adminApi, type Group } from '@/admin/api';
 import type { Account } from '@/api/auth';
+import OaPagination from '@/components/OaPagination.vue';
+import type { PageState } from '@/components/table-types';
 import OaCheckList from '@/components/OaCheckList.vue';
 import OaFormSection from '@/components/OaFormSection.vue';
 import OaSearchField from '@/components/OaSearchField.vue';
@@ -23,7 +25,7 @@ const loading = ref(false);
 const busy = ref(false);
 const error = ref('');
 const message = ref('');
-const pageSize = 20;
+const pageSize = ref(20);
 let request = 0;
 let timer = 0;
 
@@ -43,10 +45,10 @@ async function load(): Promise<void> {
   const current = ++request;
   loading.value = true;
   error.value = '';
-  const query = new URLSearchParams({ q: search.value, limit: String(pageSize), offset: String(offset.value) });
+  const query = new URLSearchParams({ q: search.value, limit: String(pageSize.value), offset: String(offset.value) });
   if (scope.value === 'members') query.set('group_id', props.group.id);
   try {
-    const result = await adminApi.users(`?${query}`);
+    const result = await adminApi.memberOptions(`?${query}`);
     if (current !== request) return;
     accounts.value = result.users ?? [];
     total.value = result.total;
@@ -67,8 +69,9 @@ watch([search, scope], () => {
   timer = window.setTimeout(() => void load(), 200);
 });
 
-function page(direction: number): void {
-  offset.value += direction * pageSize;
+function page(next: PageState): void {
+  pageSize.value = next.pageSize;
+  offset.value = (next.page - 1) * next.pageSize;
   void load();
 }
 
@@ -122,11 +125,7 @@ onBeforeUnmount(() => {
       :items="items"
       :empty-text="t('noSearchResults')"
     />
-    <div class="oa-log-pager">
-      <button type="button" class="oa-btn" :disabled="loading || offset === 0" @click="page(-1)">{{ t('previous') }}</button>
-      <span class="oa-field-hint">{{ t('memberPage', { from: total ? offset + 1 : 0, to: Math.min(offset + pageSize, total), total }) }}</span>
-      <button type="button" class="oa-btn" :disabled="loading || offset + pageSize >= total" @click="page(1)">{{ t('next') }}</button>
-    </div>
+    <OaPagination :page="Math.floor(offset / pageSize) + 1" :page-size="pageSize" :total="total" :busy="loading" @change="page" />
     <p class="oa-field-hint">{{ t('membersSelected', { count: selected.length }) }}</p>
     <OaTextField
       v-model="expiresAt"

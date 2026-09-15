@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createApp, h, ref, type App } from 'vue';
 import OaSelect from '../src/components/OaSelect.vue';
+import OaSelectField from '../src/components/OaSelectField.vue';
 import { placeList } from '../src/lib/select-placement';
 
 // jsdom has no layout, so neither of these exists. The control calls both
@@ -71,6 +72,23 @@ async function settle(): Promise<void> {
 }
 
 describe('the option list', () => {
+  it('includes a search box by default in both standalone and field selectors', async () => {
+    app = createApp({ render: () => h('div', [
+      h(OaSelect, { choices: COLOURS, modelValue: 'red' }),
+      h(OaSelectField, { label: 'Colour', options: COLOURS, modelValue: 'red' }),
+    ]) });
+    app.mount(host);
+    for (const trigger of host.querySelectorAll<HTMLButtonElement>('.oa-select')) {
+      trigger.click(); await settle();
+      const input = list()?.querySelector<HTMLInputElement>('input');
+      expect(input).toBeTruthy();
+      input!.value = 'blue'; input!.dispatchEvent(new Event('input', { bubbles: true }));
+      await settle();
+      expect(list()!.querySelectorAll('[role="option"]')).toHaveLength(1);
+      input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 180));
+    }
+  });
   it('keeps its placement when filtering does not move the trigger', async () => {
     const control = mount(COLOURS, 'red', true);
     control.trigger.getBoundingClientRect = () => new DOMRect(200, 100, 180, 36);

@@ -189,29 +189,28 @@ type UserStorage struct {
 
 // HeldByUser is Held, broken down by whose files they are.
 //
-// Ranked and capped in SQL for the reason usage.GroupBy gives: taking the top
-// twenty by size and then re-sorting them by count would be the top twenty of
-// the wrong thing. The username is joined here rather than resolved by the
-// caller because a column of ULIDs answers "who is filling the disk" only in
-// principle.
+// Zero means all accounts, for the paginated administrative table. Joining
+// names here avoids another query for every row on that page.
 func (s *Store) HeldByUser(ctx context.Context, limit int) ([]UserStorage, error) {
-	if limit <= 0 {
-		limit = 20
-	}
-	rows, err := s.db.Query(ctx, `
+	query := `
 		SELECT a.user_id, MAX(COALESCE(u.username, a.user_id)), COUNT(*), COALESCE(SUM(a.size), 0)
 		FROM attachments a
 		LEFT JOIN users u ON u.id = a.user_id
 		WHERE a.discarded_at = 0
 		GROUP BY a.user_id
-		ORDER BY COALESCE(SUM(a.size), 0) DESC
-		LIMIT ?`, limit)
+		ORDER BY COALESCE(SUM(a.size), 0) DESC, a.user_id`
+	var args []any
+	if limit > 0 {
+		query += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("conversation: held by user: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	held := make([]UserStorage, 0, limit)
+	held := []UserStorage{}
 	for rows.Next() {
 		var entry UserStorage
 		if err := rows.Scan(&entry.UserID, &entry.Name, &entry.Count, &entry.Bytes); err != nil {

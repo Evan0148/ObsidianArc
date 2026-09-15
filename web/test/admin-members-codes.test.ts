@@ -114,7 +114,7 @@ const accounts = Array.from({ length: 25 }, (_, index) => ({
 
 describe('group member selection', () => {
   function users(): ReturnType<typeof vi.spyOn> {
-    return vi.spyOn(adminApi, 'users').mockImplementation(async (query) => {
+    return vi.spyOn(adminApi, 'memberOptions').mockImplementation(async (query) => {
       const params = new URLSearchParams(query);
       const offset = Number(params.get('offset'));
       return { users: accounts.slice(offset, offset + 20), total: accounts.length };

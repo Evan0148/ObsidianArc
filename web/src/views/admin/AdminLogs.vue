@@ -15,6 +15,8 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { adminApi, type LogEntry, type LogFacets, type LogOption } from '@/admin/api';
 import { ApiError } from '@/api/client';
+import OaPagination from '@/components/OaPagination.vue';
+import type { PageState } from '@/components/table-types';
 import OaBadge from '@/components/OaBadge.vue';
 import OaIconButton from '@/components/OaIconButton.vue';
 import OaPanel from '@/components/OaPanel.vue';
@@ -27,7 +29,7 @@ import { absoluteTime, relativeTime } from '@/lib/format';
 import AdminFailure from './AdminFailure.vue';
 import { useAdminView } from './adminView';
 
-const PAGE_SIZE = 50;
+const pageSize = ref(20);
 
 /**
  * Windows offered for "since". Empty is everything, which is the point of a
@@ -79,6 +81,7 @@ const error = ref('');
 const listError = ref('');
 const loading = ref(true);
 const opened = ref<LogEntry | null>(null);
+let listRequest = 0;
 
 function since(): number {
   const entry = WINDOWS.find((window) => window.value === query.value.window);
@@ -97,7 +100,7 @@ function listQuery(): string {
   if (query.value.channel) params.set('channel', query.value.channel);
   if (query.value.errorCode) params.set('error_code', query.value.errorCode);
   if (query.value.path) params.set('path', query.value.path);
-  params.set('limit', String(PAGE_SIZE));
+  params.set('limit', String(pageSize.value));
   params.set('offset', String(query.value.offset));
   return `?${params.toString()}`;
 }
@@ -134,18 +137,21 @@ async function reload(): Promise<void> {
 }
 
 async function paint(): Promise<void> {
+  const ticket = ++listRequest;
   loading.value = true;
   listError.value = '';
   try {
     const data = await adminApi.logs(listQuery());
+    if (ticket !== listRequest) return;
     entries.value = data.entries;
     total.value = data.total;
     offset.value = data.offset;
   } catch (failure) {
+    if (ticket !== listRequest) return;
     entries.value = [];
     listError.value = failure instanceof ApiError ? failure.message : t('failed');
   } finally {
-    loading.value = false;
+    if (ticket === listRequest) loading.value = false;
   }
 }
 
@@ -161,13 +167,12 @@ function clearFilters(): void {
   void paint();
 }
 
-function page(delta: number): void {
-  query.value.offset = Math.max(0, query.value.offset + delta);
+function page(next: PageState): void {
+  pageSize.value = next.pageSize;
+  query.value.offset = (next.page - 1) * next.pageSize;
   void paint();
 }
 
-const first = computed(() => offset.value + 1);
-const last = computed(() => offset.value + entries.value.length);
 
 function tone(status: number): 'default' | 'muted' | 'danger' {
   return status >= 500 ? 'danger' : status >= 400 ? 'muted' : 'default';
@@ -303,18 +308,9 @@ onMounted(reload);
           </button>
         </div>
 
-        <div class="oa-log-pager">
-          <span class="oa-field-hint">
-            {{ t('logRange', { first, last, total }) }}
-          </span>
-          <button type="button" class="oa-btn" :disabled="offset === 0" @click="page(-PAGE_SIZE)">
-            {{ t('previous') }}
-          </button>
-          <button type="button" class="oa-btn" :disabled="last >= total" @click="page(PAGE_SIZE)">
-            {{ t('next') }}
-          </button>
-        </div>
+
       </template>
+      <OaPagination :page="Math.floor(query.offset / pageSize) + 1" :page-size="pageSize" :total="total" :busy="loading" @change="page" />
     </div>
   </div>
 

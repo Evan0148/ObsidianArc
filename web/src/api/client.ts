@@ -5,13 +5,15 @@
 // and what makes a single change enough when session handling or error shapes
 // move.
 
+import { t } from '@/composables/useI18n';
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly details: Record<string, unknown>;
 
   constructor(status: number, code: string, message: string, details: Record<string, unknown> = {}) {
-    super(message);
+    super(code === 'admin_permission_denied' ? t('permissionDeniedTitle') + ' · ' + t('permissionDeniedHint') : message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;

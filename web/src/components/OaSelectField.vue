@@ -3,13 +3,13 @@ import OaField from './OaField.vue';
 import OaSelect from './OaSelect.vue';
 import type { Choice } from './choice';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: T;
   label: string;
   options: ReadonlyArray<Choice<T>>;
   hint?: string | undefined;
   searchable?: boolean;
-}>();
+}>(), { searchable: true });
 
 defineEmits<{ (event: 'update:modelValue', value: T): void }>();
 </script>

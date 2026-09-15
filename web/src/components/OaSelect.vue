@@ -33,13 +33,13 @@ defineOptions({
   inheritAttrs: false,
 });
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   choices: ReadonlyArray<Choice<T>>;
   modelValue: T;
   /** For a control with no <label> around it. */
   ariaLabel?: string;
   searchable?: boolean;
-}>();
+}>(), { searchable: true });
 
 const emit = defineEmits<{ (event: 'update:modelValue', value: T): void }>();
 

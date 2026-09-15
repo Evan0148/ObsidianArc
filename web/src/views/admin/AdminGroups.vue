@@ -41,7 +41,7 @@ view.setTitle(t('groupsTitle'), t('groupsSubtitle'));
 
 const groups = ref<Group[]>([]);
 const policies = ref<QuotaPolicy[]>([]);
-const models = ref<AdminModel[]>([]);
+const models = ref<Pick<AdminModel, 'id' | 'display_name' | 'model_id' | 'enabled' | 'provider_name'>[]>([]);
 const error = ref('');
 const loaded = ref(false);
 
@@ -230,7 +230,7 @@ async function remove(): Promise<void> {
 async function load(): Promise<void> {
   error.value = '';
   try {
-    const [groupsResult, modelsResult] = await Promise.all([adminApi.groups(), adminApi.models()]);
+    const [groupsResult, modelsResult] = await Promise.all([adminApi.groups(), adminApi.modelOptions()]);
     groups.value = groupsResult.groups;
     if (existing.value) existing.value = groupsResult.groups.find((entry) => entry.id === existing.value!.id) ?? existing.value;
     policies.value = groupsResult.policies;

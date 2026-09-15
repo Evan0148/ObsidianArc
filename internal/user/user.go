@@ -9,6 +9,7 @@ package user
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -24,8 +25,9 @@ import (
 type Role string
 
 const (
-	RoleUser  Role = "user"
-	RoleAdmin Role = "admin"
+	RoleUser       Role = "user"
+	RoleAdmin      Role = "admin"
+	RoleSuperAdmin Role = "super_admin"
 )
 
 type Status string
@@ -40,17 +42,18 @@ const (
 // it can only be obtained through CredentialsByLogin, which is called from
 // exactly one place.
 type User struct {
-	ID             string `json:"id"`
-	Username       string `json:"username"`
-	Email          string `json:"email"`
-	QQ             string `json:"qq"`
-	Nickname       string `json:"nickname"`
-	Avatar         string `json:"avatar"`
-	Bio            string `json:"bio"`
-	Role           Role   `json:"role"`
-	GroupID        string `json:"group_id"`
-	GroupExpiresAt int64  `json:"group_expires_at"`
-	Status         Status `json:"status"`
+	ID               string   `json:"id"`
+	Username         string   `json:"username"`
+	Email            string   `json:"email"`
+	QQ               string   `json:"qq"`
+	Nickname         string   `json:"nickname"`
+	Avatar           string   `json:"avatar"`
+	Bio              string   `json:"bio"`
+	Role             Role     `json:"role"`
+	AdminPermissions []string `json:"admin_permissions"`
+	GroupID          string   `json:"group_id"`
+	GroupExpiresAt   int64    `json:"group_expires_at"`
+	Status           Status   `json:"status"`
 	// Whether the address above has been confirmed. True for every
 	// account that predates verification, and for one with no address:
 	// there is nothing to confirm and nothing to hold back.
@@ -58,6 +61,7 @@ type User struct {
 	CreatedAt     int64 `json:"created_at"`
 	UpdatedAt     int64 `json:"updated_at"`
 	LastLoginAt   int64 `json:"last_login_at"`
+	LastActiveAt  int64 `json:"last_active_at"`
 	// Where this account was created from. Read by the backoffice, which is
 	// where the per-address registration limit is configured and therefore
 	// where "why was this address refused" gets asked.
@@ -73,8 +77,9 @@ type User struct {
 	APIRestrictionSource string `json:"api_restriction_source"`
 }
 
-func (u User) IsAdmin() bool  { return u.Role == RoleAdmin }
-func (u User) IsActive() bool { return u.Status == StatusActive }
+func (u User) IsAdmin() bool      { return u.Role == RoleAdmin || u.IsSuperAdmin() }
+func (u User) IsSuperAdmin() bool { return u.Role == RoleSuperAdmin }
+func (u User) IsActive() bool     { return u.Status == StatusActive }
 
 func (u User) APIRestrictedAt(now time.Time) bool {
 	return u.APIRestricted && (u.APIRestrictedUntil == 0 || u.APIRestrictedUntil > now.UnixMilli())
@@ -160,7 +165,7 @@ func NewStore(db *database.DB) *Store { return &Store{db: db} }
 
 const columns = `id, username, email, qq, nickname, avatar, bio, role, group_id, status,
 	email_verified, created_at, updated_at, last_login_at, signup_ip, signup_user_agent,
-	api_restricted, api_restricted_until, api_restriction_source, group_expires_at`
+	api_restricted, api_restricted_until, api_restriction_source, group_expires_at, admin_permissions, last_active_at`
 
 type CreateInput struct {
 	Username     string
@@ -267,15 +272,16 @@ func (s *Store) CredentialsByLogin(ctx context.Context, identifier string) (User
 		folded, folded)
 
 	var (
-		record User
-		hash   string
-		group  sql.NullString
+		record      User
+		hash        string
+		group       sql.NullString
+		permissions string
 	)
 	err := row.Scan(&record.ID, &record.Username, &record.Email, &record.QQ, &record.Nickname, &record.Avatar,
 		&record.Bio, &record.Role, &group, &record.Status, &record.EmailVerified,
 		&record.CreatedAt, &record.UpdatedAt, &record.LastLoginAt, &record.SignupIP,
 		&record.SignupUserAgent, &record.APIRestricted, &record.APIRestrictedUntil,
-		&record.APIRestrictionSource, &record.GroupExpiresAt, &hash)
+		&record.APIRestrictionSource, &record.GroupExpiresAt, &permissions, &record.LastActiveAt, &hash)
 	if err != nil {
 		if database.IsNotFound(err) {
 			return User{}, "", ErrNotFound
@@ -283,6 +289,9 @@ func (s *Store) CredentialsByLogin(ctx context.Context, identifier string) (User
 		return User{}, "", fmt.Errorf("user: load credentials: %w", err)
 	}
 	record.GroupID = group.String
+	if err := json.Unmarshal([]byte(permissions), &record.AdminPermissions); err != nil {
+		return User{}, "", fmt.Errorf("user: read permissions: %w", err)
+	}
 	record, err = s.ResolveMembership(ctx, nil, record)
 	return record, hash, err
 }
@@ -400,11 +409,12 @@ func (s *Store) UpdateProfile(ctx context.Context, q database.Queryer, userID st
 
 // AdminUpdate is everything only an administrator may change.
 type AdminUpdate struct {
-	Role           *Role
-	GroupID        *string
-	GroupExpiresAt *int64
-	Status         *Status
-	QQ             *string
+	Role             *Role
+	AdminPermissions *[]string
+	GroupID          *string
+	GroupExpiresAt   *int64
+	Status           *Status
+	QQ               *string
 }
 
 func (s *Store) UpdateAdminFields(ctx context.Context, q database.Queryer, userID string, in AdminUpdate) (User, error) {
@@ -417,6 +427,14 @@ func (s *Store) UpdateAdminFields(ctx context.Context, q database.Queryer, userI
 	if in.Role != nil {
 		sets = append(sets, "role = ?")
 		args = append(args, orDefault(*in.Role, RoleUser))
+	}
+	if in.AdminPermissions != nil {
+		encoded, err := json.Marshal(*in.AdminPermissions)
+		if err != nil {
+			return User{}, err
+		}
+		sets = append(sets, "admin_permissions = ?")
+		args = append(args, string(encoded))
 	}
 	if in.GroupID != nil {
 		// An ordinary save of the same group keeps its term. Moving somebody
@@ -632,7 +650,7 @@ func (s *Store) CountActiveAdmins(ctx context.Context, q database.Queryer, exclu
 	var count int
 	err := q.QueryRow(ctx,
 		`SELECT COUNT(*) FROM users WHERE role = ? AND status = ? AND id <> ?`,
-		RoleAdmin, StatusActive, excluding).Scan(&count)
+		RoleSuperAdmin, StatusActive, excluding).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("user: count admins: %w", err)
 	}
@@ -686,14 +704,15 @@ type rowScanner interface{ Scan(dest ...any) error }
 
 func scanUser(row rowScanner) (User, error) {
 	var (
-		record User
-		group  sql.NullString
+		record      User
+		group       sql.NullString
+		permissions string
 	)
 	err := row.Scan(&record.ID, &record.Username, &record.Email, &record.QQ, &record.Nickname, &record.Avatar,
 		&record.Bio, &record.Role, &group, &record.Status, &record.EmailVerified,
 		&record.CreatedAt, &record.UpdatedAt, &record.LastLoginAt, &record.SignupIP,
 		&record.SignupUserAgent, &record.APIRestricted, &record.APIRestrictedUntil,
-		&record.APIRestrictionSource, &record.GroupExpiresAt)
+		&record.APIRestrictionSource, &record.GroupExpiresAt, &permissions, &record.LastActiveAt)
 	if err != nil {
 		if database.IsNotFound(err) {
 			return User{}, ErrNotFound
@@ -701,6 +720,9 @@ func scanUser(row rowScanner) (User, error) {
 		return User{}, fmt.Errorf("user: scan: %w", err)
 	}
 	record.GroupID = group.String
+	if err := json.Unmarshal([]byte(permissions), &record.AdminPermissions); err != nil {
+		return User{}, fmt.Errorf("user: read permissions: %w", err)
+	}
 	return record, nil
 }
 

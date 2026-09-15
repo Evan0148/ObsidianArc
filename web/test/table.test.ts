@@ -3,6 +3,7 @@ import { createApp, h, nextTick, ref, type App } from 'vue';
 import OaTable from '../src/components/OaTable.vue';
 import type { SortState } from '../src/components/table-types';
 import { relativeTime } from '../src/lib/format';
+import { t } from '../src/composables/useI18n';
 
 describe('relativeTime', () => {
   // Every phrase it can produce is past tense, so a moment that has not
@@ -35,6 +36,69 @@ describe('OaTable sort cycling', () => {
     app?.unmount();
     app = null;
     document.body.textContent = '';
+  });
+
+  it('reaches rows beyond fifty, changes page size, and recovers after filtering', async () => {
+    const rows = ref(Array.from({ length: 65 }, (_, i) => ({ name: `Row ${i + 1}` })));
+    app = createApp({ render: () => h(OaTable, {
+      columns: [{ key: 'name', header: 'Name', text: (row: { name: string }) => row.name }],
+      rows: rows.value, empty: 'Empty',
+    }) });
+    app.mount(host);
+    const texts = () => [...host.querySelectorAll('tbody tr')].map((row) => row.textContent?.trim());
+    expect(texts()).toHaveLength(20);
+    host.querySelector<HTMLButtonElement>(`button[aria-label="${t('lastPage')}"]`)!.click();
+    await nextTick();
+    expect(texts()).toEqual(['Row 61', 'Row 62', 'Row 63', 'Row 64', 'Row 65']);
+    host.querySelector<HTMLButtonElement>('.oa-pagination .oa-select')!.click();
+    await nextTick(); await nextTick();
+    const size = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((el) => el.textContent?.trim() === '50')!;
+    size.click(); await nextTick();
+    expect(texts()).toHaveLength(50);
+    expect(texts()[0]).toBe('Row 1');
+    host.querySelector<HTMLButtonElement>(`button[aria-label="${t('lastPage')}"]`)!.click();
+    await nextTick();
+    expect(texts()).toHaveLength(15);
+    rows.value = rows.value.slice(0, 3);
+    await nextTick();
+    expect(texts()).toEqual(['Row 1', 'Row 2', 'Row 3']);
+  });
+
+  it('renders remote pages without slicing them a second time and disables busy navigation', async () => {
+    const busy = ref(false);
+    const pages: unknown[] = [];
+    app = createApp({ render: () => h(OaTable, {
+      columns: [{ key: 'name', header: 'Name', text: (row: { name: string }) => row.name }],
+      rows: [{ name: 'Row 61' }], empty: 'Empty',
+      pagination: { page: 4, pageSize: 20, total: 61 }, busy: busy.value,
+      onPage: (page: unknown) => pages.push(page),
+    }) });
+    app.mount(host);
+    expect(host.querySelector('tbody')?.textContent).toContain('Row 61');
+    const first = host.querySelector<HTMLButtonElement>(`button[aria-label="${t('firstPage')}"]`)!;
+    first.click();
+    expect(pages).toEqual([{ page: 1, pageSize: 20 }]);
+    busy.value = true; await nextTick();
+    expect(first.disabled).toBe(true);
+    first.click(); expect(pages).toHaveLength(1);
+  });
+
+  it('reorders a later page without dropping the rows on other pages', async () => {
+    const rows = Array.from({ length: 25 }, (_, i) => ({ name: String(i) }));
+    let reordered: typeof rows = [];
+    app = createApp({ render: () => h(OaTable, {
+      columns: [{ key: 'name', header: 'Name', text: (row: { name: string }) => row.name }],
+      rows, empty: 'Empty', reorderable: true,
+      onReorder: (next: unknown[]) => { reordered = next as typeof rows; },
+    }) });
+    app.mount(host);
+    host.querySelector<HTMLButtonElement>(`button[aria-label="${t('lastPage')}"]`)!.click();
+    await nextTick();
+    const visible = host.querySelectorAll('tbody tr');
+    visible[0]!.dispatchEvent(new Event('dragstart'));
+    visible[4]!.dispatchEvent(new Event('drop', { cancelable: true }));
+    expect(reordered.slice(0, 20)).toEqual(rows.slice(0, 20));
+    expect(reordered.slice(20).map((row) => row.name)).toEqual(['21', '22', '23', '24', '20']);
   });
 
   it('cycles sort through ascending -> descending -> reset (null) on 3rd click', async () => {

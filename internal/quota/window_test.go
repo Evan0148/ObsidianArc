@@ -87,7 +87,7 @@ func TestAnExemptAccountKeepsItsReading(t *testing.T) {
 	}
 
 	admin := account("admin-1", "")
-	admin.Role = user.RoleAdmin
+	admin.Role = user.RoleSuperAdmin
 
 	held, err := service.Reserve(ctx, admin, Estimate{Tokens: 4000, Credits: 4})
 	if err != nil {

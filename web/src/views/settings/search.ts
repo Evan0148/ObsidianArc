@@ -5,10 +5,10 @@ import { matchesSearch } from '@/lib/search';
 const TERMS = {
   appearance: [
     'secAppearance', 'theme', 'themeAuto', 'themeLight', 'themeDark', 'accentColour', 'accentHint',
-    'languageLabel', 'languageHint',
+    'languageLabel', 'languageHint', 'chatBackground', 'controlColours', 'backgroundVanilla', 'backgroundMint', 'backgroundCloud', 'backgroundLilac', 'backgroundPeach',
   ],
   wallpaper: [
-    'secWallpaper', 'chooseImage', 'remove', 'dim', 'dimHint', 'blur', 'panelTranslucency',
+    'secWallpaper', 'uploadWallpaper', 'chooseImage', 'remove', 'dim', 'dimHint', 'blur', 'panelTranslucency',
     'panelTranslucencyHint', 'panelBlur', 'panelBlurHint',
   ],
   chat: [

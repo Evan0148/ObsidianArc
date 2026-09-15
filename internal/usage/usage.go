@@ -216,9 +216,8 @@ func rankBy(metric string) string {
 
 // GroupBy totals the ledger along one dimension, ranked by one metric.
 //
-// The ranking happens in SQL rather than in the caller because the result is
-// capped: taking the top fifty by credits and then re-sorting them by request
-// count would be the top fifty of the wrong thing.
+// Return every group so paginated selectors and tables can reach accounts
+// outside the former top fifty. Break ties by id to keep paging stable.
 func (s *Store) GroupBy(ctx context.Context, dimension, metric string, filter Filter) ([]Breakdown, error) {
 	var keyColumn, labelExpr, from, prefix string
 
@@ -250,8 +249,7 @@ func (s *Store) GroupBy(ctx context.Context, dimension, metric string, filter Fi
 		COALESCE(SUM(CASE WHEN ` + prefix + `status = 'error' THEN 1 ELSE 0 END), 0)
 		FROM ` + from + where + `
 		GROUP BY ` + keyColumn + `
-		ORDER BY ` + rank + ` DESC, COUNT(*) DESC
-		LIMIT 50`
+		ORDER BY ` + rank + ` DESC, COUNT(*) DESC, ` + keyColumn
 
 	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {

@@ -11,6 +11,8 @@ import { computed, onMounted, ref } from 'vue';
 import { adminApi, type AdminModel, type Group, type SecurityEvent } from '@/admin/api';
 import { fetchSite } from '@/api/auth';
 import { ApiError } from '@/api/client';
+import OaPagination from '@/components/OaPagination.vue';
+import type { PageState } from '@/components/table-types';
 import OaBadge from '@/components/OaBadge.vue';
 import OaFormSection from '@/components/OaFormSection.vue';
 import OaNumberField from '@/components/OaNumberField.vue';
@@ -30,13 +32,16 @@ view.setTitle(t('navSecurity'), t('securitySubtitle'));
 const error = ref('');
 const loaded = ref(false);
 const mailConfigured = ref(false);
-const groups = ref<Group[]>([]);
-const models = ref<AdminModel[]>([]);
+const groups = ref<Pick<Group, 'id' | 'name'>[]>([]);
+const models = ref<Pick<AdminModel, 'id' | 'display_name' | 'model_id' | 'enabled' | 'provider_name'>[]>([]);
 const flash = ref('');
 const saveLabel = ref('');
 const busy = ref(false);
 const events = ref<SecurityEvent[]>([]);
 const eventsTotal = ref(0);
+const eventPage = ref<PageState>({ page: 1, pageSize: 20 });
+let eventRequest = 0;
+function changeEvents(next: PageState): void { eventPage.value = next; void loadEvents(); }
 const eventsLoading = ref(false);
 
 const form = ref({
@@ -180,15 +185,17 @@ function eventLabel(event: string): string {
 }
 
 async function loadEvents(): Promise<void> {
+  const ticket = ++eventRequest;
   eventsLoading.value = true;
   try {
-    const result = await adminApi.securityEvents('?limit=50');
+    const result = await adminApi.securityEvents(`?limit=${eventPage.value.pageSize}&offset=${(eventPage.value.page - 1) * eventPage.value.pageSize}`);
+    if (ticket !== eventRequest) return;
     events.value = result.events ?? [];
     eventsTotal.value = result.total;
   } catch (failure) {
     flash.value = failure instanceof ApiError ? failure.message : String(failure);
   } finally {
-    eventsLoading.value = false;
+    if (ticket === eventRequest) eventsLoading.value = false;
   }
 }
 
@@ -198,15 +205,14 @@ async function load(): Promise<void> {
     // The models come along because one of these settings is which model
     // reviews a sign-up, and a select needs its options. The groups arrive
     // with the settings already.
-    const [data, modelsResult, securityResult] = await Promise.all([
-      adminApi.settings(), adminApi.models(), adminApi.securityEvents('?limit=50'),
+    const [data, modelsResult] = await Promise.all([
+      adminApi.settings(), adminApi.modelOptions(), loadEvents(),
     ]);
     const values = data.settings;
-    mailConfigured.value = data.mail_configured;
-    groups.value = data.groups;
+    mailConfigured.value = data.mail_configured ?? false;
+    groups.value = data.groups ?? [];
     models.value = modelsResult.models;
-    events.value = securityResult.events ?? [];
-    eventsTotal.value = securityResult.total;
+
 
     form.value = {
       registration: values['registration.enabled'] === 'true',
@@ -451,9 +457,7 @@ onMounted(load);
         </div>
       </div>
     </div>
-    <p v-if="eventsTotal > events.length" class="oa-field-hint">
-      {{ t('securityLogShowing', { shown: events.length, total: eventsTotal }) }}
-    </p>
+    <OaPagination v-bind="eventPage" :total="eventsTotal" :busy="eventsLoading" @change="changeEvents" />
 
     <p class="oa-drawer-flash" :class="{ visible: !!flash }">{{ flash }}</p>
   </div>

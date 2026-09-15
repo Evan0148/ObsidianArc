@@ -68,7 +68,7 @@ func (h *Handlers) listUsers(w http.ResponseWriter, r *http.Request) error {
 		return httpx.BadRequest("Malformed group id.")
 	}
 	switch filter.Role {
-	case "", user.RoleUser, user.RoleAdmin:
+	case "", user.RoleUser, user.RoleAdmin, user.RoleSuperAdmin:
 	default:
 		return httpx.BadRequest("Unknown role filter.")
 	}
@@ -136,10 +136,11 @@ type userRequest struct {
 	Email    *string `json:"email"`
 	QQ       *string `json:"qq"`
 
-	Role           *user.Role   `json:"role"`
-	GroupID        *string      `json:"group_id"`
-	GroupExpiresAt *int64       `json:"group_expires_at"`
-	Status         *user.Status `json:"status"`
+	Role             *user.Role   `json:"role"`
+	AdminPermissions *[]string    `json:"admin_permissions"`
+	GroupID          *string      `json:"group_id"`
+	GroupExpiresAt   *int64       `json:"group_expires_at"`
+	Status           *user.Status `json:"status"`
 
 	APIRestricted       *bool `json:"api_restricted"`
 	APIRestrictionHours *int  `json:"api_restriction_hours"`
@@ -156,11 +157,23 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.DecodeJSON(w, r, &body, user.MaxAvatarChars+16*1024); err != nil {
 		return err
 	}
+	if r.Pattern == "PATCH /api/admin/administrators/{id}" &&
+		(body.Nickname != nil || body.Avatar != nil || body.Bio != nil || body.Email != nil || body.QQ != nil ||
+			body.GroupID != nil || body.GroupExpiresAt != nil || body.Status != nil || body.APIRestricted != nil || body.APIRestrictionHours != nil) {
+		return httpx.BadRequest("This page may only change roles and page permissions.")
+	}
 
 	// Shape first, and outside the transaction: a malformed request should be
 	// refused without taking a lock the rest of the instance queues behind.
-	if body.Role != nil && *body.Role != user.RoleUser && *body.Role != user.RoleAdmin {
-		return httpx.BadRequest("Role must be user or admin.")
+	if body.Role != nil && *body.Role != user.RoleUser && *body.Role != user.RoleAdmin && *body.Role != user.RoleSuperAdmin {
+		return httpx.BadRequest("Role must be user, admin or super_admin.")
+	}
+	if body.AdminPermissions != nil {
+		for _, permission := range *body.AdminPermissions {
+			if !user.ValidPermission(permission) {
+				return httpx.BadRequest("Unknown permission %q.", permission)
+			}
+		}
 	}
 	if body.Status != nil && *body.Status != user.StatusActive && *body.Status != user.StatusDisabled {
 		return httpx.BadRequest("Status must be active or disabled.")
@@ -191,12 +204,10 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) error {
 
 	var updated user.User
 	err = h.db.Tx(r.Context(), func(tx *database.Tx) error {
-		// Only the two changes that can cost the instance its last way in need
-		// to serialise; a nickname does not.
-		if body.Role != nil || body.Status != nil {
-			if err := lockAdminPopulation(r.Context(), tx); err != nil {
-				return err
-			}
+		// Profile edits also need this lock now: their target may be promoted
+		// while a delegated operator is waiting to change its login address.
+		if err := lockAdminPopulation(r.Context(), tx); err != nil {
+			return err
 		}
 
 		// Profile edits and membership expiry both read this row before writing
@@ -209,10 +220,46 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 
+		// Re-read the actor while holding the population lock: a concurrent
+		// revocation must win before another grant can be delegated.
+		actor, err = h.users.ByID(r.Context(), tx, actor.ID)
+		if err != nil {
+			return err
+		}
+		required := "users"
+		if r.Pattern == "PATCH /api/admin/administrators/{id}" {
+			required = "administrators"
+		}
+		if !actor.CanAdmin(required) {
+			return permissionDenied()
+		}
+		roleChanged := body.Role != nil && *body.Role != target.Role
+		if target.IsAdmin() || roleChanged || body.AdminPermissions != nil {
+			if !actor.CanManageAdmin(target) {
+				return permissionDenied()
+			}
+		}
+		if !actor.IsSuperAdmin() {
+			if body.Role != nil && *body.Role == user.RoleSuperAdmin {
+				return permissionDenied()
+			}
+			if body.AdminPermissions != nil {
+				for _, permission := range *body.AdminPermissions {
+					if !actor.CanAdmin(permission) {
+						return permissionDenied()
+					}
+				}
+			}
+		}
+		if body.Role != nil && *body.Role != user.RoleAdmin {
+			empty := []string{}
+			body.AdminPermissions = &empty
+		}
+
 		// Losing the last administrator locks everyone out of the instance for
 		// good, so the two changes that could cause it are checked first.
-		losingAdmin := (body.Role != nil && *body.Role != user.RoleAdmin && target.IsAdmin()) ||
-			(body.Status != nil && *body.Status != user.StatusActive && target.IsAdmin())
+		losingAdmin := (body.Role != nil && *body.Role != user.RoleSuperAdmin && target.IsSuperAdmin()) ||
+			(body.Status != nil && *body.Status != user.StatusActive && target.IsSuperAdmin())
 		if losingAdmin {
 			remaining, err := h.users.CountActiveAdmins(r.Context(), tx, userID)
 			if err != nil {
@@ -265,12 +312,13 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 
-		if body.Role != nil || body.GroupID != nil || body.Status != nil {
+		if body.Role != nil || body.GroupID != nil || body.Status != nil || body.AdminPermissions != nil {
 			updated, err = h.users.UpdateAdminFields(r.Context(), tx, userID, user.AdminUpdate{
-				Role:           body.Role,
-				GroupID:        body.GroupID,
-				GroupExpiresAt: body.GroupExpiresAt,
-				Status:         body.Status,
+				Role:             body.Role,
+				AdminPermissions: body.AdminPermissions,
+				GroupID:          body.GroupID,
+				GroupExpiresAt:   body.GroupExpiresAt,
+				Status:           body.Status,
 			})
 			if err != nil {
 				return err
@@ -323,7 +371,7 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) error {
 	})
 	if err != nil {
 		if errors.Is(err, errLastAdmin) {
-			return httpx.Conflict("last_admin", "This is the last administrator; promote someone else first.")
+			return httpx.Conflict("last_admin", "This is the last super administrator; promote someone else first.")
 		}
 		return translateUserError(err)
 	}
@@ -331,6 +379,11 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) error {
 	slog.InfoContext(r.Context(), "administrator changed an account",
 		"actor", actor.ID, "target", userID, "role", body.Role, "status", body.Status)
 
+	if r.Pattern == "PATCH /api/admin/administrators/{id}" {
+		return httpx.WriteJSON(w, http.StatusOK, map[string]any{"user": map[string]any{
+			"id": updated.ID, "role": updated.Role, "admin_permissions": updated.AdminPermissions,
+		}})
+	}
 	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"user": updated})
 }
 
@@ -353,7 +406,20 @@ func (h *Handlers) resetPassword(w http.ResponseWriter, r *http.Request) error {
 
 	// Every session for the account goes, because whoever knew the old
 	// password may be exactly who this reset is aimed at.
-	if err := h.auth.SetPassword(r.Context(), userID, body.NewPassword); err != nil {
+	if err := h.auth.SetPassword(r.Context(), userID, body.NewPassword, func(q database.Queryer, target user.User) error {
+		fresh, err := h.users.ByID(r.Context(), q, actor.ID)
+		if err != nil {
+			return err
+		}
+		if !fresh.CanAdmin("users") || (target.IsAdmin() && !fresh.CanManageAdmin(target)) {
+			return permissionDenied()
+		}
+		return nil
+	}); err != nil {
+		var response *httpx.Error
+		if errors.As(err, &response) {
+			return response
+		}
 		if errors.Is(err, auth.ErrPasswordTooShort) || errors.Is(err, auth.ErrPasswordTooLong) {
 			return httpx.BadRequest("%s", err.Error())
 		}
@@ -378,12 +444,22 @@ func (h *Handlers) deleteUser(w http.ResponseWriter, r *http.Request) error {
 		if err := lockAdminPopulation(r.Context(), tx); err != nil {
 			return err
 		}
+		actor, err = h.users.ByID(r.Context(), tx, actor.ID)
+		if err != nil {
+			return err
+		}
+		if !actor.CanAdmin("users") {
+			return permissionDenied()
+		}
 
 		target, err := h.users.ByID(r.Context(), tx, userID)
 		if err != nil {
 			return err
 		}
-		if target.IsAdmin() {
+		if target.IsAdmin() && !actor.CanManageAdmin(target) {
+			return permissionDenied()
+		}
+		if target.IsSuperAdmin() {
 			remaining, err := h.users.CountActiveAdmins(r.Context(), tx, userID)
 			if err != nil {
 				return err
@@ -400,7 +476,7 @@ func (h *Handlers) deleteUser(w http.ResponseWriter, r *http.Request) error {
 	})
 	if err != nil {
 		if errors.Is(err, errLastAdmin) {
-			return httpx.Conflict("last_admin", "This is the last administrator; promote someone else first.")
+			return httpx.Conflict("last_admin", "This is the last super administrator; promote someone else first.")
 		}
 		return translateUserError(err)
 	}
@@ -422,7 +498,7 @@ func (h *Handlers) userConversations(w http.ResponseWriter, r *http.Request) err
 	}
 
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	records, err := h.conversations.List(r.Context(), userID, limit)
+	records, total, err := h.conversations.ListPage(r.Context(), userID, limit, intParam(r.URL.Query().Get("offset"), 0))
 	if err != nil {
 		return httpx.Internal(err)
 	}
@@ -432,7 +508,7 @@ func (h *Handlers) userConversations(w http.ResponseWriter, r *http.Request) err
 	slog.InfoContext(r.Context(), "administrator listed another account's conversations",
 		"actor", actor.ID, "target", userID)
 
-	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"conversations": records})
+	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"conversations": records, "total": total})
 }
 
 func (h *Handlers) userTranscript(w http.ResponseWriter, r *http.Request) error {
@@ -662,6 +738,10 @@ func translateUserError(err error) error {
 		errors.Is(err, user.ErrAvatarTooLong):
 		return httpx.BadRequest("%s", trimSentence(err.Error()))
 	default:
+		var response *httpx.Error
+		if errors.As(err, &response) {
+			return response
+		}
 		return httpx.Internal(err)
 	}
 }

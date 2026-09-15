@@ -27,7 +27,7 @@ import OaStatGrid from '@/components/OaStatGrid.vue';
 import OaSwitchField from '@/components/OaSwitchField.vue';
 import OaTable from '@/components/OaTable.vue';
 import OaTextField from '@/components/OaTextField.vue';
-import type { Column } from '@/components/table-types';
+import type { Column, PageState } from '@/components/table-types';
 import type { Stat } from '@/components/stat';
 import { celebrate } from '@/composables/useConfetti';
 import { t, type StringKey } from '@/composables/useI18n';
@@ -64,6 +64,22 @@ const series = ref<Array<{ at: number; requests: number; total_tokens: number }>
 const bucketMs = ref(3600000);
 const records = ref<UsageRecord[]>([]);
 const recordTotal = ref(0);
+const recordPage = ref<PageState>({ page: 1, pageSize: 20 });
+const recordsBusy = ref(false);
+let recordRequest = 0;
+let periodSince = 0;
+async function loadRecords(): Promise<void> {
+  const ticket = ++recordRequest;
+  recordsBusy.value = true;
+  try {
+    const result = await adminApi.usageRecords(`?since=${periodSince}&limit=${recordPage.value.pageSize}&offset=${(recordPage.value.page - 1) * recordPage.value.pageSize}`);
+    if (ticket !== recordRequest) return;
+    records.value = result.records ?? [];
+    recordTotal.value = result.total;
+  } catch (failure) { if (ticket === recordRequest) error.value = String(failure); }
+  finally { if (ticket === recordRequest) recordsBusy.value = false; }
+}
+function changeRecords(next: PageState): void { recordPage.value = next; void loadRecords(); }
 const error = ref('');
 const loaded = ref(false);
 
@@ -135,8 +151,7 @@ function onRange(next: string): void {
 function onMetric(next: UsageMetric): void {
   metric.value = next;
   selectedMetric = next;
-  // A different ranking is a different query, not a different view of the
-  // same fifty rows.
+  // The chart and tables use the same server ranking.
   void load();
 }
 
@@ -214,7 +229,7 @@ const resetOpen = ref(false);
 const resetScope = ref<'all' | 'group' | 'user'>('all');
 const resetGroup = ref('');
 const resetAccount = ref('');
-const resetGroups = ref<Group[]>([]);
+const resetGroups = ref<Pick<Group, 'id' | 'name'>[]>([]);
 const resetTitle = ref('');
 const resetError = ref('');
 
@@ -224,7 +239,7 @@ async function openReset(): Promise<void> {
   resetError.value = '';
   resetTitle.value = t('resetQuota');
   try {
-    ({ groups: resetGroups.value } = await adminApi.groups());
+    ({ groups: resetGroups.value } = await adminApi.groupOptions());
     resetGroup.value = resetGroups.value[0]?.id ?? '';
   } catch {
     // The group option simply will not be offered. Everyone and one account
@@ -263,11 +278,13 @@ async function load(): Promise<void> {
   // The ranking is done in SQL, so which metric is being asked for has to go
   // with the request: the top fifty by credits is not the top fifty by
   // request count.
+  periodSince = since;
+  recordPage.value.page = 1;
   const query = `?since=${since}&metric=${metric.value}`;
   try {
-    const [summary, recordsResult] = await Promise.all([
+    const [summary] = await Promise.all([
       adminApi.usage(query),
-      adminApi.usageRecords(`${query}&limit=50`),
+      loadRecords(),
     ]);
     totals.value = summary.totals;
     byModel.value = summary.by_model;
@@ -275,8 +292,7 @@ async function load(): Promise<void> {
     byUser.value = summary.by_user;
     series.value = summary.series;
     bucketMs.value = summary.bucket_ms;
-    records.value = recordsResult.records;
-    recordTotal.value = recordsResult.total;
+
   } catch (failure) {
     error.value = failure instanceof Error ? failure.message : String(failure);
   } finally {
@@ -379,6 +395,9 @@ let selectedDimension: 'model' | 'user' | 'provider' = 'model';
 
     <OaAdminSection :title="t('secRequestsN', { count: recordTotal })">
       <OaTable
+        :pagination="{ ...recordPage, total: recordTotal }"
+        :busy="recordsBusy"
+        @page="changeRecords"
         :columns="recordColumns"
         :rows="records"
         :empty="t('noRequestsPeriod')"

@@ -131,11 +131,11 @@ OBSIDIAN_SECRET_KEY=$(openssl rand -hex 32) docker compose up -d
 
 | 指标 / Metric | 实测数据 / Measurement |
 | --- | --- |
-| 二进制体积 / Binary size | 18.4 MB（Linux amd64；使用 `-tags nosqlite` 为 14.7 MB） |
+| 二进制体积 / Binary size | 18.5 MB（Linux amd64；使用 `-tags nosqlite` 为 14.8 MB） |
 | 冷启动就绪时间 / Cold start | ~28 ms |
 | 空闲内存占用 / Idle RSS | ~16 MB |
 | 20 并发流式峰值 / Peak under 20 concurrency | ~54 MB 内存，11 个 OS 线程 |
-| 首次加载传输体积 / Wire payload | 打开对话界面传输 132.01 kB（114.81 kB JS + 17.20 kB CSS）；中文语言包 (19.79 kB)、管理后台 (46.42 kB)、公式渲染器 (3.65 kB) 按需分包加载 |
+| 首次加载传输体积 / Wire payload | 打开对话界面传输 135.41 kB（117.37 kB JS + 18.04 kB CSS）；中文语言包 (20.33 kB)、管理后台 (48.32 kB)、公式渲染器 (3.65 kB) 按需分包加载 |
 | 后台常驻协程 / Background goroutines | 1 个（10 分钟周期的系统清理协程） |
 | Go 直接依赖 / Direct Go dependencies | 3 个（SQLite 驱动、pgx、x/crypto） |
 | 前端运行时依赖 / Frontend runtime dependencies | 4 个（`vue`、`vue-router`、`@vueuse/core`、`lucide-vue-next`） |

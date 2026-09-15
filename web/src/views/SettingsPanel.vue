@@ -24,7 +24,6 @@ import { IconCollapse, IconExpand } from '@/icons';
 import AccountSection from './settings/AccountSection.vue';
 import AppearanceSection from './settings/AppearanceSection.vue';
 import ChatSection from './settings/ChatSection.vue';
-import WallpaperSection from './settings/WallpaperSection.vue';
 import { matchesSettings, type SettingsGroup } from './settings/search';
 
 type Category = 'appearance' | 'chat' | 'account';
@@ -137,8 +136,7 @@ function toggleFullscreen(): void {
         <div :class="paneClass">
           <p v-if="!Object.values(visibleGroups).some(Boolean)" class="oa-search-empty" role="status">{{ t('noSearchResults') }}</p>
           <!-- Keep drafts mounted while search temporarily hides their section. -->
-          <AppearanceSection v-show="visibleGroups.appearance" />
-          <WallpaperSection v-show="visibleGroups.wallpaper" />
+          <AppearanceSection v-show="visibleGroups.appearance || visibleGroups.wallpaper" />
           <ChatSection v-show="visibleGroups.chat" />
           <div v-show="visibleGroups.account" class="oa-settings-group">
             <AccountSection :query="query" />

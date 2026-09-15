@@ -79,7 +79,7 @@ watch(
 
 const error = ref('');
 const loaded = ref(false);
-const models = ref<AdminModel[]>([]);
+const models = ref<Pick<AdminModel, 'id' | 'display_name' | 'model_id' | 'enabled' | 'provider_name'>[]>([]);
 const held = ref<HeldAttachments>({ held: 0, bytes: 0 });
 const flash = ref('');
 // The strip is coloured as a failure by default, because that is what it
@@ -235,10 +235,10 @@ async function load(): Promise<void> {
   try {
     // The models come along because one of these settings is which model
     // answers a trial, and a select needs its options.
-    const [data, modelsResult] = await Promise.all([adminApi.settings(), adminApi.models()]);
+    const [data, modelsResult] = await Promise.all([adminApi.settings(), adminApi.modelOptions()]);
     const values = data.settings;
     models.value = modelsResult.models;
-    held.value = data.attachments;
+    held.value = data.attachments ?? { held: 0, bytes: 0 };
 
     form.value = {
       siteName: values['site.name'] ?? '',

@@ -196,7 +196,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 
 	administrator, err := users.Create(ctx, nil, user.CreateInput{
-		Username: "root", PasswordHash: "x", GroupID: openGroup.ID, Role: user.RoleAdmin,
+		Username: "root", PasswordHash: "x", GroupID: openGroup.ID, Role: user.RoleSuperAdmin,
 	})
 	if err != nil {
 		t.Fatal(err)

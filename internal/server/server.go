@@ -195,6 +195,9 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		return guard(ctx, req.User, resolved.Model)
 	}
 	recordTurn := func(ctx context.Context, record chat.TurnRecord) {
+		if err := users.MarkActive(ctx, record.User.ID, record.FinishedAt.UnixMilli()); err != nil {
+			slog.ErrorContext(ctx, "could not record account activity", "error", err, "user", record.User.ID)
+		}
 		if err := usageStore.Write(ctx, usage.Record{
 			UserID:          record.User.ID,
 			GroupID:         record.User.GroupID,
@@ -329,7 +332,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 			return httpx.Unauthorized("Sign in to view uptime.")
 		}
 		show := settingsService.Bool(settings.HealthShowUsers)
-		if account.Role != "admin" && !show {
+		if !account.CanAdmin("availability") && !show {
 			return httpx.Forbidden("Uptime is not visible to users.")
 		}
 
@@ -355,7 +358,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		var (
 			modelList []model.Model
 		)
-		if account.Role == "admin" {
+		if account.CanAdmin("availability") {
 			modelList, err = models.ListAll(r.Context(), "")
 		} else {
 			modelList, err = models.ListForUser(r.Context(), account.GroupID, false)
@@ -378,7 +381,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		warnBelow := settingsService.Int(settings.HealthWarnBelow, 0)
 		result := make([]modelUptimeItem, 0, len(modelList))
 		for _, m := range modelList {
-			if account.Role == "admin" && !m.Enabled && !m.AutoDisabled {
+			if account.CanAdmin("availability") && !m.Enabled && !m.AutoDisabled {
 				continue
 			}
 			rate, hasRate := rates[m.ID]
@@ -388,7 +391,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 				Enabled:     m.Enabled,
 				State:       "unknown",
 			}
-			if account.Role == "admin" {
+			if account.CanAdmin("availability") {
 				item.Provider = m.ProviderName
 			}
 			if m.AutoDisabled {

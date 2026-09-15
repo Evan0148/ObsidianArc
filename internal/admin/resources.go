@@ -18,10 +18,6 @@ import (
 // database it is. The attachments below are the part users actually grow, and
 // they are countable in one portable query.
 
-// How many accounts the storage table lists. Long enough to find whoever is
-// filling the disk, short enough that the page stays a page.
-const storageRows = 20
-
 // cpuSampler turns a counter into a rate.
 //
 // The process gives out CPU time used since it started, which on its own says
@@ -69,7 +65,7 @@ func (h *Handlers) resources(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return httpx.Internal(err)
 	}
-	byUser, err := h.conversations.HeldByUser(ctx, storageRows)
+	byUser, err := h.conversations.HeldByUser(ctx, 0)
 	if err != nil {
 		return httpx.Internal(err)
 	}

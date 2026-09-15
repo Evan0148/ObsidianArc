@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/auth"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/conversation"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/httpx"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/model"
@@ -104,28 +105,29 @@ func (h *Handlers) dashboard(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handlers) listSettings(w http.ResponseWriter, r *http.Request) error {
-	groups, err := h.groups.List(r.Context(), nil)
-	if err != nil {
-		return httpx.Internal(err)
+	actor := auth.MustUser(r.Context())
+	out := map[string]any{"settings": h.visibleSettings(actor)}
+	if actor.CanAdmin("security") {
+		groups, err := h.groups.List(r.Context(), nil)
+		if err != nil {
+			return httpx.Internal(err)
+		}
+		// Registration needs a default-group selector, not the groups' policies.
+		options := make([]map[string]string, 0, len(groups))
+		for _, g := range groups {
+			options = append(options, map[string]string{"id": g.ID, "name": g.Name})
+		}
+		out["groups"] = options
+		out["mail_configured"] = h.auth.MailConfigured()
 	}
-	// The groups travel with the settings because one of the settings is
-	// which group new accounts join, and a select needs its options.
-	// What the retention policy is actually holding. Without it an operator
-	// has to trust that their cleanup is working rather than see it.
-	held, bytes, err := h.conversations.Held(r.Context())
-	if err != nil {
-		return httpx.Internal(err)
+	if actor.CanAdmin("settings") {
+		held, bytes, err := h.conversations.Held(r.Context())
+		if err != nil {
+			return httpx.Internal(err)
+		}
+		out["attachments"] = map[string]any{"held": held, "bytes": bytes}
 	}
-
-	return httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"settings":    redacted(h.settings.All()),
-		"groups":      groups,
-		"attachments": map[string]any{"held": held, "bytes": bytes},
-		// Whether this instance can post mail at all. The verification
-		// setting is inert without it, and the form says so rather than
-		// letting an operator switch on something that does nothing.
-		"mail_configured": h.auth.MailConfigured(),
-	})
+	return httpx.WriteJSON(w, http.StatusOK, out)
 }
 
 // Only these keys can be written. An open key/value endpoint would let an
@@ -194,6 +196,9 @@ func (h *Handlers) updateSettings(w http.ResponseWriter, r *http.Request) error 
 	}
 
 	for key, value := range body {
+		if !auth.MustUser(r.Context()).CanAdmin(settingPermission(key)) {
+			return permissionDenied()
+		}
 		if !writableSettings[key] {
 			return httpx.BadRequest("Unknown setting %q.", key)
 		}
@@ -291,7 +296,7 @@ func (h *Handlers) updateSettings(w http.ResponseWriter, r *http.Request) error 
 	if err := h.settings.SetMany(r.Context(), body); err != nil {
 		return httpx.Internal(err)
 	}
-	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"settings": redacted(h.settings.All())})
+	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"settings": h.visibleSettings(auth.MustUser(r.Context()))})
 }
 
 // --- settings as a document ---------------------------------------------------
@@ -320,6 +325,9 @@ func (h *Handlers) importSettings(w http.ResponseWriter, r *http.Request) error 
 	skipped := []string{}
 
 	for key, value := range body {
+		if !auth.MustUser(r.Context()).CanAdmin(settingPermission(key)) {
+			return permissionDenied()
+		}
 		if !writableSettings[key] || len(value) > 8*1024 {
 			skipped = append(skipped, key)
 			continue
@@ -397,7 +405,7 @@ func (h *Handlers) importSettings(w http.ResponseWriter, r *http.Request) error 
 		return httpx.Internal(err)
 	}
 	return httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"settings": redacted(h.settings.All()),
+		"settings": h.visibleSettings(auth.MustUser(r.Context())),
 		"applied":  len(applied),
 		"skipped":  skipped,
 	})

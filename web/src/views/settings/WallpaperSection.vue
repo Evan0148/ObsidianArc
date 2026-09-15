@@ -12,6 +12,7 @@ import { computed, ref } from 'vue';
 import { ApiError, api } from '@/api/client';
 import { ImageError, prepareImage } from '@/chat/image';
 import OaRangeField from '@/components/OaRangeField.vue';
+import { IconImage, IconChevronRight } from '@/icons';
 import { t } from '@/composables/useI18n';
 import { useTheme } from '@/composables/useTheme';
 import { setWallpaper, type Wallpaper } from '@/theme/theme';
@@ -24,6 +25,7 @@ const current = computed(() => theme.paper());
 // about a picture the reader can already see behind the panel; this line is
 // here for the upload, and for when one fails.
 const status = ref('');
+const uploading = ref(false);
 const picker = ref<HTMLInputElement | null>(null);
 
 const dim = ref(current.value?.dim ?? 30);
@@ -56,6 +58,9 @@ function persist(): void {
 }
 
 async function upload(file: File): Promise<void> {
+  if (uploading.value) return;
+  if (file.size > 10 * 1024 * 1024) { status.value = t('wallpaperTooLarge'); return; }
+  uploading.value = true;
   status.value = t('preparing');
   try {
     // The same downscale the composer uses. A phone photo as a wallpaper is
@@ -83,6 +88,8 @@ async function upload(file: File): Promise<void> {
     status.value = error instanceof ImageError || error instanceof ApiError
       ? error.message
       : String(error);
+  } finally {
+    uploading.value = false;
   }
 }
 
@@ -106,12 +113,16 @@ async function clear(): Promise<void> {
 </script>
 
 <template>
-  <div class="oa-settings-panel">
-    <h2 class="oa-admin-section-title">{{ t('secWallpaper') }}</h2>
-    <p v-if="status" class="oa-field-hint">{{ status }}</p>
-
-    <div class="oa-button-row">
-      <button type="button" class="oa-btn" @click="picker?.click()">{{ t('chooseImage') }}</button>
+  <div class="oa-wallpaper-settings">
+    <button type="button" class="oa-wallpaper-upload" :disabled="uploading" @click="picker?.click()">
+      <span class="oa-wallpaper-icon"><IconImage :size="23" /></span>
+      <span class="oa-wallpaper-upload-copy"><strong>{{ uploading ? t('uploading') : t('uploadWallpaper') }}</strong><small>{{ t('wallpaperFormats') }}</small></span>
+      <IconChevronRight :size="17" />
+    </button>
+    <p v-if="status" class="oa-field-hint" role="status">{{ status }}</p>
+    <template v-if="current">
+    <div class="oa-wallpaper-current">
+      <img :src="current.url" :alt="t('secWallpaper')">
       <button v-if="current" type="button" class="oa-btn oa-btn-danger" @click="clear">
         {{ t('remove') }}
       </button>
@@ -157,7 +168,7 @@ async function clear(): Promise<void> {
       @update:model-value="preview"
       @commit="persist"
     />
-
+    </template>
     <input
       ref="picker"
       type="file"

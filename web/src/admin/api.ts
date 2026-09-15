@@ -361,7 +361,16 @@ export interface CardHolding {
   cards: Array<{ id: string; source: string; expires_at: number; created_at: number }>;
 }
 
+export type GroupOption = Pick<Group, 'id' | 'name'>;
+export type ModelOption = Pick<AdminModel, 'id' | 'display_name' | 'model_id' | 'enabled' | 'provider_name'>;
+export type ProviderOption = Pick<Provider, 'id' | 'name' | 'kind' | 'enabled'>;
 export const adminApi = {
+  administrators: (query: string) => api.get<{ users: Pick<Account, 'id' | 'username' | 'nickname' | 'role' | 'admin_permissions'>[]; total: number }>(`/api/admin/administrators${query}`),
+  updateAdministrator: (id: string, body: Record<string, unknown>) => api.patch<{ user: Pick<Account, 'id' | 'role' | 'admin_permissions'> }>(`/api/admin/administrators/${id}`, body),
+  groupOptions: () => api.get<{ groups: GroupOption[] }>('/api/admin/references'),
+  modelOptions: () => api.get<{ models: ModelOption[] }>('/api/admin/references'),
+  providerOptions: () => api.get<{ providers: ProviderOption[] }>('/api/admin/references'),
+  memberOptions: (query: string) => api.get<{ users: Account[]; total: number }>(`/api/admin/member-options${query}`),
   dashboard: (metric: UsageMetric = 'credits') =>
     api.get<Dashboard>(`/api/admin/dashboard?metric=${metric}`),
   meta: () => api.get<Meta>('/api/admin/meta'),
@@ -415,8 +424,8 @@ export const adminApi = {
   revokeUserKey: (id: string, keyID: string) =>
     api.delete<void>(`/api/admin/users/${id}/keys/${keyID}`),
 
-  userConversations: (id: string) =>
-    api.get<{ conversations: Conversation[] }>(`/api/admin/users/${id}/conversations`),
+  userConversations: (id: string, query = '') =>
+    api.get<{ conversations: Conversation[]; total: number }>(`/api/admin/users/${id}/conversations${query}`),
   userTranscript: (id: string, conversationID: string) =>
     api.get<{ conversation: Conversation; messages: Message[] }>(
       `/api/admin/users/${id}/conversations/${conversationID}`,
@@ -494,9 +503,9 @@ export const adminApi = {
   settings: () =>
     api.get<{
       settings: Record<string, string>;
-      groups: Group[];
-      mail_configured: boolean;
-      attachments: HeldAttachments;
+      groups?: GroupOption[];
+      mail_configured?: boolean;
+      attachments?: HeldAttachments;
     }>(
       '/api/admin/settings',
     ),

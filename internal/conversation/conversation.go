@@ -162,11 +162,15 @@ func (s *Store) ListForExport(ctx context.Context, userID string, limit int) ([]
 
 // list is the one query behind both, so a change to the ordering or the
 // projection cannot land on one path and miss the other.
-func (s *Store) list(ctx context.Context, userID string, limit int) ([]Conversation, error) {
+func (s *Store) list(ctx context.Context, userID string, limit int, offsets ...int) ([]Conversation, error) {
+	offset := 0
+	if len(offsets) > 0 {
+		offset = max(0, offsets[0])
+	}
 	rows, err := s.db.Query(ctx,
 		`SELECT `+conversationColumns+` FROM conversations
-		 WHERE user_id = ? ORDER BY pinned DESC, updated_at DESC, id DESC LIMIT ?`,
-		userID, limit)
+		 WHERE user_id = ? ORDER BY pinned DESC, updated_at DESC, id DESC LIMIT ? OFFSET ?`,
+		userID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("conversation: list: %w", err)
 	}

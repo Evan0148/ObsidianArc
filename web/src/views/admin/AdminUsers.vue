@@ -14,6 +14,9 @@ import {
 } from '@/admin/api';
 import { ApiError } from '@/api/client';
 import type { UsageSummary } from '@/api/usage';
+import { ADMIN_PAGES } from '@/admin/permissions';
+import OaCheckList from '@/components/OaCheckList.vue';
+import type { PageState } from '@/components/table-types';
 import OaBadge from '@/components/OaBadge.vue';
 import OaBadgeRow from '@/components/OaBadgeRow.vue';
 import OaCellStack from '@/components/OaCellStack.vue';
@@ -34,7 +37,7 @@ import type { Stat } from '@/components/stat';
 import { t, tn } from '@/composables/useI18n';
 import { IconTrash } from '@/icons';
 import { absoluteTime, compactNumber, relativeTime } from '@/lib/format';
-import { currentUser } from '@/stores/session';
+import { currentUser, canAdmin, isSuperAdmin } from '@/stores/session';
 import AdminFailure from './AdminFailure.vue';
 import CreditsField from './CreditsField.vue';
 import { useAdminView } from './adminView';
@@ -44,9 +47,13 @@ const WINDOWS: QuotaWindowKind[] = ['5h', '1w', '1m'];
 const view = useAdminView();
 view.setTitle(t('usersTitle'));
 
-const groups = ref<Group[]>([]);
+const groups = ref<Pick<Group, 'id' | 'name'>[]>([]);
 const users = ref<Account[]>([]);
 const total = ref(0);
+const paging = ref<PageState>({ page: 1, pageSize: 20 });
+let request = 0;
+function changePage(next: PageState): void { paging.value = next; void list(); }
+function filterList(): void { paging.value.page = 1; ++request; void list(); }
 const error = ref('');
 const listError = ref('');
 const loaded = ref(false);
@@ -59,11 +66,11 @@ const listing = ref(false);
 const filters = ref({ ...state });
 
 const columns = computed<Array<Column<Account>>>(() => [
-  { key: 'account', header: t('colAccount') },
+  { key: 'account', header: t('colAccount'), width: '220px' },
   { key: 'email', header: t('colEmail'), text: (row) => row.email || '—', secondary: true, width: '160px' },
   { key: 'group', header: t('colGroup'), text: (row) => groupName(row.group_id), width: '120px' },
   { key: 'role', header: t('colRole'), width: '120px' },
-  { key: 'seen', header: t('colLastSeen'), text: (row) => relativeTime(row.last_login_at), secondary: true, width: '110px' },
+  { key: 'seen', header: t('colLastSeen'), text: (row) => relativeTime(row.last_active_at || row.last_login_at), secondary: true, width: '110px' },
 ]);
 
 function groupName(id: string): string {
@@ -73,14 +80,15 @@ function groupName(id: string): string {
 // Typing filters after a pause rather than on each keystroke: one request per
 // word, not one per letter.
 const debouncedList = useDebounceFn(() => void list(), 250);
-watch(() => filters.value.q, () => void debouncedList());
+watch(() => filters.value.q, () => { paging.value.page = 1; ++request; void debouncedList(); });
 
 async function list(): Promise<void> {
+  const ticket = ++request;
   Object.assign(state, filters.value);
   listing.value = true;
   listError.value = '';
 
-  const query = new URLSearchParams();
+  const query = new URLSearchParams({ limit: String(paging.value.pageSize), offset: String((paging.value.page - 1) * paging.value.pageSize) });
   if (filters.value.q) query.set('q', filters.value.q.trim());
   if (filters.value.role) query.set('role', filters.value.role);
   if (filters.value.status) query.set('status', filters.value.status);
@@ -88,13 +96,19 @@ async function list(): Promise<void> {
 
   try {
     const result = await adminApi.users(query.toString() ? `?${query}` : '');
+    if (ticket !== request) return;
+    if (result.total > 0 && (paging.value.page - 1) * paging.value.pageSize >= result.total) {
+      paging.value.page = Math.ceil(result.total / paging.value.pageSize);
+      await list(); return;
+    }
     users.value = result.users ?? [];
     total.value = result.total;
     view.setTitle(t('usersTitle'), tn(result.total, 'accountsCountOne', 'accountsCountOther'));
   } catch (failure) {
+    if (ticket !== request) return;
     listError.value = failure instanceof ApiError ? failure.message : String(failure);
   } finally {
-    listing.value = false;
+    if (ticket === request) listing.value = false;
   }
 }
 
@@ -113,6 +127,9 @@ const lifetime = ref<{ requests: number; total_tokens: number; credits: number }
 const cards = ref<CardHolding | null>(null);
 const keys = ref<ApiKey[] | null>(null);
 const conversations = ref<Conversation[] | null>(null);
+const conversationPage = ref<PageState>({ page: 1, pageSize: 20 });
+const conversationTotal = ref(0);
+async function changeConversationPage(next: PageState): Promise<void> { conversationPage.value = next; await openConversations(); }
 const transcript = ref<Message[] | null>(null);
 const transcriptTitle = ref('');
 const apiRestrictionTouched = ref(false);
@@ -133,6 +150,7 @@ function defaultGrantExpiry(): string {
 const form = ref({
   nickname: '', email: '', qq: '', bio: '', avatar: '',
   role: 'user' as Role,
+  permissions: [] as string[],
   status: 'active' as AccountStatus,
   group: '',
   groupExpiresAt: '',
@@ -166,8 +184,8 @@ const summaryStats = computed<Stat[]>(() => {
     {
       label: t('joined'),
       value: new Date(row.created_at).toLocaleDateString(),
-      note: row.last_login_at
-        ? t('lastSeenAt', { when: relativeTime(row.last_login_at) })
+      note: (row.last_active_at || row.last_login_at)
+        ? t('lastSeenAt', { when: relativeTime(row.last_active_at || row.last_login_at) })
         : t('neverSignedIn'),
     },
   ];
@@ -186,7 +204,7 @@ const identity = computed<Array<[string, string, boolean]>>(() => {
   const rows: Array<[string, string, boolean]> = [
     [t('colUID'), row.id, true],
     [t('colRegistered'), absoluteTime(row.created_at), false],
-    [t('colLastSeen'), row.last_login_at ? absoluteTime(row.last_login_at) : t('neverSignedIn'), false],
+    [t('colLastSeen'), (row.last_active_at || row.last_login_at) ? absoluteTime(row.last_active_at || row.last_login_at) : t('neverSignedIn'), false],
   ];
   // Only where it was recorded: accounts predating the column have none, and
   // an empty row reads as a missing value rather than an absent one.
@@ -204,6 +222,7 @@ const conversationColumns = computed<Array<Column<Conversation>>>(() => [
 async function open(id: string): Promise<void> {
   panelError.value = '';
   mode.value = 'account';
+  conversationPage.value.page = 1;
   keys.value = null;
   grantLabel.value = '';
   grantCount.value = 1;
@@ -248,6 +267,7 @@ async function open(id: string): Promise<void> {
     bio: row.bio,
     avatar: row.avatar,
     role: row.role,
+    permissions: [...(row.admin_permissions ?? [])],
     status: row.status,
     group: row.group_id,
     groupExpiresAt: row.group_expires_at ? dateTimeLocal(row.group_expires_at) : '',
@@ -279,9 +299,14 @@ async function save(): Promise<void> {
       qq: form.value.qq.trim(),
       bio: form.value.bio.trim(),
       avatar: form.value.avatar.trim(),
-      role: form.value.role,
+
       status: form.value.status,
     };
+    if (form.value.role !== row.role) patch.role = form.value.role;
+    if (canAdmin('administrators') && (form.value.role === 'admin') &&
+      (form.value.role !== row.role || JSON.stringify(form.value.permissions) !== JSON.stringify(row.admin_permissions ?? []))) {
+      patch.admin_permissions = form.value.permissions;
+    }
     // Only send a membership change when the operator edited it. A profile
     // panel left open across expiry must not silently renew the old group.
     const originalExpiry = row.group_expires_at ? dateTimeLocal(row.group_expires_at) : '';
@@ -297,13 +322,14 @@ async function save(): Promise<void> {
       patch.api_restricted = form.value.apiRestricted;
       patch.api_restriction_hours = form.value.apiRestrictionHours ?? 0;
     }
-    await adminApi.updateUser(row.id, patch);
+    const result = await adminApi.updateUser(row.id, patch);
+    if (currentUser.value?.id === row.id) currentUser.value = { ...currentUser.value, ...result.user };
 
     if (form.value.newPassword) {
       await adminApi.resetPassword(row.id, form.value.newPassword);
     }
 
-    await adminApi.savePolicy({
+    if (canAdmin('users') || canAdmin('usage')) await adminApi.savePolicy({
       scope: 'user',
       scope_id: row.id,
       rpm: form.value.rpm,
@@ -382,7 +408,9 @@ async function openConversations(): Promise<void> {
   conversations.value = null;
   panelError.value = '';
   try {
-    ({ conversations: conversations.value } = await adminApi.userConversations(row.id));
+    const result = await adminApi.userConversations(row.id, `?limit=${conversationPage.value.pageSize}&offset=${(conversationPage.value.page - 1) * conversationPage.value.pageSize}`);
+    conversations.value = result.conversations;
+    conversationTotal.value = result.total;
   } catch (failure) {
     panelError.value = failure instanceof ApiError ? failure.message : String(failure);
   }
@@ -422,7 +450,7 @@ const panelTitle = computed(() => {
 async function load(): Promise<void> {
   error.value = '';
   try {
-    ({ groups: groups.value } = await adminApi.groups());
+    ({ groups: groups.value } = await adminApi.groupOptions());
   } catch (failure) {
     error.value = failure instanceof Error ? failure.message : String(failure);
     loaded.value = true;
@@ -453,8 +481,9 @@ const state = { q: '', role: '', status: '', group: '' };
           { value: '', label: t('anyRole') },
           { value: 'user', label: t('filterUsers') },
           { value: 'admin', label: t('filterAdmins') },
+          { value: 'super_admin', label: t('superAdmin') },
         ]"
-        @update:model-value="list"
+        @update:model-value="filterList"
       />
       <OaSelect
         v-model="filters.status"
@@ -464,7 +493,7 @@ const state = { q: '', role: '', status: '', group: '' };
           { value: 'active', label: t('filterActive') },
           { value: 'disabled', label: t('filterDisabled') },
         ]"
-        @update:model-value="list"
+        @update:model-value="filterList"
       />
       <OaSelect
         v-model="filters.group"
@@ -473,14 +502,16 @@ const state = { q: '', role: '', status: '', group: '' };
           { value: '', label: t('anyGroup') },
           ...groups.map((group) => ({ value: group.id, label: group.name })),
         ]"
-        @update:model-value="list"
+        @update:model-value="filterList"
       />
     </div>
 
     <p v-if="listing" class="oa-table-empty">{{ t('loading') }}</p>
-    <p v-else-if="listError" class="oa-table-empty">{{ listError }}</p>
+    <p v-if="listError" class="oa-table-empty">{{ listError }}</p>
     <OaTable
-      v-else
+      :pagination="{ ...paging, total }"
+      :busy="listing"
+      @page="changePage"
       :columns="columns"
       :rows="users"
       :empty="t('noAccountsMatch')"
@@ -496,6 +527,7 @@ const state = { q: '', role: '', status: '', group: '' };
       </template>
       <template #cell-role="{ row }">
         <OaBadgeRow>
+          <OaBadge v-if="row.role === 'super_admin'">{{ t('superAdmin') }}</OaBadge>
           <OaBadge v-if="row.role === 'admin'">{{ t('admin') }}</OaBadge>
           <OaBadge v-if="row.status === 'disabled'" tone="danger">{{ t('disabled') }}</OaBadge>
           <OaBadge v-if="apiRestrictionActive(row)" tone="warning">{{ t('apiRestrictedBadge') }}</OaBadge>
@@ -611,13 +643,23 @@ const state = { q: '', role: '', status: '', group: '' };
 
       <OaFormSection :title="t('secAccess')" />
       <OaSelectField
+        v-if="canAdmin('administrators')"
         v-model="form.role"
         :label="t('role')"
         :hint="self ? t('cannotDemoteSelf') : undefined"
         :options="[
           { value: 'user', label: t('roleUser') },
           { value: 'admin', label: t('roleAdmin') },
+          ...(isSuperAdmin ? [{ value: 'super_admin' as const, label: t('superAdmin') }] : []),
         ]"
+      />
+      <OaCheckList
+        v-if="canAdmin('administrators') && form.role === 'admin'"
+        v-model="form.permissions"
+        :label="t('adminPermissions')"
+        :hint="t('adminPermissionsHint')"
+        :items="ADMIN_PAGES.filter((entry) => canAdmin(entry.value)).map((entry) => ({ value: entry.value, label: t(entry.label) }))"
+        :empty-text="t('permissionDeniedTitle')"
       />
       <OaSelectField
         v-model="form.status"
@@ -746,6 +788,8 @@ const state = { q: '', role: '', status: '', group: '' };
       <p v-else-if="!conversations.length" class="oa-field-hint">{{ t('noConversations') }}</p>
       <OaTable
         v-else
+        :pagination="{ ...conversationPage, total: conversationTotal }"
+        @page="changeConversationPage"
         :columns="conversationColumns"
         :rows="conversations"
         :empty="t('noConversations')"
