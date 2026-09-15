@@ -337,16 +337,20 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		}
 
 		resetAt := int64(settingsService.Int(settings.HealthResetAt, 0))
-		window := time.Duration(settingsService.Int(settings.HealthWindowMins, 30)) * time.Minute
-		if window < 24*time.Hour {
-			window = 24 * time.Hour
-		}
-		windowStart := time.Now().Add(-window).UnixMilli()
+		// The card compares the last hour with a fixed day of history, so
+		// changing the probe policy must not change either displayed window.
+		now := time.Now()
+		windowStart := now.Add(-24 * time.Hour).UnixMilli()
 		since := windowStart
 		if resetAt > since {
 			since = resetAt
 		}
 		rates, err := healthStore.Rates(r.Context(), since)
+		if err != nil {
+			return httpx.Internal(err)
+		}
+		hourSince := max(now.Add(-time.Hour).UnixMilli(), resetAt)
+		hourRates, err := healthStore.Rates(r.Context(), hourSince)
 		if err != nil {
 			return httpx.Internal(err)
 		}
@@ -373,6 +377,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 			Provider    string             `json:"provider_name,omitempty"`
 			Enabled     bool               `json:"enabled"`
 			Uptime      *float64           `json:"uptime,omitempty"`
+			UptimeHour  *float64           `json:"uptime_hour,omitempty"`
 			State       string             `json:"state"`
 			Total       int                `json:"total"`
 			History     []health.TimePoint `json:"history"`
@@ -393,6 +398,10 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 			}
 			if account.CanAdmin("availability") {
 				item.Provider = m.ProviderName
+			}
+			if hourRate := hourRates[m.ID]; hourRate.Total > 0 {
+				share := hourRate.Share()
+				item.UptimeHour = &share
 			}
 			if m.AutoDisabled {
 				item.State = "down"
@@ -419,14 +428,13 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 
 			pts, hasPts := timeline[m.ID]
 			if !hasPts || len(pts) == 0 {
-				now := time.Now().UnixMilli()
-				span := (now - since) / 24
+				span := (now.UnixMilli() - windowStart) / 24
 				if span <= 0 {
 					span = 1
 				}
 				pts = make([]health.TimePoint, 24)
 				for i := 0; i < 24; i++ {
-					pts[i] = health.TimePoint{At: since + int64(i)*span + span/2, Total: 0}
+					pts[i] = health.TimePoint{At: windowStart + int64(i)*span + span/2, Total: 0}
 				}
 			}
 			item.History = pts

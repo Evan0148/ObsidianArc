@@ -23,6 +23,7 @@ interface ModelUptimeItem {
   provider_name?: string;
   enabled: boolean;
   uptime?: number;
+  uptime_hour?: number;
   state: 'up' | 'degraded' | 'down' | 'unknown';
   total?: number;
   history?: Array<{ at: number; uptime: number | null; total: number }>;
@@ -160,8 +161,8 @@ onMounted(load);
               </div>
             </div>
             <div class="oa-uptime-row-meta">
-              <span v-if="model.uptime !== undefined" class="oa-uptime-percentage">
-                {{ (model.uptime * 100).toFixed(model.uptime >= 0.995 ? 0 : 1) }}%
+              <span class="oa-uptime-percentage" :title="t('uptimeHourTitle')">
+                {{ t('uptimeHourShort') }} {{ model.uptime_hour === undefined ? '—' : `${(model.uptime_hour * 100).toFixed(model.uptime_hour >= 0.995 ? 0 : 1)}%` }}
               </span>
               <OaBadge
                 :tone="model.state === 'up' ? 'default' : model.state === 'degraded' ? 'warning' : model.state === 'down' ? 'danger' : 'muted'"
@@ -194,7 +195,7 @@ onMounted(load);
                     {{ t('statRequests') }}: <strong>{{ model.total ?? 0 }}</strong>
                   </span>
                   <span v-if="model.uptime !== undefined" class="oa-uptime-stat-item">
-                    {{ t('colUptime') }}: <strong>{{ (model.uptime * 100).toFixed(1) }}%</strong>
+                    {{ t('uptimeDayTitle') }}: <strong>{{ (model.uptime * 100).toFixed(1) }}%</strong>
                   </span>
                 </div>
               </div>

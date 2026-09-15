@@ -120,6 +120,7 @@ const EMPTY_BODIES: Array<[RegExp, unknown]> = [
         provider_name: 'Provider A',
         enabled: true,
         uptime: 0.99,
+        uptime_hour: 0.5,
         state: 'up',
         total: 100,
         history: [{ at: 1000, uptime: 0.99, total: 10 }],
@@ -516,11 +517,15 @@ describe('what moves, and what does not', () => {
     const firstHeader = cards[0]?.querySelector<HTMLElement>('.oa-uptime-card-header');
     const firstAccordion = cards[0]?.querySelector('.oa-uptime-accordion');
     expect(firstAccordion?.classList.contains('open')).toBe(false);
+    expect(firstHeader?.querySelector('.oa-uptime-percentage')?.textContent).toContain('50.0%');
+    expect(firstHeader?.querySelector('.oa-uptime-percentage')?.textContent).not.toContain('99');
+    expect(cards[1]?.querySelector('.oa-uptime-percentage')?.textContent).toContain('—');
 
     // Clicking header expands the card
     firstHeader?.click();
     await nextTick();
     expect(firstAccordion?.classList.contains('open')).toBe(true);
+    expect(firstAccordion?.querySelector('.oa-uptime-card-stats')?.textContent).toContain('99.0%');
 
     // Clicking again collapses it
     firstHeader?.click();

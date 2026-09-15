@@ -217,17 +217,17 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
 | Binary (SQLite + embedded SPA) | < 30 MB | 18.5 MB (14.7 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 135 kB | 135.37 kB to open the chat (117.33 JS + 18.04 CSS) |
+| Frontend, on the wire | < 135 kB | 135.55 kB to open the chat (117.46 JS + 18.08 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
 
-The bundle and binaries were remeasured on 2026-09-15 after keeping delegated
-role changes on the users page and allowing background colours alongside
-wallpapers. The chat payload is 0.37 kB above the existing target; that target is unchanged.
+The bundle and binaries were remeasured on 2026-09-15 (UTC) after separating
+the uptime card's hourly percentage from its daily history.
+The chat payload is 0.55 kB above the existing target; that target is unchanged.
 Binary sizes use Go 1.27.0,
 Linux amd64, `-trimpath -ldflags "-s -w"`; transfer sizes are gzip-compressed
 JS and CSS in decimal kB, with totals rounded after summing. Binary sizes
-are decimal MB (18,456,736 bytes with SQLite; 14,745,760 bytes without it).
+are decimal MB (18,456,736 bytes with SQLite; 14,749,856 bytes without it).
 
 The target moved with the interface. It was < 80 kB while the frontend was
 hand-written DOM calls, and 71.6 kB against it; adopting Vue put roughly 45 kB
@@ -244,10 +244,10 @@ What each reader actually downloads:
 
 | | gzipped |
 | --- | --- |
-| English, not an administrator | 135.37 kB |
-| Chinese, not an administrator | 155.71 kB |
-| …and a conversation containing a formula | 159.36 kB |
-| Chinese administrator, backoffice open | 203.11 kB |
+| English, not an administrator | 135.55 kB |
+| Chinese, not an administrator | 155.89 kB |
+| …and a conversation containing a formula | 159.54 kB |
+| Chinese administrator, backoffice open | 203.29 kB |
 
 Route-level splitting would shave the first paint further and is deliberately
 switched off for everything but the backoffice: /settings, /keys, /usage and
