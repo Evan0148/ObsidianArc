@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/database"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/group"
@@ -61,6 +62,66 @@ func TestResetAllClearsEveryone(t *testing.T) {
 			t.Errorf("%s still shows %v spent", id, used)
 		}
 	}
+}
+
+// Deleting the counters alone restores the numbers but leaves every account
+// on its old clock. The administrator's global reset is a new common starting
+// point, so an account with two hours left gets a full five hours and seven
+// days from the moment of the reset.
+func TestResetAllRestartsAllowanceWindowsFromNow(t *testing.T) {
+	service, _ := newService(t)
+	ctx := context.Background()
+	person := account("user-1", "")
+	person.CreatedAt = time.Now().Add(-48 * time.Hour).UnixMilli()
+	if _, err := service.Policies().Save(ctx, Policy{
+		Scope: ScopeGlobal,
+		Windows: map[Window]Limits{
+			Window5H:   limits(true, ptrInt(10), nil, nil),
+			WindowWeek: limits(true, ptrInt(10), nil, nil),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	before, err := service.SummaryFor(ctx, person)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertRemainingNear(t, before, Window5H, 2*time.Hour)
+	assertRemainingNear(t, before, WindowWeek, 5*24*time.Hour)
+
+	if err := service.ResetAll(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Reserve(ctx, person, Estimate{}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := service.SummaryFor(ctx, person)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertRemainingNear(t, after, Window5H, 5*time.Hour)
+	assertRemainingNear(t, after, WindowWeek, 7*24*time.Hour)
+	for _, usage := range after.Windows {
+		if (usage.Kind == Window5H || usage.Kind == WindowWeek) && usage.UsedRequests != 1 {
+			t.Errorf("%s recorded %d requests in the restarted window, want 1", usage.Kind, usage.UsedRequests)
+		}
+	}
+}
+
+func assertRemainingNear(t *testing.T, summary Summary, window Window, want time.Duration) {
+	t.Helper()
+	for _, usage := range summary.Windows {
+		if usage.Kind != window {
+			continue
+		}
+		remaining := time.Until(time.UnixMilli(usage.ResetsAt))
+		if remaining < want-5*time.Second || remaining > want+5*time.Second {
+			t.Errorf("%s remaining = %v, want about %v", window, remaining, want)
+		}
+		return
+	}
+	t.Errorf("summary has no %s window", window)
 }
 
 // Resetting nobody is not an error and must not become "reset everybody" —

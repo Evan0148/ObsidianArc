@@ -53,8 +53,8 @@ export function importAccount(document: unknown): Promise<ImportResult> {
  * and it is revoked on the next frame — long enough for the click to have
  * been dispatched, short enough not to pin the whole document in memory.
  */
-export function saveAsFile(name: string, contents: string): void {
-  const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' }));
+export function saveAsFile(name: string, contents: string, type = 'application/json'): void {
+  const url = URL.createObjectURL(new Blob([contents], { type }));
   const link = document.createElement('a');
   link.href = url;
   link.download = name;

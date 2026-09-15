@@ -132,6 +132,7 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/admin/groups", protected(h.listGroups))
 	mux.Handle("POST /api/admin/groups", protected(h.createGroup))
 	mux.Handle("PATCH /api/admin/groups/{id}", protected(h.updateGroup))
+	mux.Handle("POST /api/admin/groups/{id}/members", protected(h.assignGroupMembers))
 	mux.Handle("DELETE /api/admin/groups/{id}", protected(h.deleteGroup))
 
 	mux.Handle("GET /api/admin/settings", protected(h.listSettings))

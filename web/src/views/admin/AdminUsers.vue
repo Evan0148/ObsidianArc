@@ -135,6 +135,7 @@ const form = ref({
   role: 'user' as Role,
   status: 'active' as AccountStatus,
   group: '',
+  groupExpiresAt: '',
   apiRestricted: false,
   apiRestrictionHours: 24 as number | null,
   newPassword: '',
@@ -249,6 +250,7 @@ async function open(id: string): Promise<void> {
     role: row.role,
     status: row.status,
     group: row.group_id,
+    groupExpiresAt: row.group_expires_at ? dateTimeLocal(row.group_expires_at) : '',
     apiRestricted: restrictionActive,
     apiRestrictionHours: restrictionActive ? restrictionHours : 24,
     newPassword: '',
@@ -279,8 +281,18 @@ async function save(): Promise<void> {
       avatar: form.value.avatar.trim(),
       role: form.value.role,
       status: form.value.status,
-      group_id: form.value.group,
     };
+    // Only send a membership change when the operator edited it. A profile
+    // panel left open across expiry must not silently renew the old group.
+    const originalExpiry = row.group_expires_at ? dateTimeLocal(row.group_expires_at) : '';
+    if (form.value.group !== row.group_id || form.value.groupExpiresAt !== originalExpiry) {
+      const expiry = form.value.groupExpiresAt ? new Date(form.value.groupExpiresAt).getTime() : 0;
+      if (form.value.groupExpiresAt && (!Number.isFinite(expiry) || expiry <= Date.now())) {
+        throw new Error(t('membershipExpiryInvalid'));
+      }
+      patch.group_id = form.value.group;
+      patch.group_expires_at = expiry;
+    }
     if (apiRestrictionTouched.value) {
       patch.api_restricted = form.value.apiRestricted;
       patch.api_restriction_hours = form.value.apiRestrictionHours ?? 0;
@@ -620,6 +632,13 @@ const state = { q: '', role: '', status: '', group: '' };
         v-model="form.group"
         :label="t('group')"
         :options="groups.map((entry) => ({ value: entry.id, label: entry.name }))"
+        @update:model-value="form.groupExpiresAt = ''"
+      />
+      <OaTextField
+        v-model="form.groupExpiresAt"
+        type="datetime-local"
+        :label="t('membershipExpiry')"
+        :hint="t('membershipExpiryHint')"
       />
       <OaSwitchField
         v-model="form.apiRestricted"

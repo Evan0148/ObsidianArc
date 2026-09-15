@@ -40,16 +40,17 @@ const (
 // it can only be obtained through CredentialsByLogin, which is called from
 // exactly one place.
 type User struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	QQ       string `json:"qq"`
-	Nickname string `json:"nickname"`
-	Avatar   string `json:"avatar"`
-	Bio      string `json:"bio"`
-	Role     Role   `json:"role"`
-	GroupID  string `json:"group_id"`
-	Status   Status `json:"status"`
+	ID             string `json:"id"`
+	Username       string `json:"username"`
+	Email          string `json:"email"`
+	QQ             string `json:"qq"`
+	Nickname       string `json:"nickname"`
+	Avatar         string `json:"avatar"`
+	Bio            string `json:"bio"`
+	Role           Role   `json:"role"`
+	GroupID        string `json:"group_id"`
+	GroupExpiresAt int64  `json:"group_expires_at"`
+	Status         Status `json:"status"`
 	// Whether the address above has been confirmed. True for every
 	// account that predates verification, and for one with no address:
 	// there is nothing to confirm and nothing to hold back.
@@ -159,7 +160,7 @@ func NewStore(db *database.DB) *Store { return &Store{db: db} }
 
 const columns = `id, username, email, qq, nickname, avatar, bio, role, group_id, status,
 	email_verified, created_at, updated_at, last_login_at, signup_ip, signup_user_agent,
-	api_restricted, api_restricted_until, api_restriction_source`
+	api_restricted, api_restricted_until, api_restriction_source, group_expires_at`
 
 type CreateInput struct {
 	Username     string
@@ -249,7 +250,11 @@ func (s *Store) ByID(ctx context.Context, q database.Queryer, userID string) (Us
 	if q == nil {
 		q = s.db
 	}
-	return scanUser(q.QueryRow(ctx, `SELECT `+columns+` FROM users WHERE id = ?`, userID))
+	record, err := scanUser(q.QueryRow(ctx, `SELECT `+columns+` FROM users WHERE id = ?`, userID))
+	if err != nil {
+		return User{}, err
+	}
+	return s.ResolveMembership(ctx, q, record)
 }
 
 // CredentialsByLogin resolves a username or an email address to the account
@@ -270,7 +275,7 @@ func (s *Store) CredentialsByLogin(ctx context.Context, identifier string) (User
 		&record.Bio, &record.Role, &group, &record.Status, &record.EmailVerified,
 		&record.CreatedAt, &record.UpdatedAt, &record.LastLoginAt, &record.SignupIP,
 		&record.SignupUserAgent, &record.APIRestricted, &record.APIRestrictedUntil,
-		&record.APIRestrictionSource, &hash)
+		&record.APIRestrictionSource, &record.GroupExpiresAt, &hash)
 	if err != nil {
 		if database.IsNotFound(err) {
 			return User{}, "", ErrNotFound
@@ -278,7 +283,8 @@ func (s *Store) CredentialsByLogin(ctx context.Context, identifier string) (User
 		return User{}, "", fmt.Errorf("user: load credentials: %w", err)
 	}
 	record.GroupID = group.String
-	return record, hash, nil
+	record, err = s.ResolveMembership(ctx, nil, record)
+	return record, hash, err
 }
 
 // Exists answers the availability check the registration form makes before it
@@ -394,10 +400,11 @@ func (s *Store) UpdateProfile(ctx context.Context, q database.Queryer, userID st
 
 // AdminUpdate is everything only an administrator may change.
 type AdminUpdate struct {
-	Role    *Role
-	GroupID *string
-	Status  *Status
-	QQ      *string
+	Role           *Role
+	GroupID        *string
+	GroupExpiresAt *int64
+	Status         *Status
+	QQ             *string
 }
 
 func (s *Store) UpdateAdminFields(ctx context.Context, q database.Queryer, userID string, in AdminUpdate) (User, error) {
@@ -412,8 +419,18 @@ func (s *Store) UpdateAdminFields(ctx context.Context, q database.Queryer, userI
 		args = append(args, orDefault(*in.Role, RoleUser))
 	}
 	if in.GroupID != nil {
+		// An ordinary save of the same group keeps its term. Moving somebody
+		// elsewhere must not carry an old expiry into the new membership.
+		if in.GroupExpiresAt == nil {
+			sets = append(sets, "group_expires_at = CASE WHEN group_id = ? THEN group_expires_at ELSE 0 END")
+			args = append(args, nullable(*in.GroupID))
+		}
 		sets = append(sets, "group_id = ?")
 		args = append(args, nullable(*in.GroupID))
+	}
+	if in.GroupExpiresAt != nil {
+		sets = append(sets, "group_expires_at = ?")
+		args = append(args, *in.GroupExpiresAt)
 	}
 	if in.Status != nil {
 		sets = append(sets, "status = ?")
@@ -496,6 +513,9 @@ type ListFilter struct {
 }
 
 func (s *Store) List(ctx context.Context, filter ListFilter) ([]User, int, error) {
+	if err := s.ExpireMemberships(ctx, nil, time.Now()); err != nil {
+		return nil, 0, err
+	}
 	where, args := filter.clauses()
 
 	var total int
@@ -635,7 +655,7 @@ func (s *Store) MoveGroupMembers(ctx context.Context, q database.Queryer, from, 
 	if q == nil {
 		q = s.db
 	}
-	_, err := q.Exec(ctx, `UPDATE users SET group_id = ?, updated_at = ? WHERE group_id = ?`,
+	_, err := q.Exec(ctx, `UPDATE users SET group_id = ?, group_expires_at = 0, updated_at = ? WHERE group_id = ?`,
 		nullable(to), time.Now().UnixMilli(), from)
 	if err != nil {
 		return fmt.Errorf("user: move group members: %w", err)
@@ -673,7 +693,7 @@ func scanUser(row rowScanner) (User, error) {
 		&record.Bio, &record.Role, &group, &record.Status, &record.EmailVerified,
 		&record.CreatedAt, &record.UpdatedAt, &record.LastLoginAt, &record.SignupIP,
 		&record.SignupUserAgent, &record.APIRestricted, &record.APIRestrictedUntil,
-		&record.APIRestrictionSource)
+		&record.APIRestrictionSource, &record.GroupExpiresAt)
 	if err != nil {
 		if database.IsNotFound(err) {
 			return User{}, ErrNotFound

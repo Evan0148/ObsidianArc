@@ -25,6 +25,7 @@ const ACCOUNT: Account = {
   bio: '',
   role: 'user',
   group_id: 'g1',
+  group_expires_at: 0,
   group_name: 'Default',
   status: 'active',
   created_at: Date.now(),

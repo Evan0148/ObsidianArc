@@ -107,7 +107,7 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     id: 'groupsList',
     pageSlug: 'groups',
     titleKey: 'groupsTitle',
-    searchKeys: ['groupsSubtitle'],
+    searchKeys: ['groupsSubtitle', 'groupMembers', 'membershipExpiry', 'saveMembers'],
     keywords: ['用户组列表', '组管理', 'groups list'],
   },
   {
@@ -349,6 +349,13 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
   },
 
   // --- Codes
+  {
+    id: 'exportCodes',
+    pageSlug: 'codes',
+    titleKey: 'exportCodes',
+    searchKeys: ['codeCreatedFrom', 'codeCreatedThrough'],
+    keywords: ['导出兑换码', '创建时间', '下载兑换码', 'export codes', 'created date'],
+  },
   {
     id: 'codesTitle',
     pageSlug: 'codes',

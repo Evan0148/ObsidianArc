@@ -13,6 +13,7 @@ export interface Account {
   bio: string;
   role: Role;
   group_id: string;
+  group_expires_at: number;
   group_name: string;
   status: AccountStatus;
   created_at: number;

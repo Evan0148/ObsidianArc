@@ -224,12 +224,14 @@ onMounted(reload);
         />
         <OaSelectField
           v-model="query.userID"
+          searchable
           :label="t('logUser')"
           :options="withAny(facets.users, t('logAnyUser'), query.userID)"
           @update:model-value="narrow"
         />
         <OaSelectField
           v-model="query.modelID"
+          searchable
           :label="t('logModel')"
           :options="withAny(facets.models, t('logAnyModel'), query.modelID)"
           @update:model-value="narrow"

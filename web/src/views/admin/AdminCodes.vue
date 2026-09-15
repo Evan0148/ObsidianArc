@@ -8,6 +8,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { adminApi, type CodeRedemption, type RedemptionCode } from '@/admin/api';
 import { ApiError } from '@/api/client';
+import { saveAsFile } from '@/api/backup';
 import { copyToClipboard } from '@/chat/markdown';
 import OaBadge from '@/components/OaBadge.vue';
 import OaBadgeRow from '@/components/OaBadgeRow.vue';
@@ -29,6 +30,36 @@ view.setTitle(t('codesTitle'), t('codesSubtitle'));
 const codes = ref<RedemptionCode[]>([]);
 const error = ref('');
 const loaded = ref(false);
+const exporting = ref(false);
+const createdFrom = ref('');
+const createdThrough = ref('');
+const exportError = computed(() => {
+  const from = createdFrom.value ? new Date(createdFrom.value).getTime() : 0;
+  const through = createdThrough.value ? new Date(createdThrough.value).getTime() : Infinity;
+  return Number.isNaN(from) || Number.isNaN(through) || from > through ? t('codeExportInvalidRange') : '';
+});
+const exportCodes = computed(() => {
+  if (exportError.value) return [];
+  const from = createdFrom.value ? new Date(createdFrom.value).getTime() : 0;
+  // Include the whole final minute: a code minted at 12:30:45 belongs to an
+  // end time the minute-precision picker displays as 12:30.
+  const end = createdThrough.value ? new Date(createdThrough.value).getTime() + 60_000 : Infinity;
+  return codes.value.filter((code) => code.created_at >= from && code.created_at < end);
+});
+
+function exportFile(): void {
+  if (exportError.value || !exportCodes.value.length) return;
+  saveAsFile(`obsidian-arc-codes-${new Date().toISOString().slice(0, 10)}.txt`,
+    exportCodes.value.map((code) => code.code).join('\n') + '\n', 'text/plain;charset=utf-8');
+  exporting.value = false;
+}
+
+function openExport(): void {
+  panelOpen.value = false;
+  createdFrom.value = '';
+  createdThrough.value = '';
+  exporting.value = true;
+}
 
 const panelOpen = ref(false);
 // An existing code is shown rather than edited. Changing how many cards a code
@@ -68,10 +99,11 @@ const columns = computed<Array<Column<RedemptionCode>>>(() => [
   },
   { key: 'life', header: t('colCardLife'), text: (row) => t('nDays', { count: row.card_days }), secondary: true, width: '90px' },
   { key: 'state', header: t('colState'), width: '110px' },
-  { key: 'created', header: t('colUpdated'), text: (row) => relativeTime(row.created_at), secondary: true, width: '110px' },
+  { key: 'created', header: t('colCreated'), text: (row) => relativeTime(row.created_at), secondary: true, width: '110px' },
 ]);
 
 function open(row: RedemptionCode | null): void {
+  exporting.value = false;
   existing.value = row;
   minted.value = null;
   panelError.value = '';
@@ -159,6 +191,7 @@ onMounted(load);
 
 <template>
   <Teleport :to="view.actionsHost">
+    <button id="exportCodes" type="button" class="oa-btn" :disabled="!loaded || !!error" @click="openExport">{{ t('exportCodes') }}</button>
     <button id="addCode" type="button" class="oa-btn primary" @click="open(null)">{{ t('addCode') }}</button>
   </Teleport>
 
@@ -188,6 +221,21 @@ onMounted(load);
       </OaBadgeRow>
     </template>
   </OaTable>
+
+  <OaPanel
+    v-if="exporting"
+    :title="t('exportCodes')"
+    :confirm-label="t('download')"
+    :confirmable="!exportError && exportCodes.length > 0"
+    :error="exportError"
+    @close="exporting = false"
+    @confirm="exportFile"
+  >
+    <p class="oa-field-hint">{{ t('codeExportHint') }}</p>
+    <OaTextField v-model="createdFrom" type="datetime-local" :label="t('codeCreatedFrom')" />
+    <OaTextField v-model="createdThrough" type="datetime-local" :label="t('codeCreatedThrough')" />
+    <p class="oa-field-hint" role="status">{{ t('codeExportCount', { count: exportCodes.length }) }}</p>
+  </OaPanel>
 
   <OaPanel
     v-if="panelOpen"

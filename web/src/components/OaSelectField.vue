@@ -8,6 +8,7 @@ const props = defineProps<{
   label: string;
   options: ReadonlyArray<Choice<T>>;
   hint?: string | undefined;
+  searchable?: boolean;
 }>();
 
 defineEmits<{ (event: 'update:modelValue', value: T): void }>();
@@ -18,6 +19,7 @@ defineEmits<{ (event: 'update:modelValue', value: T): void }>();
     <OaSelect
       :model-value="props.modelValue"
       :choices="props.options"
+      :searchable="props.searchable"
       @update:model-value="$emit('update:modelValue', $event)"
     />
   </OaField>

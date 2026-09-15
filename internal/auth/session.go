@@ -109,7 +109,8 @@ func (s *SessionStore) GetWithUser(ctx context.Context, token string) (Session, 
 		_ = s.DeleteByID(ctx, key)
 		return Session{}, user.User{}, ErrSessionNotFound
 	}
-	return record, account, nil
+	account, err = user.NewStore(s.db).ResolveMembership(ctx, nil, account)
+	return record, account, err
 }
 
 // scanBoth lets one row fill two structs: the session's columns are consumed

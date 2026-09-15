@@ -2220,6 +2220,43 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+/* Search stays visible while long option lists scroll within the space left
+   beside their trigger, including lists flipped above a low field. */
+.oa-select-menu.searchable {
+  display: flex;
+  flex-direction: column;
+}
+
+.oa-select-search {
+  flex: none;
+  min-width: 0;
+  margin: 6px 6px 0;
+}
+
+/* Search uses the trigger's width instead of an input's intrinsic width. */
+.oa-select-menu .oa-select-search input {
+  width: 0;
+}
+
+.oa-select-menu.searchable .oa-select-scroll-wrap {
+  display: flex;
+  min-height: 0;
+  max-height: none;
+}
+
+.oa-select-menu.searchable .oa-select-scroll {
+  width: 100%;
+  min-height: 0;
+  max-height: none;
+}
+
+/* Member controls need the same spacing as the surrounding panel fields. */
+.oa-group-members {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
 /* The count first and large, because it is the one number an operator came
    to read; the breakdown under it in the ordinary hint voice. */
 .oa-card-count {

@@ -136,9 +136,10 @@ type userRequest struct {
 	Email    *string `json:"email"`
 	QQ       *string `json:"qq"`
 
-	Role    *user.Role   `json:"role"`
-	GroupID *string      `json:"group_id"`
-	Status  *user.Status `json:"status"`
+	Role           *user.Role   `json:"role"`
+	GroupID        *string      `json:"group_id"`
+	GroupExpiresAt *int64       `json:"group_expires_at"`
+	Status         *user.Status `json:"status"`
 
 	APIRestricted       *bool `json:"api_restricted"`
 	APIRestrictionHours *int  `json:"api_restriction_hours"`
@@ -179,6 +180,14 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) error {
 			return translateGroupError(err)
 		}
 	}
+	if body.GroupExpiresAt != nil {
+		if body.GroupID == nil || (*body.GroupID == "" && *body.GroupExpiresAt != 0) {
+			return httpx.BadRequest("A group is required when setting membership expiry.")
+		}
+		if err := validateMembershipExpiry(*body.GroupExpiresAt); err != nil {
+			return err
+		}
+	}
 
 	var updated user.User
 	err = h.db.Tx(r.Context(), func(tx *database.Tx) error {
@@ -190,6 +199,11 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 
+		// Profile edits and membership expiry both read this row before writing
+		// it. Lock first so a renewal cannot be replaced by that earlier read.
+		if _, err := tx.Exec(r.Context(), `UPDATE users SET updated_at = updated_at WHERE id = ?`, userID); err != nil {
+			return err
+		}
 		target, err := h.users.ByID(r.Context(), tx, userID)
 		if err != nil {
 			return err
@@ -253,9 +267,10 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) error {
 
 		if body.Role != nil || body.GroupID != nil || body.Status != nil {
 			updated, err = h.users.UpdateAdminFields(r.Context(), tx, userID, user.AdminUpdate{
-				Role:    body.Role,
-				GroupID: body.GroupID,
-				Status:  body.Status,
+				Role:           body.Role,
+				GroupID:        body.GroupID,
+				GroupExpiresAt: body.GroupExpiresAt,
+				Status:         body.Status,
 			})
 			if err != nil {
 				return err

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -153,6 +154,10 @@ func (s *Service) reserve(
 	anchor := account.CreatedAt
 
 	err = s.db.Tx(ctx, func(tx *database.Tx) error {
+		anchor, err = lockedAllowanceAnchor(ctx, tx, account.CreatedAt)
+		if err != nil {
+			return err
+		}
 		if reset != nil {
 			if _, err := tx.Exec(ctx,
 				`UPDATE users SET updated_at = updated_at WHERE id = ?`, account.ID); err != nil {
@@ -312,8 +317,12 @@ func (s *Service) Settle(ctx context.Context, account user.User, reserved, actua
 	key := scopeKey(account.ID)
 
 	return s.db.Tx(ctx, func(tx *database.Tx) error {
+		anchor, err := lockedAllowanceAnchor(ctx, tx, account.CreatedAt)
+		if err != nil {
+			return err
+		}
 		for _, window := range []Window{WindowTPM, Window5H, WindowWeek, WindowMonth} {
-			if _, err := bump(ctx, tx, key, window, bucketStart(window, now, account.CreatedAt), 0, tokens, credits); err != nil {
+			if _, err := bump(ctx, tx, key, window, bucketStart(window, now, anchor), 0, tokens, credits); err != nil {
 				return err
 			}
 		}
@@ -435,10 +444,14 @@ func (s *Service) SummaryFor(ctx context.Context, account user.User) (Summary, e
 		Display:   display,
 		Windows:   make([]WindowUsage, 0, len(AllowanceWindows)),
 	}
+	anchor, err := allowanceAnchor(ctx, s.db, account.CreatedAt)
+	if err != nil {
+		return Summary{}, err
+	}
 
 	for _, window := range AllowanceWindows {
 		limits := policy.Windows[window]
-		start := bucketStart(window, now, account.CreatedAt)
+		start := bucketStart(window, now, anchor)
 
 		var used counter
 		err := s.db.QueryRow(ctx,
@@ -459,7 +472,7 @@ func (s *Service) SummaryFor(ctx context.Context, account user.User) (Summary, e
 			LimitRequests: limits.Requests,
 			LimitTokens:   limits.Tokens,
 			LimitCredits:  limits.Credits,
-			ResetsAt:      bucketEnd(window, now, account.CreatedAt).UnixMilli(),
+			ResetsAt:      bucketEnd(window, now, anchor).UnixMilli(),
 		})
 	}
 	return summary, nil
@@ -483,7 +496,43 @@ const userScopePrefix = "u:"
 
 func scopeKey(userID string) string { return userScopePrefix + userID }
 
-// ResetAll puts every account's allowance back to its full amount.
+// The global reset is an allowance boundary rather than a second kind of
+// counter. Keeping one timestamp means a reset reaches every existing account
+// without rewriting their registration dates; an account created afterwards
+// still starts at its own later creation time.
+const globalResetKey = "quota.global_reset_at"
+
+func allowanceAnchor(ctx context.Context, q database.Queryer, createdAt int64) (int64, error) {
+	var raw string
+	err := q.QueryRow(ctx, `SELECT value FROM settings WHERE key = ?`, globalResetKey).Scan(&raw)
+	if database.IsNotFound(err) {
+		return createdAt, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("quota: read global reset: %w", err)
+	}
+	resetAt, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || resetAt <= createdAt {
+		return createdAt, nil
+	}
+	return resetAt, nil
+}
+
+func lockedAllowanceAnchor(ctx context.Context, tx database.Queryer, createdAt int64) (int64, error) {
+	// A reset and a charge must agree which side of the boundary the charge
+	// belongs to. This no-op upsert takes the same database row lock ResetAll
+	// writes, including when two server processes share the database.
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+		 ON CONFLICT (key) DO UPDATE SET updated_at = settings.updated_at`,
+		globalResetKey, "0", time.Now().UnixMilli()); err != nil {
+		return 0, fmt.Errorf("quota: lock global reset: %w", err)
+	}
+	return allowanceAnchor(ctx, tx, createdAt)
+}
+
+// ResetAll puts every account's allowance back to its full amount and starts
+// each allowance window again from now.
 //
 // The counters are deleted rather than zeroed. An absent row and a row at
 // zero read the same to everything above this — bump() upserts, SummaryFor
@@ -494,7 +543,21 @@ func scopeKey(userID string) string { return userScopePrefix + userID }
 // spent; this is a decision about what may be spent next, and rewriting the
 // record to agree with it would destroy the only account of either.
 func (s *Service) ResetAll(ctx context.Context) error {
-	if _, err := s.db.Exec(ctx, `DELETE FROM usage_counters`); err != nil {
+	now := time.Now().UnixMilli()
+	err := s.db.Tx(ctx, func(tx *database.Tx) error {
+		// This row is also the instance-wide lock used by reservations and
+		// settlement, so no charge can be written into an old bucket after its
+		// counters have been cleared.
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+			 ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+			globalResetKey, strconv.FormatInt(now, 10), now); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `DELETE FROM usage_counters`)
+		return err
+	})
+	if err != nil {
 		return fmt.Errorf("quota: reset all: %w", err)
 	}
 	return nil

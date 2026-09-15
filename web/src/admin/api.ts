@@ -423,6 +423,8 @@ export const adminApi = {
     ),
 
   groups: () => api.get<{ groups: Group[]; policies: QuotaPolicy[] }>('/api/admin/groups'),
+  assignGroupMembers: (id: string, user_ids: string[], expires_at: number) =>
+    api.post<{ updated: number }>(`/api/admin/groups/${id}/members`, { user_ids, expires_at }),
   createGroup: (body: Record<string, unknown>) => api.post<{ group: Group }>('/api/admin/groups', body),
   updateGroup: (id: string, body: Record<string, unknown>) =>
     api.patch<{ group: Group }>(`/api/admin/groups/${id}`, body),

@@ -24,6 +24,8 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useEventListener, useRafFn } from '@vueuse/core';
 import { placeList } from '@/lib/select-placement';
+import { t } from '@/composables/useI18n';
+import { Search } from 'lucide-vue-next';
 import OaScrollArea from './OaScrollArea.vue';
 import type { Choice } from './choice';
 
@@ -36,6 +38,7 @@ const props = defineProps<{
   modelValue: T;
   /** For a control with no <label> around it. */
   ariaLabel?: string;
+  searchable?: boolean;
 }>();
 
 const emit = defineEmits<{ (event: 'update:modelValue', value: T): void }>();
@@ -50,6 +53,14 @@ const id = `oa-select-${nextSequence()}`;
 const trigger = ref<HTMLButtonElement | null>(null);
 const list = ref<HTMLElement | null>(null);
 const scrollArea = ref<InstanceType<typeof OaScrollArea> | null>(null);
+const searchInput = ref<HTMLInputElement | null>(null);
+const query = ref('');
+const choices = computed(() => {
+  const needle = query.value.trim().toLocaleLowerCase();
+  return props.searchable && needle
+    ? props.choices.filter((choice) => choice.label.toLocaleLowerCase().includes(needle))
+    : props.choices;
+});
 
 const open = ref(false);
 const mounted = ref(false);
@@ -82,11 +93,15 @@ const listStyle = computed(() => ({
 function measure(): void {
   const node = list.value;
   if (!node) return;
+  const previous = { maxHeight: node.style.maxHeight, top: node.style.top, left: node.style.left };
   node.style.maxHeight = 'none';
   node.style.top = '0px';
   node.style.left = '0px';
   natural = node.offsetHeight;
   width = node.offsetWidth;
+  // Filtering often leaves the placement unchanged, so Vue will not rewrite
+  // these inline styles unless measurement restores them itself.
+  Object.assign(node.style, previous);
 }
 
 function place(): void {
@@ -106,7 +121,7 @@ function place(): void {
 }
 
 function markActive(index: number): void {
-  const count = props.choices.length;
+  const count = choices.value.length;
   if (!count) return;
   active.value = Math.max(0, Math.min(index, count - 1));
 
@@ -115,7 +130,7 @@ function markActive(index: number): void {
   // document under the reader to reveal it.
   const box = scrollArea.value?.scroller ?? list.value;
   if (!box) return;
-  const node = box.children[active.value];
+  const node = box.querySelectorAll('[role="option"]')[active.value];
   if (!(node instanceof HTMLElement)) return;
   const rowTop = node.offsetTop;
   const rowBottom = rowTop + node.offsetHeight;
@@ -129,14 +144,16 @@ async function openList(): Promise<void> {
   currentlyOpen?.();
   window.clearTimeout(hideTimer);
   open.value = true;
+  query.value = '';
   mounted.value = true;
   currentlyOpen = close;
 
   await nextTick();
+  if (!open.value) return;
   // Before anything is placed: a hidden node has no height.
   measure();
   place();
-  markActive(Math.max(0, props.choices.findIndex((choice) => choice.value === props.modelValue)));
+  markActive(Math.max(0, choices.value.findIndex((choice) => choice.value === props.modelValue)));
   scrollArea.value?.update();
   anchor = '';
   follow.resume();
@@ -145,7 +162,7 @@ async function openList(): Promise<void> {
   // arrives on the trigger. Without this the arrows, Enter and Escape are all
   // inert for a list opened with the mouse — and Escape falls through to the
   // panel, which closes underneath the open list.
-  trigger.value?.focus({ preventScroll: true });
+  (searchInput.value ?? trigger.value)?.focus({ preventScroll: true });
   // One frame closed, so the transition has a state to move from.
   requestAnimationFrame(() => {
     if (open.value) shown.value = true;
@@ -174,6 +191,7 @@ function close(): void {
  * already off and the node already going when that happens.
  */
 function choose(value: T): void {
+  if (props.searchable) trigger.value?.focus({ preventScroll: true });
   close();
   if (value !== props.modelValue) emit('update:modelValue', value);
 }
@@ -242,6 +260,10 @@ function search(): void {
 }
 
 function onKey(event: KeyboardEvent): void {
+  if (event.isComposing || event.keyCode === 229) return;
+  const editing = event.target === searchInput.value;
+  // Spaces and caret navigation belong to the search text, not the options.
+  if (editing && [' ', 'Home', 'End', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
   switch (event.key) {
     case 'ArrowDown':
     case 'ArrowUp':
@@ -256,7 +278,7 @@ function onKey(event: KeyboardEvent): void {
     case 'End':
       if (!open.value) return;
       event.preventDefault();
-      markActive(event.key === 'Home' ? 0 : props.choices.length - 1);
+      markActive(event.key === 'Home' ? 0 : choices.value.length - 1);
       return;
     case 'Enter':
     case ' ': {
@@ -267,17 +289,21 @@ function onKey(event: KeyboardEvent): void {
       }
       // The list can have been rebuilt from under the walk — the model picker
       // fills itself from a request — so there may be nothing at this index.
-      const picked = props.choices[active.value];
+      const picked = choices.value[active.value];
       if (picked) choose(picked.value);
-      else close();
+      else if (!props.searchable) close();
       return;
     }
     case 'Escape':
       if (!open.value) return;
       event.preventDefault();
+      if (editing) trigger.value?.focus({ preventScroll: true });
       close();
       return;
     case 'Tab':
+      // The input is teleported to the end of body; resume tab order from
+      // the original field so keyboard users stay inside their form.
+      if (editing) trigger.value?.focus({ preventScroll: true });
       close();
       return;
     default:
@@ -285,7 +311,7 @@ function onKey(event: KeyboardEvent): void {
   }
 
   // A single printable character, so a shortcut with a modifier is left alone.
-  if (event.key.length !== 1 || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (editing || event.key.length !== 1 || event.ctrlKey || event.metaKey || event.altKey) return;
   const now = Date.now();
   typed = now - typedAt > 900 ? event.key.toLowerCase() : typed + event.key.toLowerCase();
   typedAt = now;
@@ -294,12 +320,14 @@ function onKey(event: KeyboardEvent): void {
 
 // A rebuilt list has a new height, a new set of ids, and possibly fewer rows
 // than the arrow keys had walked to.
-watch(() => props.choices, async () => {
+watch(choices, async () => {
   if (!open.value) return;
   await nextTick();
+  if (!open.value) return;
   measure();
   place();
-  markActive(Math.max(0, props.choices.findIndex((choice) => choice.value === props.modelValue)));
+  active.value = 0;
+  markActive(query.value ? 0 : Math.max(0, choices.value.findIndex((choice) => choice.value === props.modelValue)));
   scrollArea.value?.update();
 });
 
@@ -337,7 +365,7 @@ function nextSequence(): number {
     aria-haspopup="listbox"
     :aria-expanded="open ? 'true' : 'false'"
     :aria-controls="open ? id : undefined"
-    :aria-activedescendant="open ? `${id}-${active}` : undefined"
+    :aria-activedescendant="open && !props.searchable && choices.length ? `${id}-${active}` : undefined"
     :aria-label="props.ariaLabel"
     @click="open ? close() : openList()"
     @keydown="onKey"
@@ -348,15 +376,34 @@ function nextSequence(): number {
   <Teleport to="body">
     <div
       v-if="mounted"
-      :id="id"
+      :id="props.searchable ? undefined : id"
       ref="list"
       class="oa-menu oa-select-menu"
-      :class="{ open: shown }"
-      role="listbox"
+      :class="{ open: shown, searchable: props.searchable }"
+      :role="props.searchable ? undefined : 'listbox'"
       :style="listStyle"
     >
+      <div v-if="props.searchable" class="oa-search oa-select-search">
+        <Search :size="14" aria-hidden="true" />
+        <input
+          ref="searchInput"
+          v-model="query"
+          type="search"
+          role="combobox"
+          :aria-label="t('searchOptions')"
+          :placeholder="t('searchOptions')"
+          :aria-expanded="open"
+          :aria-controls="id"
+          :aria-activedescendant="open && choices.length ? `${id}-${active}` : undefined"
+          aria-autocomplete="list"
+          autocomplete="off"
+          @keydown="onKey"
+        >
+      </div>
       <OaScrollArea
         ref="scrollArea"
+        :id="props.searchable ? id : undefined"
+        :role="props.searchable ? 'listbox' : undefined"
         wrap-class="oa-select-scroll-wrap"
         scroll-class="oa-select-scroll"
       >
@@ -365,7 +412,7 @@ function nextSequence(): number {
              button here would take focus on mousedown and the trigger would
              lose the keydown handler mid-interaction. -->
         <div
-          v-for="(choice, index) in props.choices"
+          v-for="(choice, index) in choices"
           :id="`${id}-${index}`"
           :key="choice.value"
           class="oa-menu-item"
@@ -377,6 +424,7 @@ function nextSequence(): number {
         >
           <span class="oa-menu-item-title">{{ choice.label }}</span>
         </div>
+        <p v-if="!choices.length" class="oa-menu-empty" role="status">{{ t('noSearchResults') }}</p>
       </OaScrollArea>
     </div>
   </Teleport>

@@ -61,6 +61,7 @@ type Server struct {
 	handler       http.Handler
 	settings      *settings.Service
 	auth          *auth.Service
+	users         *user.Store
 	conversations *conversation.Store
 	quota         *quota.Service
 	requests      *reqlog.Store
@@ -703,6 +704,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		handler:       handler,
 		settings:      settingsService,
 		auth:          authService,
+		users:         users,
 		conversations: conversations,
 		quota:         quotaService,
 		requests:      requestLog,
@@ -804,6 +806,9 @@ func (s *Server) sweep(ctx context.Context) {
 	// Expired sessions are already refused on read; the sweep is only about
 	// not letting the table grow forever.
 	_, _ = s.auth.Sessions().DeleteExpired(sweepCtx)
+	if err := s.users.ExpireMemberships(sweepCtx, nil, time.Now()); err != nil {
+		slog.ErrorContext(sweepCtx, "could not expire group memberships", "error", err)
+	}
 	s.sweepAttachments(sweepCtx)
 	// Counter buckets whose window has long since rolled over. The ledger is
 	// never pruned: it is the audit trail.

@@ -36,13 +36,14 @@ interface Mounted {
   changes: string[];
 }
 
-function mount(choices = COLOURS, initial = 'red'): Mounted {
+function mount(choices = COLOURS, initial = 'red', searchable = false): Mounted {
   const value = ref(initial);
   const changes: string[] = [];
 
   app = createApp({
     render: () => h(OaSelect, {
       choices,
+      searchable,
       modelValue: value.value,
       'onUpdate:modelValue': (next: string) => {
         value.value = next;
@@ -70,6 +71,87 @@ async function settle(): Promise<void> {
 }
 
 describe('the option list', () => {
+  it('keeps its placement when filtering does not move the trigger', async () => {
+    const control = mount(COLOURS, 'red', true);
+    control.trigger.getBoundingClientRect = () => new DOMRect(200, 100, 180, 36);
+    control.trigger.click();
+    await settle();
+    const menu = list()!;
+    expect(menu.style.left).toBe('200px');
+    expect(menu.style.top).toBe('142px');
+    const input = menu.querySelector<HTMLInputElement>('input')!;
+    input.value = 'blue';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+    expect(menu.style.left).toBe('200px');
+    expect(menu.style.top).toBe('142px');
+  });
+
+  it('filters by any part of an option label and commits the filtered choice', async () => {
+    const control = mount(COLOURS, 'red', true);
+    control.trigger.click();
+    await settle();
+    const input = list()!.querySelector<HTMLInputElement>('input')!;
+    expect(document.activeElement).toBe(input);
+    input.value = ' LU ';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+    const options = list()!.querySelectorAll('[role="option"]');
+    expect(options).toHaveLength(1);
+    expect(options[0]!.textContent).toContain('Blue');
+    expect(input.getAttribute('aria-activedescendant')).toBe(options[0]!.id);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await settle();
+    expect(control.value()).toBe('blue');
+    expect(document.activeElement).toBe(control.trigger);
+    control.trigger.click();
+    await settle();
+    expect(list()!.querySelector<HTMLInputElement>('input')!.value).toBe('');
+    expect(list()!.querySelectorAll('[role="option"]')).toHaveLength(3);
+  });
+
+  it('leaves text editing and IME confirmation to the search input', async () => {
+    const control = mount(COLOURS, 'red', true);
+    control.trigger.click();
+    await settle();
+    const input = list()!.querySelector<HTMLInputElement>('input')!;
+    for (const key of [' ', 'Home', 'End']) {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      input.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true }));
+    expect(control.trigger.getAttribute('aria-expanded')).toBe('true');
+    input.value = '不存在';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+    expect(list()!.querySelectorAll('[role="option"]')).toHaveLength(0);
+    expect(input.hasAttribute('aria-activedescendant')).toBe(false);
+    expect(list()!.querySelector('[role="status"]')).not.toBeNull();
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(control.changes).toEqual([]);
+  });
+
+  it('walks filtered results and Escape keeps the enclosing panel open', async () => {
+    const control = mount(COLOURS, 'red', true);
+    control.trigger.click();
+    await settle();
+    const input = list()!.querySelector<HTMLInputElement>('input')!;
+    input.value = 'e';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    await settle();
+    expect(input.getAttribute('aria-activedescendant')).toBe(list()!.querySelectorAll('[role="option"]')[1]!.id);
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    input.dispatchEvent(escape);
+    expect(escape.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(control.trigger);
+    expect(control.changes).toEqual([]);
+    await settle();
+    expect(control.trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('shows the label of the current value on the trigger', () => {
     const control = mount();
     expect(control.trigger.querySelector('.oa-select-label')?.textContent).toBe('Red');

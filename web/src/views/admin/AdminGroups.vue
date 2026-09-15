@@ -31,6 +31,7 @@ import type { Column } from '@/components/table-types';
 import { t, tn } from '@/composables/useI18n';
 import AdminFailure from './AdminFailure.vue';
 import CreditsField from './CreditsField.vue';
+import GroupMembers from './GroupMembers.vue';
 import { useAdminView } from './adminView';
 
 const WINDOWS: QuotaWindowKind[] = ['5h', '1w', '1m'];
@@ -91,10 +92,11 @@ function policyFor(groupID: string): QuotaPolicy {
 
 const columns = computed<Array<Column<Group>>>(() => [
   { key: 'group', header: t('colGroup') },
-  { key: 'members', header: t('colMembers'), text: (row) => String(row.members), numeric: true, width: '80px' },
-  { key: 'models', header: t('colModels'), width: '130px' },
-  { key: 'limits', header: t('colLimits'), secondary: true, width: '130px' },
-  { key: 'default', header: '', width: '90px' },
+  // Leave room for the group name when the member panel narrows the table.
+  { key: 'members', header: t('colMembers'), text: (row) => String(row.members), numeric: true, width: '60px' },
+  { key: 'models', header: t('colModels'), width: '85px' },
+  { key: 'limits', header: t('colLimits'), secondary: true, width: '110px' },
+  { key: 'default', header: '', width: '60px' },
 ]);
 
 function limitBadges(policy: QuotaPolicy): string[] {
@@ -111,6 +113,7 @@ function limitBadges(policy: QuotaPolicy): string[] {
 }
 
 function open(row: Group | null): void {
+  busy.value = false;
   existing.value = row;
   panelError.value = '';
   const policy = row ? policyFor(row.id) : emptyPolicy('group', '');
@@ -229,6 +232,7 @@ async function load(): Promise<void> {
   try {
     const [groupsResult, modelsResult] = await Promise.all([adminApi.groups(), adminApi.models()]);
     groups.value = groupsResult.groups;
+    if (existing.value) existing.value = groupsResult.groups.find((entry) => entry.id === existing.value!.id) ?? existing.value;
     policies.value = groupsResult.policies;
     models.value = modelsResult.models;
   } catch (failure) {
@@ -297,6 +301,13 @@ onMounted(load);
     @confirm="save"
     @destructive="remove"
   >
+    <GroupMembers
+      v-if="existing"
+      :key="existing.id"
+      :group="existing"
+      :groups="groups"
+      @saved="load"
+    />
     <OaTextField
       ref="nameField"
       v-model="form.name"
