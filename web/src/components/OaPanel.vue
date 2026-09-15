@@ -95,6 +95,8 @@ const scroll = ref<InstanceType<typeof OaScrollArea> | null>(null);
  * really one record being swapped for another.
  */
 const shown = ref(vacating !== null && vacating === host.value);
+// A replacement keeps the column in place; only its new contents arrive.
+const replacing = shown.value;
 /** The state callers read, which flips the moment the zoom is asked for. */
 const fullscreen = ref(false);
 /**
@@ -307,7 +309,7 @@ defineExpose({
     <aside
       ref="panel"
       class="oa-panel"
-      :class="{ open: shown, fullscreen: zoomed, zooming, swapping, 'no-footer': !props.footer }"
+      :class="{ open: shown, fullscreen: zoomed, zooming, swapping, replacing, 'no-footer': !props.footer }"
       :style="{ '--oa-panel-width': `${width}px` }"
     >
       <div class="oa-panel-head">

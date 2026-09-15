@@ -6,7 +6,7 @@
 // same radius, same surface, same hover tint — so moving between chatting and
 // administering does not feel like moving between two applications.
 
-import { computed, markRaw, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useMediaQuery } from '@vueuse/core';
 import { useRoute, useRouter } from 'vue-router';
 import { health } from '@/api/client';
@@ -69,12 +69,21 @@ const searchGroups = computed(() => searchAdminFeatures(query.value, PAGES));
 const bodyScroll = ref<InstanceType<typeof OaScrollArea> | null>(null);
 
 let highlightTimer = 0;
+let disposed = false;
+// A quick navigation can leave a pending search waiting for a section that
+// belongs to the screen being removed.
+onBeforeUnmount(() => {
+  disposed = true;
+  window.clearTimeout(highlightTimer);
+});
+
 function scrollToSection(id: string): void {
   window.clearTimeout(highlightTimer);
   let attempts = 0;
   const maxAttempts = 30;
 
   const check = () => {
+    if (disposed) return;
     const el = document.getElementById(id);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -307,7 +316,9 @@ onMounted(() => {
       />
     </div>
 
-    <div class="oa-admin-main">
+    <!-- The whole section arrives together, including its heading and actions.
+         Keying only navigation keeps saves from replaying the entrance. -->
+    <div :key="current.slug" class="oa-admin-main" :class="`enter-${direction}`">
       <div class="oa-admin-head" :ref="attachActions">
         <div>
           <h1 class="oa-admin-title">{{ title }}</h1>
@@ -316,20 +327,10 @@ onMounted(() => {
         <span class="oa-admin-head-spacer" />
       </div>
 
-      <!-- Keyed by the section, so each navigation gets a fresh body element.
-           A CSS animation runs when its class arrives, and `enter-forward`
-           arriving on an element that already carries it is not an arrival:
-           on a node that persists, the slide played once and then only when
-           the direction happened to reverse. Recreating the element also puts
-           the scroll back to the top, which is what walking to another
-           section should do. `reload()` deliberately does not key it —
-           re-reading the same screen after a save should not replay an
-           entrance. -->
       <OaScrollArea
         ref="bodyScroll"
-        :key="current.slug"
         wrap-class="oa-admin-body-wrap"
-        :scroll-class="`oa-admin-body enter-${direction}`"
+        scroll-class="oa-admin-body"
       >
         <component v-if="canAdmin(current.slug || 'dashboard')" :is="current.component" :key="bodyKey" />
         <div v-else class="oa-permission-empty" role="alert">

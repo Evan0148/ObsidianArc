@@ -1269,24 +1269,13 @@
   .oa-spark-bar {
     transition: none;
   }
-
-  .oa-settings.enter-rise,
-  .oa-settings.enter-forward,
-  .oa-settings.enter-back,
-  .oa-admin-body.enter-rise,
-  .oa-admin-body.enter-forward,
-  .oa-admin-body.enter-back {
-    animation: none;
-  }
 }
 
 /* --- animations ---------------------------------------------------------- */
 
-/* Direction-aware pane and tab transitions inspired by PageDye:
-   - Subtle rise on initial mount (sectionEnter)
-   - Forward slide from the right when navigating to a succeeding tab (paneEnterForward)
-   - Backward slide from the left when navigating to a preceding tab (paneEnterBack)
-   Tight 0.24s cubic-bezier(0.2, 0, 0, 1) decelerating curve for a responsive native feel. */
+/* Match ObisidianChat's 10px rise and 18px directional entrance. The fixed
+   header and navigation stay put during section changes, so the movement
+   identifies the content being replaced instead of shifting every control. */
 @keyframes sectionEnter {
   from {
     opacity: 0;
@@ -1321,18 +1310,45 @@
 }
 
 .oa-settings.enter-rise,
-.oa-admin-body.enter-rise {
-  animation: sectionEnter 0.24s cubic-bezier(0.2, 0, 0, 1) both;
+.oa-admin-main.enter-rise,
+.oa-workspace > .oa-header,
+.oa-workspace > .oa-chat-root:not(.oa-admin),
+.oa-admin-rail,
+.oa-auth-card {
+  animation: sectionEnter 0.24s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .oa-settings.enter-forward,
-.oa-admin-body.enter-forward {
-  animation: paneEnterForward 0.24s cubic-bezier(0.2, 0, 0, 1) both;
+.oa-admin-main.enter-forward,
+.oa-panel.replacing > .oa-panel-head,
+.oa-panel.replacing > .oa-panel-body-wrap,
+.oa-panel.replacing > .oa-panel-foot {
+  animation: paneEnterForward 0.24s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .oa-settings.enter-back,
-.oa-admin-body.enter-back {
-  animation: paneEnterBack 0.24s cubic-bezier(0.2, 0, 0, 1) both;
+.oa-admin-main.enter-back {
+  animation: paneEnterBack 0.24s cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Keep this after the entrances: the earlier override lost to equal-specificity
+   animation rules below it, so reduced-motion readers still saw those slides. */
+@media (prefers-reduced-motion: reduce) {
+  .oa-settings.enter-rise,
+  .oa-settings.enter-forward,
+  .oa-settings.enter-back,
+  .oa-admin-main.enter-rise,
+  .oa-admin-main.enter-forward,
+  .oa-admin-main.enter-back,
+  .oa-workspace > .oa-header,
+  .oa-workspace > .oa-chat-root:not(.oa-admin),
+  .oa-admin-rail,
+  .oa-auth-card,
+  .oa-panel.replacing > .oa-panel-head,
+  .oa-panel.replacing > .oa-panel-body-wrap,
+  .oa-panel.replacing > .oa-panel-foot {
+    animation: none;
+  }
 }
 
 /* --- user settings -------------------------------------------------------- */

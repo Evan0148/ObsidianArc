@@ -605,11 +605,12 @@ describe('what moves, and what does not', () => {
     expect(body?.textContent).toContain(t('probeAllModelsDone', { total: 2, succeeded: 1, failed: 1 }));
   });
 
-  it('gives each backoffice section a fresh body, so its entry actually plays', async () => {
+  it('moves each backoffice section with its heading and keeps navigation in place', async () => {
     adopt({ ...ACCOUNT, role: 'super_admin' });
     await mountAt('/admin/providers');
 
-    const first = host.querySelector('.oa-admin-body');
+    const first = host.querySelector('.oa-admin-main');
+    const rail = host.querySelector('.oa-admin-rail');
     expect(first).not.toBeNull();
 
     // Two steps in the same direction. A CSS animation runs when its class
@@ -617,15 +618,28 @@ describe('what moves, and what does not', () => {
     // is not an arrival — the element itself has to be new.
     await router.push('/admin/models');
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const second = host.querySelector('.oa-admin-body');
+    const second = host.querySelector('.oa-admin-main');
 
     await router.push('/admin/usage');
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const third = host.querySelector('.oa-admin-body');
+    const third = host.querySelector('.oa-admin-main');
 
     expect(second).not.toBe(first);
     expect(third).not.toBe(second);
     expect(third?.classList.contains('enter-forward')).toBe(true);
+    expect(third?.contains(host.querySelector('.oa-admin-head'))).toBe(true);
+    expect(host.querySelector('.oa-admin-rail')).toBe(rail);
+
+    await router.push('/admin/providers');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const back = host.querySelector('.oa-admin-main');
+    expect(back?.classList.contains('enter-back')).toBe(true);
+    expect(back?.querySelector('.oa-admin-actions button')).not.toBeNull();
+    expect(host.querySelectorAll('.oa-admin-actions')).toHaveLength(1);
+
+    await router.push('/admin/providers#provider-list');
+    await nextTick();
+    expect(host.querySelector('.oa-admin-main')).toBe(back);
   });
 
   it('leaves out the trial transcript when there is no trial', async () => {
