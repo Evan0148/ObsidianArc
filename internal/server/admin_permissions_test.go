@@ -19,11 +19,11 @@ func TestAdministratorPageGrants(t *testing.T) {
 		"providers": "/providers", "models": "/models", "availability": "/health",
 		"usage": "/usage", "resources": "/resources", "codes": "/codes",
 		"logs": "/logs", "security": "/security/events", "settings": "/settings",
-		"announcements": "/announcements", "administrators": "/administrators",
+		"announcements": "/announcements",
 	}
 	for _, grant := range user.AdminPermissions {
 		t.Run(grant, func(t *testing.T) {
-			response := in.do(http.MethodPatch, "/api/admin/administrators/"+operator.userID,
+			response := in.do(http.MethodPatch, "/api/admin/users/"+operator.userID,
 				map[string]any{"role": "admin", "admin_permissions": []string{grant}}, founder)
 			if response.Code != http.StatusOK {
 				t.Fatalf("grant: %d %s", response.Code, response.Body.String())
@@ -50,7 +50,7 @@ func TestDelegatedAdministratorCannotIncreaseAuthority(t *testing.T) {
 	other := in.register("other", "a-good-password")
 	grant := func(target *session, role string, permissions []string, actor *session, status int) {
 		t.Helper()
-		res := in.do(http.MethodPatch, "/api/admin/administrators/"+target.userID,
+		res := in.do(http.MethodPatch, "/api/admin/users/"+target.userID,
 			map[string]any{"role": role, "admin_permissions": permissions}, actor)
 		if res.Code != status {
 			t.Fatalf("grant %s as %s: %d %s", target.userID, actor.userID, res.Code, res.Body.String())
@@ -78,9 +78,9 @@ func TestDelegatedAdministratorCannotIncreaseAuthority(t *testing.T) {
 		}
 	}
 	grant(operator, "admin", []string{"administrators"}, founder, http.StatusOK)
-	res := in.do(http.MethodPatch, "/api/admin/administrators/"+other.userID, map[string]any{"nickname": "changed"}, operator)
-	if res.Code != http.StatusBadRequest {
-		t.Fatalf("role page edited profile: %d", res.Code)
+	res := in.do(http.MethodPatch, "/api/admin/users/"+other.userID, map[string]any{"nickname": "changed"}, operator)
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("operator without user-page access edited a profile: %d", res.Code)
 	}
 	grant(other, "admin", []string{}, operator, http.StatusForbidden)
 	res = in.do(http.MethodGet, "/api/admin/users", nil, operator)
@@ -94,7 +94,7 @@ func TestSettingsGrantsAreScopedBySection(t *testing.T) {
 	founder := in.register("founder", "a-good-password")
 	operator := in.register("operator", "a-good-password")
 	for _, grant := range []string{"security", "availability", "settings"} {
-		res := in.do(http.MethodPatch, "/api/admin/administrators/"+operator.userID,
+		res := in.do(http.MethodPatch, "/api/admin/users/"+operator.userID,
 			map[string]any{"role": "admin", "admin_permissions": []string{grant}}, founder)
 		if res.Code != http.StatusOK {
 			t.Fatal(res.Body.String())
@@ -132,6 +132,51 @@ func TestSettingsGrantsAreScopedBySection(t *testing.T) {
 	}
 }
 
+func TestUserRoleWritesRequireAdministratorActionGrant(t *testing.T) {
+	in := newInstance(t)
+	founder := in.register("founder", "a-good-password")
+	operator := in.register("operator", "a-good-password")
+	member := in.register("member", "a-good-password")
+	setGrants := func(permissions []string) {
+		t.Helper()
+		res := in.do(http.MethodPatch, "/api/admin/users/"+operator.userID,
+			map[string]any{"role": "admin", "admin_permissions": permissions}, founder)
+		if res.Code != http.StatusOK {
+			t.Fatal(res.Body.String())
+		}
+	}
+	setGrants([]string{"users"})
+	res := in.do(http.MethodPatch, "/api/admin/users/"+member.userID, map[string]string{"nickname": "Updated"}, operator)
+	if res.Code != http.StatusOK {
+		t.Fatalf("ordinary profile edit: %d %s", res.Code, res.Body.String())
+	}
+	for _, body := range []map[string]any{
+		{"role": "admin"}, {"role": "user"}, {"role": "super_admin"}, {"admin_permissions": []string{"users"}},
+	} {
+		res = in.do(http.MethodPatch, "/api/admin/users/"+member.userID, body, operator)
+		if res.Code != http.StatusForbidden {
+			t.Fatalf("role write without action grant: %d %s", res.Code, res.Body.String())
+		}
+	}
+	setGrants([]string{"users", "administrators"})
+	res = in.do(http.MethodPatch, "/api/admin/users/"+member.userID,
+		map[string]any{"role": "admin", "admin_permissions": []string{"users"}}, operator)
+	if res.Code != http.StatusOK {
+		t.Fatalf("role write with action grant: %d %s", res.Code, res.Body.String())
+	}
+	changed := decode[struct {
+		User user.User `json:"user"`
+	}](t, res)
+	if changed.User.Role != user.RoleAdmin || !changed.User.CanAdmin("users") {
+		t.Fatalf("role/grants were not saved: %+v", changed.User)
+	}
+	setGrants([]string{"users"})
+	res = in.do(http.MethodPatch, "/api/admin/users/"+member.userID, map[string]string{"role": "user"}, operator)
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("revoked action grant still works: %d", res.Code)
+	}
+}
+
 func TestAdminUserPagesReachEveryAccount(t *testing.T) {
 	in := newInstance(t)
 	founder := in.register("founder", "a-good-password")
@@ -141,7 +186,7 @@ func TestAdminUserPagesReachEveryAccount(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, endpoint := range []string{"users", "member-options", "administrators"} {
+	for _, endpoint := range []string{"users", "member-options"} {
 		seen := map[string]bool{}
 		for offset := 0; offset < 65; offset += 20 {
 			res := in.do(http.MethodGet, fmt.Sprintf("/api/admin/%s?q=page-&limit=20&offset=%d", endpoint, offset), nil, founder)

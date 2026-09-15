@@ -158,8 +158,6 @@ func TestAdminRoutesRequireAnAdministrator(t *testing.T) {
 	}{
 		{http.MethodGet, "/api/admin/dashboard", nil},
 		{http.MethodGet, "/api/admin/references", nil},
-		{http.MethodGet, "/api/admin/administrators", nil},
-		{http.MethodPatch, "/api/admin/administrators/01ARZ3NDEKTSV4RRFFQ69G5FAV", map[string]any{"role": "user"}},
 		{http.MethodGet, "/api/admin/member-options", nil},
 		{http.MethodGet, "/api/admin/resources", nil},
 		{http.MethodGet, "/api/admin/health", nil},

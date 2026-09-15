@@ -6,7 +6,7 @@ import { changeLanguage, currentLanguage, t, type Language, type StringKey } fro
 import { useTheme } from '@/composables/useTheme';
 import { IconAuto, IconCheck, IconMoon, IconSpark, IconSun } from '@/icons';
 import { ACCENTS, ACCENT_NAMES, accentPalette, baseAccent, normalizeHex, type AccentName } from '@/theme/color-utils';
-import { backgroundAccent, setBackgroundAccent, setAccentPreference, setWallpaper, type ThemeMode } from '@/theme/theme';
+import { backgroundAccent, setBackgroundAccent, setAccentPreference, type ThemeMode } from '@/theme/theme';
 import { persistTheme, syncPreferences } from '@/stores/session';
 import WallpaperSection from './WallpaperSection.vue';
 
@@ -42,8 +42,8 @@ function apply(accent: AccentName | 'custom', value: string): void {
 }
 function chooseBackground(value: AccentName | ''): void {
   setBackgroundAccent(value);
-  setWallpaper(null);
-  syncPreferences({ background_accent: value, wallpaper: null });
+  // The palette also colours panels over a wallpaper, so neither choice replaces the other.
+  syncPreferences({ background_accent: value });
 }
 function onTheme(mode: ThemeMode): void { persistTheme(mode); }
 function onLanguage(next: Language): void {
@@ -67,10 +67,10 @@ function onLanguage(next: Language): void {
       <div class="oa-appearance-heading"><h3>{{ t('chatBackground') }}</h3><button type="button" class="oa-btn" @click="chooseBackground('')">{{ t('reset') }}</button></div>
       <div class="oa-background-grid">
         <button v-for="entry in backgrounds" :key="entry.value" type="button" class="oa-background-choice"
-          :class="{ active: background === entry.value && !theme.paper() }"
-          :aria-pressed="background === entry.value && !theme.paper()" @click="chooseBackground(entry.value)">
+          :class="{ active: background === entry.value }"
+          :aria-pressed="background === entry.value" @click="chooseBackground(entry.value)">
           <span class="oa-background-swatch" :style="{ background: accentPalette(ACCENTS[entry.value], theme.dark())['--ai-field-bg'] }">
-            <span v-if="background === entry.value && !theme.paper()" class="oa-background-check"><IconCheck :size="13" /></span>
+            <span v-if="background === entry.value" class="oa-background-check"><IconCheck :size="13" /></span>
           </span>
           <span>{{ t(entry.label) }}</span>
         </button>

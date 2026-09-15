@@ -1,6 +1,6 @@
 package user
 
-// Page grants are shared by the router and delegation checks. Unknown grants
+// Page and action grants are shared by the router and delegation checks. Unknown grants
 // never confer access, including values left by a newer server version.
 var AdminPermissions = []string{
 	"dashboard", "groups", "users", "providers", "models", "availability",

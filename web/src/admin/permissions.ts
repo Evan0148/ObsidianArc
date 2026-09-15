@@ -1,6 +1,6 @@
 import type { StringKey } from '@/i18n';
 
-export const ADMIN_PAGES: Array<{ value: string; label: StringKey }> = [
+export const ADMIN_PERMISSIONS: Array<{ value: string; label: StringKey }> = [
   { value: 'dashboard', label: 'navDashboard' },
   { value: 'groups', label: 'navGroups' },
   { value: 'users', label: 'navUsers' },

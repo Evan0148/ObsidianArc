@@ -180,8 +180,6 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.Handle("PATCH /api/admin/announcements/{id}", protected("announcements", h.updateAnnouncement))
 	mux.Handle("DELETE /api/admin/announcements/{id}", protected("announcements", h.deleteAnnouncement))
 
-	mux.Handle("GET /api/admin/administrators", protected("administrators", h.listAdministrators))
-	mux.Handle("PATCH /api/admin/administrators/{id}", protected("administrators", h.updateUser))
 	mux.Handle("GET /api/admin/references", protected("", h.references))
 	mux.Handle("GET /api/admin/member-options", protected("groups", h.listMemberOptions))
 	mux.Handle("GET /api/admin/meta", protected("", h.meta))

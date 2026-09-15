@@ -157,11 +157,6 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.DecodeJSON(w, r, &body, user.MaxAvatarChars+16*1024); err != nil {
 		return err
 	}
-	if r.Pattern == "PATCH /api/admin/administrators/{id}" &&
-		(body.Nickname != nil || body.Avatar != nil || body.Bio != nil || body.Email != nil || body.QQ != nil ||
-			body.GroupID != nil || body.GroupExpiresAt != nil || body.Status != nil || body.APIRestricted != nil || body.APIRestrictionHours != nil) {
-		return httpx.BadRequest("This page may only change roles and page permissions.")
-	}
 
 	// Shape first, and outside the transaction: a malformed request should be
 	// refused without taking a lock the rest of the instance queues behind.
@@ -226,15 +221,12 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		required := "users"
-		if r.Pattern == "PATCH /api/admin/administrators/{id}" {
-			required = "administrators"
-		}
-		if !actor.CanAdmin(required) {
+		if !actor.CanAdmin("users") {
 			return permissionDenied()
 		}
-		roleChanged := body.Role != nil && *body.Role != target.Role
-		if target.IsAdmin() || roleChanged || body.AdminPermissions != nil {
+		// Role writes are an action on the users page with their own grant.
+		// Even a no-op role field must not be accepted without that grant.
+		if target.IsAdmin() || body.Role != nil || body.AdminPermissions != nil {
 			if !actor.CanManageAdmin(target) {
 				return permissionDenied()
 			}
@@ -379,11 +371,6 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) error {
 	slog.InfoContext(r.Context(), "administrator changed an account",
 		"actor", actor.ID, "target", userID, "role", body.Role, "status", body.Status)
 
-	if r.Pattern == "PATCH /api/admin/administrators/{id}" {
-		return httpx.WriteJSON(w, http.StatusOK, map[string]any{"user": map[string]any{
-			"id": updated.ID, "role": updated.Role, "admin_permissions": updated.AdminPermissions,
-		}})
-	}
 	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"user": updated})
 }
 

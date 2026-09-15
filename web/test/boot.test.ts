@@ -50,7 +50,6 @@ const ACCOUNT: Account = {
  */
 const EMPTY_BODIES: Array<[RegExp, unknown]> = [
   [/\/api\/admin\/references/, { groups: [], models: [], providers: [] }],
-  [/\/api\/admin\/administrators/, { users: [], total: 0 }],
   [/\/api\/admin\/security\/events/, { events: [], total: 0 }],
   [/\/api\/health/, { status: 'ok', version: 'vtest', uptime_sec: 1 }],
   [/\/api\/announcements/, { announcements: [], unread: 0, popup: null }],
@@ -469,7 +468,8 @@ describe('what moves, and what does not', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await nextTick();
     expect(searchBox.classList.contains('expanded')).toBe(false);
-    expect(host.querySelectorAll('.oa-admin-nav')).toHaveLength(14);
+    expect(host.querySelectorAll('.oa-admin-nav')).toHaveLength(13);
+    expect(host.querySelector('a[href="/admin/administrators"]')).toBeNull();
     expect(document.activeElement).toBe(trigger);
   });
 

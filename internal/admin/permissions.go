@@ -60,7 +60,7 @@ func (h *Handlers) visibleSettings(account user.User) map[string]string {
 func (h *Handlers) references(w http.ResponseWriter, r *http.Request) error {
 	actor := auth.MustUser(r.Context())
 	out := map[string]any{}
-	if hasPermission(actor, "users,administrators,models,usage,security,settings,groups") {
+	if hasPermission(actor, "users,models,usage,security,settings,groups") {
 		groups, err := h.groups.List(r.Context(), nil)
 		if err != nil {
 			return httpx.Internal(err)
@@ -108,22 +108,6 @@ func (h *Handlers) listMemberOptions(w http.ResponseWriter, r *http.Request) err
 	items := make([]map[string]any, 0, len(accounts))
 	for _, account := range accounts {
 		items = append(items, map[string]any{"id": account.ID, "username": account.Username, "nickname": account.Nickname, "group_id": account.GroupID, "group_expires_at": account.GroupExpiresAt})
-	}
-	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"users": items, "total": total})
-}
-
-func (h *Handlers) listAdministrators(w http.ResponseWriter, r *http.Request) error {
-	query := r.URL.Query()
-	accounts, total, err := h.users.List(r.Context(), user.ListFilter{
-		Search: query.Get("q"), Role: user.Role(query.Get("role")),
-		Limit: intParam(query.Get("limit"), 20), Offset: intParam(query.Get("offset"), 0),
-	})
-	if err != nil {
-		return httpx.Internal(err)
-	}
-	items := make([]map[string]any, 0, len(accounts))
-	for _, account := range accounts {
-		items = append(items, map[string]any{"id": account.ID, "username": account.Username, "nickname": account.Nickname, "role": account.Role, "admin_permissions": account.AdminPermissions})
 	}
 	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"users": items, "total": total})
 }

@@ -14,7 +14,7 @@ import {
 } from '@/admin/api';
 import { ApiError } from '@/api/client';
 import type { UsageSummary } from '@/api/usage';
-import { ADMIN_PAGES } from '@/admin/permissions';
+import { ADMIN_PERMISSIONS } from '@/admin/permissions';
 import OaCheckList from '@/components/OaCheckList.vue';
 import type { PageState } from '@/components/table-types';
 import OaBadge from '@/components/OaBadge.vue';
@@ -302,7 +302,7 @@ async function save(): Promise<void> {
 
       status: form.value.status,
     };
-    if (form.value.role !== row.role) patch.role = form.value.role;
+    if (canAdmin('administrators') && form.value.role !== row.role) patch.role = form.value.role;
     if (canAdmin('administrators') && (form.value.role === 'admin') &&
       (form.value.role !== row.role || JSON.stringify(form.value.permissions) !== JSON.stringify(row.admin_permissions ?? []))) {
       patch.admin_permissions = form.value.permissions;
@@ -658,7 +658,7 @@ const state = { q: '', role: '', status: '', group: '' };
         v-model="form.permissions"
         :label="t('adminPermissions')"
         :hint="t('adminPermissionsHint')"
-        :items="ADMIN_PAGES.filter((entry) => canAdmin(entry.value)).map((entry) => ({ value: entry.value, label: t(entry.label) }))"
+        :items="ADMIN_PERMISSIONS.filter((entry) => canAdmin(entry.value)).map((entry) => ({ value: entry.value, label: t(entry.label) }))"
         :empty-text="t('permissionDeniedTitle')"
       />
       <OaSelectField

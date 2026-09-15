@@ -41,7 +41,6 @@ import AdminLogs from './AdminLogs.vue';
 import AdminSecurity from './AdminSecurity.vue';
 import AdminSettings from './AdminSettings.vue';
 import AdminAnnouncements from './AdminAnnouncements.vue';
-import AdminAdministrators from './AdminAdministrators.vue';
 
 // Labels are looked up at render rather than stored, because this table is
 // evaluated at import time — before the language is known.
@@ -59,7 +58,6 @@ const PAGES: AdminPageSpec[] = [
   { slug: 'security', label: 'navSecurity', icon: IconLock, component: markRaw(AdminSecurity) },
   { slug: 'settings', label: 'navSettings', icon: IconSliders, component: markRaw(AdminSettings) },
   { slug: 'announcements', label: 'announcements', icon: IconFile, component: markRaw(AdminAnnouncements) },
-  { slug: 'administrators', label: 'manageAdministrators', icon: IconLock, component: markRaw(AdminAdministrators) },
 ];
 
 const route = useRoute();

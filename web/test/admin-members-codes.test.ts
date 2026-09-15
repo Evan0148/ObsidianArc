@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp, h, nextTick, shallowRef, type App, type Component } from 'vue';
 import AdminCodes from '../src/views/admin/AdminCodes.vue';
+import AdminUsers from '../src/views/admin/AdminUsers.vue';
 import GroupMembers from '../src/views/admin/GroupMembers.vue';
-import { adminApi, type Group, type RedemptionCode } from '../src/admin/api';
+import { adminApi, emptyPolicy, type Group, type RedemptionCode } from '../src/admin/api';
 import type { Account } from '../src/api/auth';
 import { saveAsFile } from '../src/api/backup';
 import { provideAdminView } from '../src/views/admin/adminView';
 import { providePanelHost } from '../src/composables/usePanelHost';
 import { changeLanguage, t } from '../src/composables/useI18n';
+import { adopt, forget } from '../src/stores/session';
 
 vi.mock('../src/api/backup', () => ({ saveAsFile: vi.fn() }));
 
@@ -29,6 +31,7 @@ afterEach(() => {
   app = undefined;
   document.body.textContent = '';
   vi.restoreAllMocks();
+  forget();
   vi.mocked(saveAsFile).mockClear();
 });
 
@@ -61,6 +64,66 @@ function button(root: ParentNode, label: string): HTMLButtonElement {
 function code(value: string, at: string): RedemptionCode {
   return { id: value, code: value, cards: 1, claimed: 0, card_days: 10, expires_at: 0, note: '', created_at: new Date(at).getTime() };
 }
+
+describe('administrator roles on the user detail panel', () => {
+  const member: Account = {
+    id: 'member', username: 'member', nickname: 'Member', email: '', qq: '', bio: '', avatar: '',
+    role: 'user', status: 'active', group_id: '', group_expires_at: 0, admin_permissions: [],
+    created_at: Date.now(), updated_at: Date.now(), last_login_at: 0, group_name: '',
+    email_verified: true, allow_stats: true, allow_delete_conversations: true,
+    api_restricted: false, api_restricted_until: 0, api_restriction_source: '',
+  };
+
+  async function openMember(permissions: string[]): Promise<void> {
+    adopt({ ...member, id: 'operator', role: 'admin', admin_permissions: permissions });
+    const policy = emptyPolicy('user', member.id);
+    vi.spyOn(adminApi, 'groupOptions').mockResolvedValue({ groups: [] });
+    vi.spyOn(adminApi, 'users').mockResolvedValue({ users: [member], total: 1 });
+    vi.spyOn(adminApi, 'user').mockResolvedValue({
+      user: member, policy, usage: { windows: [], unlimited: true },
+      lifetime: { requests: 0, input_tokens: 0, output_tokens: 0, reasoning_tokens: 0, total_tokens: 0, credits: 0, errors: 0 },
+      cards: { total: 0, available: 0, used: 0, expired: 0, cards: [] },
+    });
+    vi.spyOn(adminApi, 'userKeys').mockResolvedValue({ keys: [] });
+    vi.spyOn(adminApi, 'savePolicy').mockResolvedValue({ policy });
+    await mount(AdminUsers);
+    host.querySelector<HTMLTableRowElement>('tbody tr')!.click();
+    await settle();
+  }
+
+  function roleField(): HTMLElement | undefined {
+    return [...panels.querySelectorAll<HTMLElement>('.oa-field')].find((field) =>
+      field.querySelector('.oa-field-label')?.textContent === t('role'));
+  }
+
+  it('edits ordinary profile fields without exposing or submitting role controls when the action grant is absent', async () => {
+    await openMember(['users']);
+    const update = vi.spyOn(adminApi, 'updateUser').mockResolvedValue({ user: member });
+    expect(roleField()).toBeUndefined();
+    expect(panels.textContent).not.toContain(t('manageAdministrators'));
+    button(panels, t('save')).click();
+    await settle();
+    expect(update).toHaveBeenCalledOnce();
+    expect(update.mock.calls[0]![1]).not.toHaveProperty('role');
+    expect(update.mock.calls[0]![1]).not.toHaveProperty('admin_permissions');
+  });
+
+  it('appoints an administrator and selects permissions in the same user detail panel', async () => {
+    await openMember(['users', 'administrators']);
+    const update = vi.spyOn(adminApi, 'updateUser').mockResolvedValue({ user: { ...member, role: 'admin' } });
+    roleField()!.querySelector<HTMLButtonElement>('.oa-select')!.click();
+    await settle();
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) => item.textContent?.trim() === t('roleAdmin'))!;
+    option.click(); await settle();
+    const grants = [...panels.querySelectorAll<HTMLLabelElement>('.oa-check-row')];
+    expect(grants.map((row) => row.querySelector('.oa-check-title')?.textContent)).toEqual([t('navUsers'), t('manageAdministrators')]);
+    grants[0]!.querySelector<HTMLInputElement>('input')!.click();
+    await settle();
+    button(panels, t('save')).click();
+    await settle();
+    expect(update).toHaveBeenCalledWith(member.id, expect.objectContaining({ role: 'admin', admin_permissions: ['users'] }));
+  });
+});
 
 describe('redemption code export', () => {
   const records = [

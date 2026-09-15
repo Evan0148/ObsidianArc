@@ -77,7 +77,7 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     id: 'secAccess',
     pageSlug: 'users',
     titleKey: 'secAccess',
-    searchKeys: ['role', 'roleAdmin', 'roleUser', 'statusActive', 'statusDisabled', 'apiRestricted'],
+    searchKeys: ['role', 'roleAdmin', 'roleUser', 'manageAdministrators', 'adminPermissions', 'statusActive', 'statusDisabled', 'apiRestricted'],
     keywords: ['角色与权限', '管理员角色', '封禁账号', '用户组分配', 'API限制', 'role', 'admin', 'permissions'],
   },
   {
