@@ -6,7 +6,7 @@
 // "what is this costing" and "why did that request fail" without either being
 // a separate feature.
 
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import {
   adminApi, emptyPolicy,
   type Group, type QuotaWindowKind, type UsageBreakdown, type UsageMetric,
@@ -38,10 +38,19 @@ import CreditsField from './CreditsField.vue';
 import StatusBadge from './StatusBadge.vue';
 import { useAdminView } from './adminView';
 
-const RANGES: Array<{ label: StringKey; hours: number }> = [
-  { label: 'rangeDay', hours: 24 },
-  { label: 'rangeWeek', hours: 24 * 7 },
-  { label: 'rangeMonth', hours: 24 * 30 },
+interface RangePreset {
+  key: string;
+  label: StringKey;
+  hours: number;
+}
+
+const RANGE_PRESETS: RangePreset[] = [
+  { key: '1h', label: 'rangeHour', hours: 1 },
+  { key: '24h', label: 'rangeDay', hours: 24 },
+  { key: '7d', label: 'rangeWeek', hours: 24 * 7 },
+  { key: '30d', label: 'rangeMonth', hours: 24 * 30 },
+  { key: '90d', label: 'rangeQuarter', hours: 24 * 90 },
+  { key: 'all', label: 'rangeAll', hours: 0 },
 ];
 
 const WINDOWS: QuotaWindowKind[] = ['5h', '1w', '1m'];
@@ -49,7 +58,37 @@ const WINDOWS: QuotaWindowKind[] = ['5h', '1w', '1m'];
 const view = useAdminView();
 view.setTitle(t('usageTitle'));
 
-const range = ref(String(selectedRange));
+const currentRPM = ref(0);
+const rpmTimer = ref<number | null>(null);
+
+const range = ref<string>(String(selectedRange));
+const customRangeOpen = ref(false);
+const customRangeError = ref('');
+const customStart = ref(savedCustomStart);
+const customEnd = ref(savedCustomEnd);
+let customSince = savedCustomSince;
+let customUntil = savedCustomUntil;
+
+function toLocalISO(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+const rangeChoices = computed(() => {
+  const list = RANGE_PRESETS.map((entry) => ({
+    value: entry.key,
+    label: t(entry.label),
+  }));
+  const customLabel = customSince && customUntil
+    ? `${t('rangeCustom')} (${new Date(customSince).toLocaleDateString()} ~ ${new Date(customUntil).toLocaleDateString()})`
+    : t('rangeCustom');
+  list.push({
+    value: 'custom',
+    label: customLabel,
+  });
+  return list;
+});
+
 // Remembered across visits: an operator who looks at credits by user does it
 // again next time, and having to choose twice is friction with no benefit.
 const metric = ref<UsageMetric>(selectedMetric);
@@ -68,11 +107,18 @@ const recordPage = ref<PageState>({ page: 1, pageSize: 20 });
 const recordsBusy = ref(false);
 let recordRequest = 0;
 let periodSince = 0;
+let periodUntil = 0;
 async function loadRecords(): Promise<void> {
   const ticket = ++recordRequest;
   recordsBusy.value = true;
   try {
-    const result = await adminApi.usageRecords(`?since=${periodSince}&limit=${recordPage.value.pageSize}&offset=${(recordPage.value.page - 1) * recordPage.value.pageSize}`);
+    const params = new URLSearchParams();
+    if (periodSince > 0) params.set('since', String(periodSince));
+    if (periodUntil > 0) params.set('until', String(periodUntil));
+    params.set('limit', String(recordPage.value.pageSize));
+    params.set('offset', String((recordPage.value.page - 1) * recordPage.value.pageSize));
+
+    const result = await adminApi.usageRecords(`?${params.toString()}`);
     if (ticket !== recordRequest) return;
     records.value = result.records ?? [];
     recordTotal.value = result.total;
@@ -87,6 +133,11 @@ const totalStats = computed<Stat[]>(() => {
   const value = totals.value;
   if (!value) return [];
   return [
+    {
+      label: t('statRPM'),
+      value: compactNumber(currentRPM.value),
+      note: t('rpmRealtime'),
+    },
     {
       label: t('statRequests'),
       value: compactNumber(value.requests),
@@ -143,9 +194,98 @@ const recordColumns = computed<Array<Column<UsageRecord>>>(() => [
 ]);
 
 function onRange(next: string): void {
+  if (next === 'custom') {
+    openCustomRange();
+    return;
+  }
   range.value = next;
-  selectedRange = Number(next);
+  selectedRange = next;
   void load();
+}
+
+function openCustomRange(): void {
+  if (!customStart.value) {
+    customStart.value = toLocalISO(new Date(Date.now() - 24 * 3600_000));
+  }
+  if (!customEnd.value) {
+    customEnd.value = toLocalISO(new Date());
+  }
+  customRangeError.value = '';
+  customRangeOpen.value = true;
+}
+
+function closeCustomRange(): void {
+  customRangeOpen.value = false;
+  customRangeError.value = '';
+  if (selectedRange !== 'custom') {
+    range.value = selectedRange;
+  }
+}
+
+function applyCustomRange(): void {
+  if (!customStart.value) {
+    customRangeError.value = t('customStartRequired');
+    return;
+  }
+  if (!customEnd.value) {
+    customRangeError.value = t('customEndRequired');
+    return;
+  }
+  const startMs = new Date(customStart.value).getTime();
+  const endMs = new Date(customEnd.value).getTime();
+  if (isNaN(startMs) || isNaN(endMs) || startMs >= endMs) {
+    customRangeError.value = t('customInvalidRange');
+    return;
+  }
+  customSince = startMs;
+  customUntil = endMs;
+  savedCustomSince = startMs;
+  savedCustomUntil = endMs;
+  savedCustomStart = customStart.value;
+  savedCustomEnd = customEnd.value;
+  range.value = 'custom';
+  selectedRange = 'custom';
+  customRangeError.value = '';
+  customRangeOpen.value = false;
+  void load();
+}
+
+function setPreset(preset: 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'last7d' | 'last30d'): void {
+  const now = new Date();
+  const start = new Date(now);
+  const end = new Date(now);
+
+  switch (preset) {
+    case 'today':
+      start.setHours(0, 0, 0, 0);
+      break;
+    case 'yesterday':
+      start.setDate(start.getDate() - 1);
+      start.setHours(0, 0, 0, 0);
+      end.setDate(end.getDate() - 1);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'thisWeek': {
+      const day = start.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      start.setDate(start.getDate() - diff);
+      start.setHours(0, 0, 0, 0);
+      break;
+    }
+    case 'thisMonth':
+      start.setDate(1);
+      start.setHours(0, 0, 0, 0);
+      break;
+    case 'last7d':
+      start.setTime(now.getTime() - 7 * 24 * 3600_000);
+      break;
+    case 'last30d':
+      start.setTime(now.getTime() - 30 * 24 * 3600_000);
+      break;
+  }
+  customStart.value = toLocalISO(start);
+  customEnd.value = toLocalISO(end);
+  customRangeError.value = '';
 }
 
 function onMetric(next: UsageMetric): void {
@@ -272,15 +412,32 @@ async function runReset(): Promise<void> {
   }
 }
 
+async function refreshRPM(): Promise<void> {
+  try {
+    const res = await adminApi.rpm();
+    currentRPM.value = res.rpm;
+  } catch {
+    // Keep existing RPM on transient error
+  }
+}
+
 async function load(): Promise<void> {
   error.value = '';
-  const since = Date.now() - RANGES[Number(range.value)]!.hours * 3600_000;
-  // The ranking is done in SQL, so which metric is being asked for has to go
-  // with the request: the top fifty by credits is not the top fifty by
-  // request count.
-  periodSince = since;
+  if (range.value === 'custom') {
+    periodSince = customSince;
+    periodUntil = customUntil;
+  } else {
+    const preset = RANGE_PRESETS.find((p) => p.key === range.value) ?? RANGE_PRESETS[1]!;
+    periodSince = preset.hours > 0 ? Date.now() - preset.hours * 3600_000 : 0;
+    periodUntil = 0;
+  }
   recordPage.value.page = 1;
-  const query = `?since=${since}&metric=${metric.value}`;
+  const params = new URLSearchParams();
+  if (periodSince > 0) params.set('since', String(periodSince));
+  if (periodUntil > 0) params.set('until', String(periodUntil));
+  params.set('metric', metric.value);
+  const query = `?${params.toString()}`;
+
   try {
     const [summary] = await Promise.all([
       adminApi.usage(query),
@@ -292,7 +449,9 @@ async function load(): Promise<void> {
     byUser.value = summary.by_user;
     series.value = summary.series;
     bucketMs.value = summary.bucket_ms;
-
+    if (typeof summary.current_rpm === 'number') {
+      currentRPM.value = summary.current_rpm;
+    }
   } catch (failure) {
     error.value = failure instanceof Error ? failure.message : String(failure);
   } finally {
@@ -300,25 +459,48 @@ async function load(): Promise<void> {
   }
 }
 
-onMounted(load);
+onMounted(() => {
+  void load();
+  const timer = window.setInterval(refreshRPM, 10000);
+  rpmTimer.value = timer;
+});
+
+onBeforeUnmount(() => {
+  if (rpmTimer.value !== null) {
+    clearInterval(rpmTimer.value);
+  }
+});
 </script>
 
 <script lang="ts">
-let selectedRange = 1;
+let selectedRange = '24h';
 let selectedMetric: UsageMetric = 'credits';
 let selectedShape: ChartShape = 'bar';
 let selectedDimension: 'model' | 'user' | 'provider' = 'model';
+let savedCustomStart = '';
+let savedCustomEnd = '';
+let savedCustomSince = 0;
+let savedCustomUntil = 0;
 </script>
 
 <template>
   <Teleport :to="view.actionsHost">
-    <div class="oa-filters" style="margin: 0">
+    <div class="oa-filters" style="margin: 0; display: flex; align-items: center; gap: 8px;">
       <OaSelect
         :model-value="range"
         class="oa-filter-select"
-        :choices="RANGES.map((entry, index) => ({ value: String(index), label: t(entry.label) }))"
+        :choices="rangeChoices"
         @update:model-value="onRange"
       />
+      <button
+        v-if="range === 'custom'"
+        type="button"
+        class="oa-btn"
+        style="padding: 6px 12px; font-size: 12px;"
+        @click="openCustomRange"
+      >
+        {{ t('editTimeRange') }}
+      </button>
     </div>
     <button id="defaultLimits" type="button" class="oa-btn" @click="openPolicy">{{ t('defaultLimits') }}</button>
     <button id="resetQuota" type="button" class="oa-btn oa-btn-danger" @click="openReset">{{ t('resetQuota') }}</button>
@@ -501,5 +683,35 @@ let selectedDimension: 'model' | 'user' | 'provider' = 'model';
       @fire="runReset"
     />
     <p class="oa-field-hint oa-hold-note">{{ t('resetHoldHint') }}</p>
+  </OaPanel>
+
+  <!-- Custom time range picker -->
+  <OaPanel
+    v-if="customRangeOpen"
+    :title="t('customTimeTitle')"
+    :confirm-label="t('apply')"
+    :error="customRangeError"
+    @close="closeCustomRange"
+    @confirm="applyCustomRange"
+  >
+    <p class="oa-field-hint">{{ t('customTimeHint') }}</p>
+    <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px;">
+      <button type="button" class="oa-btn" style="padding: 4px 10px; font-size: 12px;" @click="setPreset('today')">{{ t('presetToday') }}</button>
+      <button type="button" class="oa-btn" style="padding: 4px 10px; font-size: 12px;" @click="setPreset('yesterday')">{{ t('presetYesterday') }}</button>
+      <button type="button" class="oa-btn" style="padding: 4px 10px; font-size: 12px;" @click="setPreset('thisWeek')">{{ t('presetThisWeek') }}</button>
+      <button type="button" class="oa-btn" style="padding: 4px 10px; font-size: 12px;" @click="setPreset('thisMonth')">{{ t('presetThisMonth') }}</button>
+      <button type="button" class="oa-btn" style="padding: 4px 10px; font-size: 12px;" @click="setPreset('last7d')">{{ t('presetLast7Days') }}</button>
+      <button type="button" class="oa-btn" style="padding: 4px 10px; font-size: 12px;" @click="setPreset('last30d')">{{ t('presetLast30Days') }}</button>
+    </div>
+    <OaTextField
+      v-model="customStart"
+      type="datetime-local"
+      :label="t('customStart')"
+    />
+    <OaTextField
+      v-model="customEnd"
+      type="datetime-local"
+      :label="t('customEnd')"
+    />
   </OaPanel>
 </template>

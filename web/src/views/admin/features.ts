@@ -275,7 +275,7 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     id: 'secTotals',
     pageSlug: 'usage',
     titleKey: 'secTotals',
-    searchKeys: ['usageTitle', 'rangeDay', 'rangeWeek', 'rangeMonth'],
+    searchKeys: ['usageTitle', 'statRPM', 'rangeDay', 'rangeWeek', 'rangeMonth', 'rangeCustom'],
     keywords: ['用量统计', '总额度消耗', '请求总量', 'Token统计', 'totals', 'consumption'],
   },
   {

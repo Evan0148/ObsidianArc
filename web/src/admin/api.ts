@@ -488,9 +488,12 @@ export const adminApi = {
       by_user: UsageBreakdown[];
       series: UsagePoint[];
       bucket_ms: number;
+      current_rpm?: number;
     }>(`/api/admin/usage${query}`),
   usageRecords: (query: string) =>
     api.get<{ records: UsageRecord[]; total: number }>(`/api/admin/usage/records${query}`),
+  rpm: (query = '') =>
+    api.get<{ rpm: number }>(`/api/admin/usage/rpm${query}`),
 
   policies: () => api.get<{ policies: QuotaPolicy[] }>('/api/admin/quota/policies'),
   savePolicy: (policy: Record<string, unknown>) =>

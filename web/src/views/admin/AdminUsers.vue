@@ -147,6 +147,28 @@ function defaultGrantExpiry(): string {
   return dateTimeLocal(Date.now() + 30 * 24 * 3_600_000);
 }
 
+function computeExpiryPreset(type: '1w' | '1m' | '3m' | '6m' | '1y'): string {
+  const d = new Date();
+  switch (type) {
+    case '1w':
+      d.setDate(d.getDate() + 7);
+      break;
+    case '1m':
+      d.setMonth(d.getMonth() + 1);
+      break;
+    case '3m':
+      d.setMonth(d.getMonth() + 3);
+      break;
+    case '6m':
+      d.setMonth(d.getMonth() + 6);
+      break;
+    case '1y':
+      d.setFullYear(d.getFullYear() + 1);
+      break;
+  }
+  return dateTimeLocal(d.getTime());
+}
+
 const form = ref({
   nickname: '', email: '', qq: '', bio: '', avatar: '',
   role: 'user' as Role,
@@ -620,6 +642,13 @@ const state = { q: '', role: '', status: '', group: '' };
         type="datetime-local"
         required
       />
+      <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: -6px; margin-bottom: 12px;">
+        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="grantExpiresAt = computeExpiryPreset('1w')">{{ t('expiry1Week') }}</button>
+        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="grantExpiresAt = computeExpiryPreset('1m')">{{ t('expiry1Month') }}</button>
+        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="grantExpiresAt = computeExpiryPreset('3m')">{{ t('expiry3Months') }}</button>
+        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="grantExpiresAt = computeExpiryPreset('6m')">{{ t('expiryHalfYear') }}</button>
+        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="grantExpiresAt = computeExpiryPreset('1y')">{{ t('expiry1Year') }}</button>
+      </div>
       <button type="button" class="oa-btn" :disabled="!!grantLabel" @click="grant">
         {{ grantLabel || t('grantCards') }}
       </button>
@@ -682,6 +711,14 @@ const state = { q: '', role: '', status: '', group: '' };
         :label="t('membershipExpiry')"
         :hint="t('membershipExpiryHint')"
       />
+      <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: -6px; margin-bottom: 12px;">
+        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="form.groupExpiresAt = computeExpiryPreset('1w')">{{ t('expiry1Week') }}</button>
+        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="form.groupExpiresAt = computeExpiryPreset('1m')">{{ t('expiry1Month') }}</button>
+        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="form.groupExpiresAt = computeExpiryPreset('3m')">{{ t('expiry3Months') }}</button>
+        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="form.groupExpiresAt = computeExpiryPreset('6m')">{{ t('expiryHalfYear') }}</button>
+        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="form.groupExpiresAt = computeExpiryPreset('1y')">{{ t('expiry1Year') }}</button>
+        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="form.groupExpiresAt = ''">{{ t('membershipPermanent') }}</button>
+      </div>
       <OaSwitchField
         v-model="form.apiRestricted"
         :label="t('apiRestricted')"

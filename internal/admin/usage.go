@@ -154,10 +154,23 @@ func (h *Handlers) usageSummary(w http.ResponseWriter, r *http.Request) error {
 	// Hourly for a short range, daily for a long one: a month of hourly
 	// buckets is seven hundred points nobody can read.
 	bucket := time.Hour
-	if filter.Since > 0 && time.Since(time.UnixMilli(filter.Since)) > 3*24*time.Hour {
+	span := time.Duration(0)
+	if filter.Since > 0 {
+		if filter.Until > filter.Since {
+			span = time.Duration(filter.Until-filter.Since) * time.Millisecond
+		} else {
+			span = time.Since(time.UnixMilli(filter.Since))
+		}
+	}
+	if span > 3*24*time.Hour {
 		bucket = 24 * time.Hour
 	}
 	series, err := h.usage.Series(r.Context(), filter, bucket)
+	if err != nil {
+		return httpx.Internal(err)
+	}
+
+	rpm, err := h.usage.CurrentRPM(r.Context(), filter)
 	if err != nil {
 		return httpx.Internal(err)
 	}
@@ -169,6 +182,21 @@ func (h *Handlers) usageSummary(w http.ResponseWriter, r *http.Request) error {
 		"by_user":     byUser,
 		"series":      series,
 		"bucket_ms":   bucket.Milliseconds(),
+		"current_rpm": rpm,
+	})
+}
+
+func (h *Handlers) currentRPM(w http.ResponseWriter, r *http.Request) error {
+	filter, err := filterFrom(r)
+	if err != nil {
+		return err
+	}
+	rpm, err := h.usage.CurrentRPM(r.Context(), filter)
+	if err != nil {
+		return httpx.Internal(err)
+	}
+	return httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"rpm": rpm,
 	})
 }
 

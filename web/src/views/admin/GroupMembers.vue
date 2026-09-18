@@ -29,6 +29,28 @@ const pageSize = ref(20);
 let request = 0;
 let timer = 0;
 
+function computeExpiryPreset(type: '1w' | '1m' | '3m' | '6m' | '1y'): string {
+  const d = new Date();
+  switch (type) {
+    case '1w':
+      d.setDate(d.getDate() + 7);
+      break;
+    case '1m':
+      d.setMonth(d.getMonth() + 1);
+      break;
+    case '3m':
+      d.setMonth(d.getMonth() + 3);
+      break;
+    case '6m':
+      d.setMonth(d.getMonth() + 6);
+      break;
+    case '1y':
+      d.setFullYear(d.getFullYear() + 1);
+      break;
+  }
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
 const items = computed(() => accounts.value.map((account) => {
   const groupName = props.groups.find((entry) => entry.id === account.group_id)?.name ?? t('noGroup');
   const term = account.group_expires_at
@@ -133,6 +155,14 @@ onBeforeUnmount(() => {
       :label="t('membershipExpiry')"
       :hint="t('membershipExpiryHint')"
     />
+    <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: -6px; margin-bottom: 12px;">
+      <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="expiresAt = computeExpiryPreset('1w')">{{ t('expiry1Week') }}</button>
+      <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="expiresAt = computeExpiryPreset('1m')">{{ t('expiry1Month') }}</button>
+      <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="expiresAt = computeExpiryPreset('3m')">{{ t('expiry3Months') }}</button>
+      <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="expiresAt = computeExpiryPreset('6m')">{{ t('expiryHalfYear') }}</button>
+      <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="expiresAt = computeExpiryPreset('1y')">{{ t('expiry1Year') }}</button>
+      <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="expiresAt = ''">{{ t('membershipPermanent') }}</button>
+    </div>
     <div class="oa-log-filter-actions">
       <button type="button" class="oa-btn" :disabled="busy || !selected.length" @click="selected = []">{{ t('clearSelection') }}</button>
       <button type="button" class="oa-btn primary" :disabled="busy || !selected.length || selected.length > 200" @click="save">

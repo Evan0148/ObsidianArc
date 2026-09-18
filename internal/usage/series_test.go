@@ -136,3 +136,48 @@ func TestSeriesStillHonoursItsFilter(t *testing.T) {
 		t.Errorf("an account with no turns produced %d buckets", len(none))
 	}
 }
+
+func TestCurrentRPM(t *testing.T) {
+	store, account := seriesFixture(t)
+	ctx := context.Background()
+
+	now := time.Now().UnixMilli()
+	// Record 1: 10s ago (within last minute)
+	if err := store.Write(ctx, Record{
+		UserID: account.ID, RequestID: "recent-1",
+		StartedAt: now - 10_000, FinishedAt: now - 9_000, Status: StatusOK,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Record 2: 30s ago (within last minute)
+	if err := store.Write(ctx, Record{
+		UserID: account.ID, RequestID: "recent-2",
+		StartedAt: now - 30_000, FinishedAt: now - 29_000, Status: StatusOK,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Record 3: 2 minutes ago (outside last minute)
+	if err := store.Write(ctx, Record{
+		UserID: account.ID, RequestID: "old-1",
+		StartedAt: now - 120_000, FinishedAt: now - 119_000, Status: StatusOK,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rpm, err := store.CurrentRPM(ctx, Filter{})
+	if err != nil {
+		t.Fatalf("CurrentRPM: %v", err)
+	}
+	if rpm != 2 {
+		t.Fatalf("got RPM = %d, want 2", rpm)
+	}
+
+	// Filter by different user
+	userRpm, err := store.CurrentRPM(ctx, Filter{UserID: "nobody"})
+	if err != nil {
+		t.Fatalf("CurrentRPM with filter: %v", err)
+	}
+	if userRpm != 0 {
+		t.Fatalf("got RPM for nobody = %d, want 0", userRpm)
+	}
+}

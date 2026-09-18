@@ -182,6 +182,20 @@ func (s *Store) Totals(ctx context.Context, filter Filter) (Totals, error) {
 	return totals, nil
 }
 
+// CurrentRPM returns the count of requests started within the last 60 seconds matching the given filter.
+func (s *Store) CurrentRPM(ctx context.Context, filter Filter) (int64, error) {
+	rpmFilter := filter
+	rpmFilter.Since = time.Now().Add(-1 * time.Minute).UnixMilli()
+	rpmFilter.Until = 0
+	where, args := rpmFilter.where("")
+	var count int64
+	err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM usage_records`+where, args...).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("usage: rpm: %w", err)
+	}
+	return count, nil
+}
+
 // Breakdown is one row of a grouped aggregate: a model, a provider, a user.
 type Breakdown struct {
 	Key   string `json:"key"`
