@@ -25,6 +25,8 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/chat"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/compat"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/config"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/console"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/consolessh"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/conversation"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/database"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/group"
@@ -66,6 +68,8 @@ type Server struct {
 	quota         *quota.Service
 	requests      *reqlog.Store
 	health        *health.Checker
+	// nil when no SSH address is configured, which is the default.
+	ssh *consolessh.Server
 }
 
 func New(ctx context.Context, deps Deps) (*Server, error) {
@@ -654,6 +658,86 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	adminHandlers.TryReview = adminTryReview
 	adminHandlers.Routes(mux)
 
+	// The console is a client of the administrative API, not a second
+	// implementation of it. Its own mux carries the same handlers mounted the
+	// same way, so a command reaching an endpoint passes auth.RequireAdmin
+	// and that route's permission wrapper exactly as a browser request does.
+	// That is the whole of the console's permission story, and it is why
+	// there is no second permission table here to drift out of step with the
+	// one above.
+	consoleAPI := http.NewServeMux()
+	adminHandlers.Routes(consoleAPI)
+
+	// Read before the SSH server is built rather than from it: `help ssh`
+	// prints the fingerprint, so the engine needs it, and the server needs
+	// the engine. Loading the key is idempotent, so both read the same one.
+	var sshInfo console.SSHInfo
+	if cfg.Console.SSHAddr != "" {
+		print, err := consolessh.HostKeyFingerprint(cfg.Console.SSHHostKey)
+		if err != nil {
+			return nil, err
+		}
+		sshInfo = console.SSHInfo{Enabled: true, Addr: cfg.Console.SSHAddr, Fingerprint: print}
+	}
+
+	consoleEngine := console.New(console.Options{
+		Dispatch: console.NewDispatcher(consoleAPI),
+		Version:  deps.Version,
+		SiteName: func() string { return settingsService.Get(settings.SiteName) },
+		SSH:      sshInfo,
+		// The console can do everything the backoffice can from a surface
+		// that leaves nothing on screen afterwards, so what was run is
+		// recorded where the other administrative decisions are. The engine
+		// has already masked every sensitive flag in Line.
+		Audit: func(ctx context.Context, rec console.AuditRecord) {
+			severity := securityevents.SeverityInfo
+			if !rec.OK {
+				severity = securityevents.SeverityWarning
+			}
+			if err := securityLog.Record(ctx, nil, securityevents.Event{
+				Event: securityevents.EventConsoleCommand, Severity: severity,
+				UserID: rec.Actor.ID, Username: rec.Actor.Username,
+				ActorID: rec.Actor.ID, ActorUsername: rec.Actor.Username,
+				IP: rec.IP, Source: rec.Transport, Decision: rec.Code, Reason: rec.Line,
+			}); err != nil {
+				slog.ErrorContext(ctx, "could not record a console command",
+					"error", err, "actor", rec.Actor.Username)
+			}
+		},
+	})
+	consoleHandlers := console.NewHandlers(consoleEngine)
+	consoleHandlers.ClientIP = func(r *http.Request) string { return httpx.ClientIP(r, proxyTrust) }
+	consoleHandlers.Routes(mux)
+
+	// The same engine, reachable without a browser. Off unless an address was
+	// configured: a listener that accepts passwords should appear because an
+	// operator asked for it, not because the software was upgraded.
+	var sshServer *consolessh.Server
+	if cfg.Console.SSHAddr != "" {
+		sshServer, err = consolessh.New(consolessh.Config{
+			Addr:        cfg.Console.SSHAddr,
+			HostKeyPath: cfg.Console.SSHHostKey,
+			Console:     consoleEngine,
+			// The console's own door, held to the web login's rules: the same
+			// Argon2id verification and the same attempt budget, so guessing
+			// here and guessing at the sign-in form cannot be spread across
+			// two limits.
+			Authenticate: authService.VerifyCredential,
+			// What the cookie does for the browser: the account is read
+			// again before every command, so revoking a grant, disabling an
+			// account or deleting it reaches a session that is already open
+			// rather than waiting for whoever holds it to disconnect.
+			Reauthorize: func(ctx context.Context, userID string) (user.User, error) {
+				return users.ByID(ctx, nil, userID)
+			},
+			IdleTimeout: cfg.Console.SSHIdle,
+			MaxSessions: cfg.Console.SSHMaxSessions,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Anything under /api that no module claimed is a client bug, and should
 	// read as one instead of quietly returning the SPA shell.
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
@@ -713,6 +797,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	return &Server{
 		deps:          deps,
 		handler:       handler,
+		ssh:           sshServer,
 		settings:      settingsService,
 		auth:          authService,
 		users:         users,
@@ -785,6 +870,10 @@ func skipFromLog(r *http.Request) bool {
 }
 
 func (s *Server) Handler() http.Handler { return s.handler }
+
+// SSH is the console's SSH listener, or nil when none was configured. main
+// starts and stops it alongside the HTTP server; nothing else touches it.
+func (s *Server) SSH() *consolessh.Server { return s.ssh }
 
 // StartJanitor runs the one piece of periodic work this server has: expiring
 // sessions. It is a single goroutine on a ticker, not a scheduler, and it

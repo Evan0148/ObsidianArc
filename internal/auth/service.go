@@ -618,6 +618,58 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (user.User, string, 
 	return account, token, nil
 }
 
+// VerifyCredential answers "is this the right password for this account",
+// and nothing else.
+//
+// It is Login without the two things that only make sense in a browser: the
+// Turnstile gate, which no SSH client can solve, and the session cookie,
+// which a console session has no use for. Everything that protects the
+// credential itself is kept and deliberately shared with Login — the same
+// attempt limiter, so guessing over SSH and guessing over the sign-in form
+// count against one budget rather than two, and the same dummy verification,
+// so an unknown account costs the same wall-clock as a known one.
+//
+// Every failure returns ErrInvalidCredentials. A caller that is about to tell
+// a stranger whether an account exists is the reason.
+func (s *Service) VerifyCredential(ctx context.Context, identifier, password, ip string) (user.User, error) {
+	attempt, err := s.limiter.Begin(ip, identifier)
+	if err != nil {
+		return user.User{}, err
+	}
+	defer attempt.finish(attemptCancelled)
+
+	account, hash, err := s.users.CredentialsByLogin(ctx, identifier)
+	if err != nil {
+		if errors.Is(err, user.ErrNotFound) {
+			s.hasher.DummyVerify(ctx, password)
+			attempt.finish(attemptFailed)
+			return user.User{}, ErrInvalidCredentials
+		}
+		return user.User{}, err
+	}
+
+	ok, needsRehash, err := s.hasher.Verify(ctx, hash, password)
+	if err != nil {
+		return user.User{}, err
+	}
+	if !ok {
+		attempt.finish(attemptFailed)
+		return user.User{}, ErrInvalidCredentials
+	}
+	if !account.IsActive() {
+		return user.User{}, ErrAccountDisabled
+	}
+
+	attempt.finish(attemptSucceeded)
+
+	if needsRehash {
+		if upgraded, hashErr := s.hasher.Hash(ctx, password); hashErr == nil {
+			_ = s.users.SetPasswordHash(ctx, nil, account.ID, upgraded)
+		}
+	}
+	return account, nil
+}
+
 func (s *Service) Logout(ctx context.Context, token string) error {
 	if token == "" {
 		return nil

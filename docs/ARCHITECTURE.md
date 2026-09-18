@@ -216,18 +216,31 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | --- | --- | --- |
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
-| Binary (SQLite + embedded SPA) | < 30 MB | 18.5 MB (14.7 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 135 kB | 135.61 kB to open the chat (117.47 JS + 18.14 CSS) |
+| Binary (SQLite + embedded SPA) | < 30 MB | 19.5 MB (15.8 MB `-tags nosqlite`, Linux amd64) |
+| Frontend, on the wire | < 135 kB | 137.44 kB to open the chat (118.44 JS + 19.00 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
 
-The bundle and binaries were remeasured on 2026-09-15 (UTC) after adding page
-entrances and coordinated administrator section transitions.
-The chat payload is 0.61 kB above the existing target; that target is unchanged.
+The bundle and binaries were remeasured on 2026-09-19 (UTC) after adding the
+administrative console — the terminal section and its SSH transport.
+The chat payload is 2.44 kB above the existing target; that target is
+unchanged, and the gap is now worth naming rather than absorbing. The console
+itself is admin-only code, and all 8.35 kB of it landed in the backoffice
+chunk, which nobody who cannot open it ever fetches. What reached the first
+paint is the two things this project deliberately does not split: its English
+strings, because `en` in `i18n.ts` is the type that makes the Chinese
+dictionary provably complete, and its stylesheet, because there is one. Those
+are 0.97 kB of JS and 0.86 kB of CSS. Splitting either is the careful job named below, not
+something to do while adding a screen.
+
+The binary grew 1.07 MB, all of it `golang.org/x/crypto/ssh`. That is a
+package of a module `go.mod` already required for Argon2id, so it adds no
+dependency — but it is a megabyte of code that only runs when
+`OBSIDIAN_SSH_ADDR` is set, and it is linked in either way.
 Binary sizes use Go 1.27.0,
 Linux amd64, `-trimpath -ldflags "-s -w"`; transfer sizes are gzip-compressed
 JS and CSS in decimal kB, with totals rounded after summing. Binary sizes
-are decimal MB (18,456,736 bytes with SQLite; 14,749,856 bytes without it).
+are decimal MB (19,538,080 bytes with SQLite; 15,827,104 bytes without it).
 
 The target moved with the interface. It was < 80 kB while the frontend was
 hand-written DOM calls, and 71.6 kB against it; adopting Vue put roughly 45 kB
@@ -244,10 +257,10 @@ What each reader actually downloads:
 
 | | gzipped |
 | --- | --- |
-| English, not an administrator | 135.61 kB |
-| Chinese, not an administrator | 155.96 kB |
-| …and a conversation containing a formula | 159.61 kB |
-| Chinese administrator, backoffice open | 203.38 kB |
+| English, not an administrator | 137.44 kB |
+| Chinese, not an administrator | 158.79 kB |
+| …and a conversation containing a formula | 162.44 kB |
+| Chinese administrator, backoffice open | 214.56 kB |
 
 Route-level splitting would shave the first paint further and is deliberately
 switched off for everything but the backoffice: /settings, /keys, /usage and

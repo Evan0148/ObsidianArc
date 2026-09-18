@@ -41,7 +41,10 @@ const props = withDefaults(defineProps<{
   searchable?: boolean;
 }>(), { searchable: true });
 
-const emit = defineEmits<{ (event: 'update:modelValue', value: T): void }>();
+const emit = defineEmits<{
+  (event: 'update:modelValue', value: T): void;
+  (event: 'select', value: T): void;
+}>();
 
 // Long enough for the transition in the stylesheet.
 const CLOSE_MS = 160;
@@ -193,6 +196,7 @@ function close(): void {
 function choose(value: T): void {
   if (props.searchable) trigger.value?.focus({ preventScroll: true });
   close();
+  emit('select', value);
   if (value !== props.modelValue) emit('update:modelValue', value);
 }
 

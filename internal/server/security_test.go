@@ -214,6 +214,13 @@ func TestAdminRoutesRequireAnAdministrator(t *testing.T) {
 		{http.MethodDelete, "/api/admin/quota/policies/global", nil},
 		{http.MethodPost, "/api/admin/settings/import", map[string]any{"settings": map[string]string{}}},
 		{http.MethodPost, "/api/admin/attachments/purge", nil},
+		// The console. Open to any administrator rather than carrying a
+		// permission of their own — the engine behind them refuses the
+		// individual commands — but still no use at all to a signed-out
+		// caller or a regular account, which is what this matrix checks.
+		{http.MethodGet, "/api/admin/console/spec", nil},
+		{http.MethodPost, "/api/admin/console/exec", map[string]any{"line": "whoami"}},
+		{http.MethodPost, "/api/admin/console/complete", map[string]any{"line": "user", "pos": 4}},
 	}
 
 	// The list above is the whole route table, not a sample of it. A new
@@ -667,19 +674,31 @@ func TestAdministratorCanRestrictAndRestoreAnAccountsAPI(t *testing.T) {
 // because net/http's mux will not enumerate itself. It is a regex over one
 // file in this repository, which is enough to answer "did somebody add an
 // endpoint" and nothing more.
+// Two files, because /api/admin is mounted from two places: the backoffice's
+// own table, and the console's three endpoints, which cannot live in
+// internal/admin because the console dispatches back through those very
+// handlers. Both are scanned so the matrix below stays the whole list rather
+// than most of it.
 func adminRoutes(t *testing.T) []string {
 	t.Helper()
-	source, err := os.ReadFile(filepath.Join("..", "admin", "admin.go"))
-	if err != nil {
-		t.Fatalf("read the admin route table: %v", err)
-	}
 	pattern := regexp.MustCompile(`mux\.Handle\("((?:GET|POST|PATCH|PUT|DELETE) /api/admin/[^"]*)"`)
 	var out []string
-	for _, match := range pattern.FindAllStringSubmatch(string(source), -1) {
-		out = append(out, match[1])
-	}
-	if len(out) == 0 {
-		t.Fatal("found no admin routes; the scanner has drifted from the source")
+	for _, source := range []string{
+		filepath.Join("..", "admin", "admin.go"),
+		filepath.Join("..", "console", "handlers.go"),
+	} {
+		body, err := os.ReadFile(source)
+		if err != nil {
+			t.Fatalf("read the admin route table %s: %v", source, err)
+		}
+		found := 0
+		for _, match := range pattern.FindAllStringSubmatch(string(body), -1) {
+			out = append(out, match[1])
+			found++
+		}
+		if found == 0 {
+			t.Fatalf("found no admin routes in %s; the scanner has drifted from the source", source)
+		}
 	}
 	return out
 }

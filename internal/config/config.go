@@ -26,6 +26,10 @@ const envPrefix = "OBSIDIAN_"
 // when OBSIDIAN_SECRET_KEY is not set.
 const SecretKeyFile = "secret.key"
 
+// SSHHostKeyFile is where the console's SSH host key is persisted, relative
+// to DataDir, when OBSIDIAN_SSH_HOST_KEY is not set.
+const SSHHostKeyFile = "ssh_host_ed25519_key"
+
 type Config struct {
 	Addr     string
 	DataDir  string
@@ -48,6 +52,7 @@ type Config struct {
 	Upstream  Upstream
 	Bootstrap Bootstrap
 	Mail      Mail
+	Console   Console
 
 	// Encrypts provider API keys at rest. Never logged, never served.
 	SecretKey []byte
@@ -73,6 +78,27 @@ type Mail struct {
 	// infer this: the Host header of whichever request happened to
 	// trigger the mail is not a base URL worth trusting.
 	PublicURL string
+}
+
+// Console is the administrative console's second door: the same command
+// engine the browser talks to, reachable over SSH.
+//
+// Off unless SSHAddr is set. A listener that appears because the software was
+// upgraded is not a decision an operator made, and this one accepts
+// passwords.
+type Console struct {
+	// "" disables SSH entirely; ":2222" is the usual value.
+	SSHAddr string
+	// Where the server's own identity lives. Generated on first start when
+	// absent, which is what makes `ssh admin@host` work without setup — at
+	// the cost of a fingerprint that changes if the data directory is lost.
+	SSHHostKey string
+	// How long a session may sit at a prompt doing nothing. A console session
+	// holds an authenticated administrator, so it is not left open forever.
+	SSHIdle time.Duration
+	// Concurrent sessions across all accounts. Each one costs a goroutine and
+	// an open connection, and nobody needs sixteen prompts.
+	SSHMaxSessions int
 }
 
 type Database struct {
@@ -224,6 +250,12 @@ func Load() (Config, error) {
 			Username: env("ADMIN_USER", ""),
 			Password: env("ADMIN_PASSWORD", ""),
 			Email:    env("ADMIN_EMAIL", ""),
+		},
+		Console: Console{
+			SSHAddr:        env("SSH_ADDR", ""),
+			SSHHostKey:     env("SSH_HOST_KEY", filepath.Join(dataDir, SSHHostKeyFile)),
+			SSHIdle:        envDuration("SSH_IDLE", 30*time.Minute),
+			SSHMaxSessions: envInt("SSH_MAX_SESSIONS", 16),
 		},
 	}
 

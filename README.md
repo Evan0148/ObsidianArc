@@ -36,6 +36,7 @@
 - **图像实验室（Image Lab）**：支持图像生成模型调用、宽高比切换、灯箱缩放与图片下载；支持在后台独立标记模型的生图能力。
 - **用量核算与配额控制**：每次对话和 API 调用记录到用量账本；支持按 5 小时、周、月周期，针对请求次数、Token 消耗或积分设置限制；使用数据库行锁避免并发透支。
 - **会话持久化与文件处理**：对话历史支持重命名、搜索与删除；图片在浏览器本地压缩后上传；代码块支持命名、保存与复制。
+- **管理控制台**：后台内置终端，74 条命令覆盖后台界面的全部 58 个接口。命令本身即后台 API 的调用方，因此权限与界面完全一致——只持有用户权限的管理员在控制台里同样只能操作用户，无权执行的命令连列都不会列出。支持多标签页、双语 `help`、Tab 补全与 `--json` 输出。设置 `OBSIDIAN_SSH_ADDR` 后可通过 `ssh 管理员用户名@域名` 直接连接控制台（连上的是控制台，不是服务器 shell），并可作为单条命令被脚本调用。
 - **界面与安全设计**：前端采用 Vue 模板插值渲染，不使用 `innerHTML` 与 `v-html`；上游 API Key 在数据库中加密存储；提供浅色、深色与跟随系统的界面配色。
 
 ---
@@ -121,6 +122,7 @@ OBSIDIAN_SECRET_KEY=$(openssl rand -hex 32) docker compose up -d
 - **Image Lab**: Standalone image generation interface with aspect-ratio selection, lightbox zoom, and download controls; capability flags distinguish drawing models from text models.
 - **Usage Accounting and Rate Limits**: Per-turn usage recorded into an append-only ledger; supports request count, token, and credit limits across 5-hour, weekly, and monthly windows; row-level database locks prevent concurrent overdrafts.
 - **Conversations and Attachments**: Conversation history search, renaming, and deletion; client-side image compression before upload; code blocks with naming, copying, and saving.
+- **Administrative Console**: A terminal inside the backoffice — 74 commands covering all 58 administrative endpoints. Each command is a client of the admin API rather than a second implementation of it, so a console session can do exactly what its operator could do on screen and no more; commands an account cannot run are not listed to it. Multiple tabs, bilingual `help`, tab completion, and `--json` output. Setting `OBSIDIAN_SSH_ADDR` also serves the same console over SSH (`ssh admin@host`) — the console, not a server shell — which makes it scriptable one command at a time.
 - **Security and Rendering**: Frontend uses Vue template bindings with no `innerHTML` or `v-html`; upstream credentials stored encrypted; dark, light, and system theme options.
 
 ---
@@ -131,11 +133,11 @@ OBSIDIAN_SECRET_KEY=$(openssl rand -hex 32) docker compose up -d
 
 | 指标 / Metric | 实测数据 / Measurement |
 | --- | --- |
-| 二进制体积 / Binary size | 18.5 MB（Linux amd64；使用 `-tags nosqlite` 为 14.7 MB） |
+| 二进制体积 / Binary size | 19.5 MB（Linux amd64；使用 `-tags nosqlite` 为 15.8 MB） |
 | 冷启动就绪时间 / Cold start | ~28 ms |
 | 空闲内存占用 / Idle RSS | ~16 MB |
 | 20 并发流式峰值 / Peak under 20 concurrency | ~54 MB 内存，11 个 OS 线程 |
-| 首次加载传输体积 / Wire payload | 打开对话界面传输 135.61 kB（117.47 kB JS + 18.14 kB CSS）；中文语言包 (20.35 kB)、管理后台 (47.42 kB)、公式渲染器 (3.65 kB) 按需分包加载 |
+| 首次加载传输体积 / Wire payload | 打开对话界面传输 137.44 kB（118.44 kB JS + 19.00 kB CSS）；中文语言包 (21.35 kB)、管理后台 (55.77 kB)、公式渲染器 (3.65 kB) 按需分包加载 |
 | 后台常驻协程 / Background goroutines | 1 个（10 分钟周期的系统清理协程） |
 | Go 直接依赖 / Direct Go dependencies | 3 个（SQLite 驱动、pgx、x/crypto） |
 | 前端运行时依赖 / Frontend runtime dependencies | 4 个（`vue`、`vue-router`、`@vueuse/core`、`lucide-vue-next`） |

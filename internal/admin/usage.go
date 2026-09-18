@@ -161,6 +161,10 @@ func (h *Handlers) usageSummary(w http.ResponseWriter, r *http.Request) error {
 		} else {
 			span = time.Since(time.UnixMilli(filter.Since))
 		}
+	} else {
+		// Since <= 0 represents all time, which is unbounded.
+		// Use daily buckets to avoid hundreds of unreadable hourly buckets.
+		span = 4 * 24 * time.Hour
 	}
 	if span > 3*24*time.Hour {
 		bucket = 24 * time.Hour

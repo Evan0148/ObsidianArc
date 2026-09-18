@@ -50,4 +50,37 @@ func TestAdminUsageRPMAndCustomTime(t *testing.T) {
 	if customRes.Code != http.StatusOK {
 		t.Fatalf("expected 200 from /api/admin/usage with custom range, got %d: %s", customRes.Code, customRes.Body.String())
 	}
+	customPayload := decode[struct {
+		BucketMS int64 `json:"bucket_ms"`
+	}](t, customRes)
+	// 1-hour span should be hourly bucket (3600000 ms)
+	if customPayload.BucketMS != 3600000 {
+		t.Errorf("expected bucket_ms = 3600000 for 1h span, got %d", customPayload.BucketMS)
+	}
+
+	// 4. Check all-time range (since=0) uses daily bucket (86400000 ms)
+	allTimeRes := in.do(http.MethodGet, "/api/admin/usage?since=0", nil, admin)
+	if allTimeRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /api/admin/usage?since=0, got %d: %s", allTimeRes.Code, allTimeRes.Body.String())
+	}
+	allTimePayload := decode[struct {
+		BucketMS int64 `json:"bucket_ms"`
+	}](t, allTimeRes)
+	if allTimePayload.BucketMS != 86400000 {
+		t.Errorf("expected bucket_ms = 86400000 for all-time span, got %d", allTimePayload.BucketMS)
+	}
+
+	// 5. Check long custom range (> 3 days) uses daily bucket (86400000 ms)
+	longSince := time.Now().Add(-5 * 24 * time.Hour).UnixMilli()
+	longUntil := time.Now().UnixMilli()
+	longRes := in.do(http.MethodGet, "/api/admin/usage?since="+strconv.FormatInt(longSince, 10)+"&until="+strconv.FormatInt(longUntil, 10), nil, admin)
+	if longRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /api/admin/usage with 5d range, got %d: %s", longRes.Code, longRes.Body.String())
+	}
+	longPayload := decode[struct {
+		BucketMS int64 `json:"bucket_ms"`
+	}](t, longRes)
+	if longPayload.BucketMS != 86400000 {
+		t.Errorf("expected bucket_ms = 86400000 for 5d span, got %d", longPayload.BucketMS)
+	}
 }

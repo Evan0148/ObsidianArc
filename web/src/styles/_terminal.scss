@@ -1,0 +1,430 @@
+// The admin console: CONTRACT.md #5. Imported last from index.scss, after
+// surfaces — nothing else in the app depends on load order here, but this is
+// where a rule that turns out to need overriding one of surfaces' own goes
+// without a specificity fight.
+//
+// No rule in this file sets its own opacity or backdrop-filter. The card the
+// terminal is drawn inside — .oa-admin-main, by way of the selector list in
+// _base.scss — already carries the wallpaper's translucency and blur, and
+// AGENTS.md is explicit that this feature must never define a second one.
+
+// The admin body is ordinarily the scrolling element (_surfaces.scss), with
+// its own padding. A terminal that let it scroll would grow a second
+// scrollbar around the pane's own — so for this one page it is turned back
+// into a plain flex container with nothing of its own to overflow, and every
+// pixel of scrolling happens inside .oa-terminal-scroll instead. :has() is
+// what lets this rule apply to exactly this page without a class the router
+// would have to add.
+.oa-admin-body:has(> .oa-terminal) {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
+
+.oa-terminal {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* --- tab strip -------------------------------------------------------------
+   CONTRACT.md #5.2: never wider than the card, whatever the tab count. The
+   strip is a flex row of two flex-shrink:0 ends (the scroller, the settings
+   button) around nothing that can itself grow past the card — the scroller
+   is the only thing here allowed to overflow, and it turns that overflow into
+   its own horizontal scrollbar instead of pushing the settings button out of
+   reach. */
+
+.oa-terminal-tabstrip {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+  height: 34px;
+  padding: 6px 10px;
+}
+
+.oa-terminal-tabs {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  /* The half of "flex: 1" everyone forgets — without it the row refuses to
+     shrink below the width of ten uncompressed tabs and the scrollbar this
+     rule exists to produce never appears. */
+  min-width: 0;
+  gap: 4px;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* The global thin, invisible-until-hover scrollbar (_base.scss) applies to
+     this automatically; nothing to restate here. */
+}
+
+.oa-terminal-tab {
+  display: flex;
+  align-items: center;
+  flex: 0 1 150px;
+  min-width: 64px;
+  gap: 5px;
+  height: 26px;
+  padding: 0 4px 0 11px;
+  border-radius: 999px;
+  background: var(--ai-surface-container-low);
+  color: var(--ai-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.oa-terminal-tab:hover {
+  background: var(--ai-state-hover);
+}
+
+.oa-terminal-tab.active {
+  color: var(--ai-text);
+  /* An inset ring rather than a fill: ten filled pills in a row reads as a
+     bar chart, and the active one only needs to be findable, not loudest. */
+  box-shadow: inset 0 0 0 1px var(--ai-outline-variant), inset 0 -2px 0 var(--ai-primary);
+}
+
+.oa-terminal-tab-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--ai-primary);
+  animation: oa-terminal-pulse 1.1s ease-in-out infinite;
+}
+
+.oa-terminal-tab-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oa-terminal-tab-rename {
+  flex: 1;
+  min-width: 0;
+}
+
+.oa-terminal-tab-rename input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 8px;
+  background: var(--ai-field-bg);
+  color: var(--ai-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.oa-terminal-tab-rename input:focus {
+  outline: none;
+  background: var(--ai-field-bg-hover);
+  box-shadow: 0 0 0 2px var(--ai-focus-shadow);
+}
+
+/* Smaller than the shared 34px .oa-icon-btn: that size is right for a header
+   full of nothing else, not for a control living inside a 26px pill. Combined
+   selector wins on source order alone (this file loads last), so no
+   !important is needed to shrink it. */
+.oa-terminal-tab-close {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.oa-terminal-tab-add {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+}
+
+.oa-terminal-ssh-badge {
+  flex-shrink: 0;
+  cursor: default;
+}
+
+/* Pinned outside .oa-terminal-tabs, so it never scrolls out of reach — the
+   other half of the "never overflow" requirement. */
+.oa-terminal-settings-btn {
+  flex-shrink: 0;
+}
+
+@keyframes oa-terminal-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+/* --- the appearance column -------------------------------------------------
+   The body of an OaPanel, so the card, its heading, its scrolling and its
+   width all belong to the panel; these rules only space the fields inside. */
+
+.oa-terminal-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.oa-terminal-settings-hint {
+  margin: 0;
+  color: var(--ai-text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.oa-terminal-settings-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 6px;
+}
+
+/* --- pane ------------------------------------------------------------------- */
+
+.oa-terminal-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+  margin: 0 10px 10px;
+  border-radius: 14px;
+  /* A flat token, not a color-mix: the card behind it already carries the
+     wallpaper's translucency, and AGENTS.md forbids a second, independent
+     opacity here — so this is a plain fill, the "or a
+     --ai-surface-container-low box" half of that rule, never a percentage. */
+  background: var(--ai-surface-container-low);
+  overflow: hidden;
+}
+
+.oa-terminal-scroll-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.oa-terminal-scroll-wrap .oa-overlay-track {
+  top: 8px;
+  bottom: 8px;
+}
+
+.oa-terminal-scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 14px 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* OaScrollArea draws its own floating bar; the native one underneath it is
+     just noise (_surfaces.scss's .oa-admin-body does the same). */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  color: var(--ai-text);
+  font-family: var(--oa-term-font-family);
+  font-size: var(--oa-term-font-size);
+  line-height: var(--oa-term-line-height);
+  letter-spacing: var(--oa-term-letter-spacing);
+  font-variant-ligatures: var(--oa-term-ligatures);
+}
+
+.oa-terminal-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.oa-terminal-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.oa-terminal-block {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.oa-terminal-block-banner {
+  color: var(--ai-text-secondary);
+}
+
+.oa-terminal-timestamp {
+  margin-right: 8px;
+  color: var(--ai-text-secondary);
+  font-size: 0.85em;
+  user-select: none;
+}
+
+.oa-terminal-prompt-glyph {
+  margin-right: 6px;
+  padding-top: 3px;
+  color: var(--ai-text-secondary);
+  font-family: var(--oa-term-font-family);
+  font-size: var(--oa-term-font-size);
+  line-height: var(--oa-term-line-height);
+  user-select: none;
+}
+
+/* --- ANSI ---------------------------------------------------------------
+   Order matters: a span can carry more than one of these classes at once
+   (dim and a colour, bold and a colour), and later rules win ties on source
+   order. Colour comes last so a foreground code always wins the `color`
+   property over dim's — real terminals still tell a dim red from a plain
+   dim, which this subset does not, but two rules fighting over one property
+   is worse than that. Only three hues are defined: render.go's own comment
+   says dim, bold, red, green and yellow are the only SGR codes it ever
+   emits, and FRONTEND.md is explicit that this file must not invent a
+   fourth — 30/34-37/90/94-97 are valid classes the tokeniser can still
+   produce (it does not know what the server will send) and are left
+   unstyled on purpose, falling back to the surrounding text colour. */
+
+.ansi-dim {
+  color: var(--ai-text-secondary);
+}
+
+.ansi-bold {
+  font-weight: 600;
+}
+
+.ansi-underline {
+  text-decoration: underline;
+}
+
+.ansi-inverse {
+  background: var(--ai-text);
+  color: var(--ai-surface-container-low);
+  border-radius: 2px;
+}
+
+.ansi-fg-31, .ansi-fg-91 {
+  color: var(--ai-danger);
+}
+
+.ansi-fg-32, .ansi-fg-92 {
+  /* This project's own "good" colour (_workspace.scss's .oa-drawer-flash.ok,
+     the uptime dot) — reused rather than re-picked so green means the same
+     thing everywhere it appears. */
+  color: #10b981;
+}
+
+.ansi-fg-33, .ansi-fg-93 {
+  color: #f59e0b;
+}
+
+.oa-terminal-jump {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  z-index: 2;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  font-size: 11.5px;
+  box-shadow: var(--ai-shadow-md);
+}
+
+.oa-terminal-completions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 0 16px 8px;
+  font-family: var(--oa-term-font-family);
+  font-size: 12px;
+}
+
+.oa-terminal-completion-item {
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--ai-surface-container);
+  color: var(--ai-text-secondary);
+}
+
+.oa-terminal-prompt {
+  display: flex;
+  /* The first line, not the last. Bottom-aligning put the glyph level with
+     the textarea's box rather than with its text, which sits its own 3px of
+     padding above that edge — so the marker drew low by exactly that much.
+     Anchoring to the top and repeating the input's own padding and line
+     height puts the two on one baseline, and keeps the marker on the first
+     line when the input grows, the way a terminal does. */
+  align-items: flex-start;
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--ai-border);
+}
+
+.oa-terminal-input {
+  flex: 1;
+  min-width: 0;
+  max-height: 160px;
+  padding: 3px 0;
+  border: none;
+  resize: none;
+  /* No focus ring: this is the terminal's command line, the pane's one
+     always-implicit focus target, not a field sitting among others that a
+     ring needs to pick out. */
+  outline: none;
+  background: transparent;
+  color: var(--ai-text);
+  font-family: var(--oa-term-font-family);
+  font-size: var(--oa-term-font-size);
+  line-height: var(--oa-term-line-height);
+  letter-spacing: var(--oa-term-letter-spacing);
+  font-variant-ligatures: var(--oa-term-ligatures);
+  overflow-y: auto;
+  scrollbar-width: none;
+  /* caret-shape has no "underline" keyword (CSS calls it "underscore"), so
+     that one cursor style silently keeps the platform's default bar caret —
+     a real gap, noted rather than papered over with a hand-drawn cursor
+     this file has no room for. Blink cannot be touched from CSS at all: a
+     native caret's blink is the platform's, not an animatable property. */
+  caret-color: var(--ai-primary);
+  caret-shape: var(--oa-term-cursor-style);
+}
+
+.oa-terminal-input::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.oa-terminal-spinner {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  margin-bottom: 8px;
+  border-radius: 999px;
+  border: 2px solid var(--ai-outline-variant);
+  border-top-color: var(--ai-primary);
+  animation: oa-terminal-spin 0.7s linear infinite;
+}
+
+.oa-terminal-cancel {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+}
+
+@keyframes oa-terminal-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oa-terminal-tab-dot {
+    animation: none;
+    opacity: 1;
+  }
+
+  .oa-terminal-spinner {
+    animation: none;
+  }
+}

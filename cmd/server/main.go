@@ -109,7 +109,27 @@ func run() error {
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
 
-	serveErr := make(chan error, 1)
+	// Two listeners now, and one error channel: an operator who configured
+	// SSH and got a port already in use has a broken console, which is worth
+	// the same exit the HTTP port would get rather than a warning nobody
+	// reads. Buffered for both, so neither goroutine blocks on send after the
+	// select below has already returned.
+	serveErr := make(chan error, 2)
+	if sshServer := app.SSH(); sshServer != nil {
+		// The configured address rather than sshServer.Addr(), which is empty
+		// until the socket is bound — and binding happens inside
+		// ListenAndServe, below. The fingerprint is here so an operator can
+		// compare it against what their client shows on first connection.
+		slog.Info("console ssh listening",
+			"addr", cfg.Console.SSHAddr, "host_key", sshServer.Fingerprint())
+		go func() {
+			if err := sshServer.ListenAndServe(); err != nil {
+				serveErr <- fmt.Errorf("console ssh: %w", err)
+				return
+			}
+			serveErr <- nil
+		}()
+	}
 	go func() {
 		slog.Info("listening", "addr", cfg.Addr, "boot_ms", time.Since(started).Milliseconds())
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -130,6 +150,13 @@ func run() error {
 	// stops a stuck upstream from holding the process open forever.
 	stopCtx, cancelStop := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancelStop()
+	// Before the HTTP server, because a console session's commands run
+	// through the admin handlers this process is still serving.
+	if sshServer := app.SSH(); sshServer != nil {
+		if err := sshServer.Shutdown(stopCtx); err != nil {
+			slog.Error("console ssh did not stop cleanly", "error", err)
+		}
+	}
 	if err := srv.Shutdown(stopCtx); err != nil {
 		return fmt.Errorf("graceful shutdown: %w", err)
 	}

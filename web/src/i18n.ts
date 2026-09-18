@@ -1208,6 +1208,45 @@ const en = {
   reasoningPickFirst: 'Choose a model first.',
   reasoningUnavailable: 'This model answers without a thinking step.',
   chooseModel: 'Choose a model',
+
+  // --- the administrative console
+  //
+  // Only this screen's own chrome is here. What the console itself prints —
+  // help, tables, errors — arrives from the server already in the session's
+  // language, so none of it is a key.
+  navTerminal: 'Terminal',
+  terminalTabDefault: 'Tab {n}',
+  terminalRenameTab: 'Rename tab',
+  terminalCloseTab: 'Close tab (Alt+W)',
+  terminalNewTab: 'New tab (Alt+T)',
+  terminalSettings: 'Terminal settings',
+  terminalSSHHint: 'Connect over SSH: ssh {user}@{host}{addr}',
+  terminalJumpToBottom: 'Jump to bottom',
+  terminalInputLabel: 'Command',
+  terminalCancel: 'Cancel (Esc)',
+  terminalRunning: 'Running…',
+  terminalShortcutsHint: 'Enter runs · Shift+Enter newline · Tab completes · Ctrl+L clears · Esc/Ctrl+C cancels · Alt+T new tab · Alt+W close tab',
+  terminalFontFamily: 'Font',
+  terminalFontCustom: 'Custom…',
+  terminalFontDefault: 'System monospace',
+  terminalCustomFontFamily: 'Custom font stack',
+  terminalCustomFontHint: 'A CSS font-family list, most preferred first.',
+  terminalFontSize: 'Font size',
+  terminalLineHeight: 'Line height',
+  terminalLetterSpacing: 'Letter spacing',
+  terminalCursorStyle: 'Cursor',
+  terminalCursorBlock: 'Block',
+  terminalCursorBar: 'Bar',
+  terminalCursorUnderline: 'Underline',
+  terminalCursorBlink: 'Blinking cursor',
+  terminalScrollback: 'Scrollback',
+  terminalScrollbackLines: '{n} lines',
+  terminalTimestamps: 'Show timestamps',
+  terminalLigatures: 'Ligatures',
+  terminalOpacityHint: 'Transparency and blur follow the wallpaper settings.',
+  terminalReset: 'Reset',
+  terminalResetConfirm: 'Reset?',
+  terminalResetConfirmTitle: 'Click again to restore the defaults',
 } as const;
 
 export type StringKey = keyof typeof en;

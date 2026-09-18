@@ -1,6 +1,6 @@
 // The whole stylesheet, in the order the cascade needs it.
 //
-// The five partials below are the standalone build's stylesheets carried over
+// The first five partials are the standalone build's stylesheets carried over
 // unchanged rather than rewritten into nested Sass. That is deliberate: this
 // port is meant to be pixel-for-pixel identical to what it replaces, and
 // re-indenting five thousand declarations into `&`-nesting is a change with
@@ -10,10 +10,16 @@
 //
 // The order matters. `_chat` defines the `--ai-*` tokens every other file
 // consumes, `_base` paints the page behind them, and `_surfaces` comes last
-// because its panels sit over everything.
+// because its panels sit over everything. `_terminal` is the one file here
+// that was not carried over from anywhere, and it comes after `_surfaces`
+// because the console reuses that vocabulary and overrides a little of it.
 
 @use 'base';
 @use 'chat';
 @use 'workspace';
 @use 'app';
 @use 'surfaces';
+// Last, and its own file rather than more of `_surfaces`: the console is one
+// screen with four hundred lines of rules that nothing else consumes, where
+// `_surfaces` is the vocabulary every non-chat screen shares.
+@use 'terminal';

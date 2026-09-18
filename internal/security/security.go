@@ -44,6 +44,11 @@ const (
 	EventAPIRestriction     = "api_restriction"
 	EventAPIRestrictionLift = "api_restriction_lifted"
 	EventChatChallenge      = "chat_challenge"
+	// One command run in the administrative console, over the web terminal
+	// or over SSH. Recorded because the console can do everything the
+	// backoffice can from a surface that leaves no screen to look at
+	// afterwards, and "who ran that" must stay answerable.
+	EventConsoleCommand = "console_command"
 
 	maxReasonChars = 500
 	MaxPageSize    = 200

@@ -17,7 +17,7 @@ import OaSearchField from '@/components/OaSearchField.vue';
 import { t } from '@/composables/useI18n';
 import {
   IconChart, IconChevron, IconCpu, IconFile, IconHome, IconKey, IconLayers, IconLock,
-  IconMenu, IconPulse, IconServer, IconSliders, IconSpark, IconUsers,
+  IconMenu, IconPulse, IconServer, IconSliders, IconSpark, IconTerminal, IconUsers,
 } from '@/icons';
 import AppShell from '@/layouts/AppShell.vue';
 import { useRailCollapse } from '@/composables/useRailCollapse';
@@ -41,6 +41,7 @@ import AdminLogs from './AdminLogs.vue';
 import AdminSecurity from './AdminSecurity.vue';
 import AdminSettings from './AdminSettings.vue';
 import AdminAnnouncements from './AdminAnnouncements.vue';
+import AdminTerminal from './AdminTerminal.vue';
 
 // Labels are looked up at render rather than stored, because this table is
 // evaluated at import time — before the language is known.
@@ -58,6 +59,7 @@ const PAGES: AdminPageSpec[] = [
   { slug: 'security', label: 'navSecurity', icon: IconLock, component: markRaw(AdminSecurity) },
   { slug: 'settings', label: 'navSettings', icon: IconSliders, component: markRaw(AdminSettings) },
   { slug: 'announcements', label: 'announcements', icon: IconFile, component: markRaw(AdminAnnouncements) },
+  { slug: 'terminal', label: 'navTerminal', icon: IconTerminal, component: markRaw(AdminTerminal), permission: '*' },
 ];
 
 const route = useRoute();
@@ -147,6 +149,15 @@ function keepRail(node: unknown): void {
 
 const segments = computed(() => route.path.replace(/^\/admin\/?/, '').split('/').filter(Boolean));
 const current = computed(() => PAGES.find((entry) => entry.slug === (segments.value[0] ?? '')) ?? PAGES[0]!);
+
+// A section's grant is its slug unless it says otherwise. `canAdmin('')` is
+// false for a delegated administrator — the empty string matches no grant —
+// so "any administrator" has to be asked as `isAdmin`, not as an empty
+// permission. The console is the only section that asks it.
+const allowed = computed(() => {
+  const needs = current.value.permission ?? (current.value.slug || 'dashboard');
+  return needs === '*' ? isAdmin.value : canAdmin(needs);
+});
 
 const title = ref('');
 const subtitle = ref('');
@@ -332,7 +343,7 @@ onMounted(() => {
         wrap-class="oa-admin-body-wrap"
         scroll-class="oa-admin-body"
       >
-        <component v-if="canAdmin(current.slug || 'dashboard')" :is="current.component" :key="bodyKey" />
+        <component v-if="allowed" :is="current.component" :key="bodyKey" />
         <div v-else class="oa-permission-empty" role="alert">
           <IconLock :size="28" />
           <h2>{{ t('permissionDeniedTitle') }}</h2>

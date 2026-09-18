@@ -28,6 +28,8 @@ services:
     # and OBSIDIAN_TRUST_PROXY=false if you really want it exposed directly.
     ports:
       - "${OBSIDIAN_BIND:-127.0.0.1}:${OBSIDIAN_PORT:-8080}:8080"
+      # With OBSIDIAN_SSH_ADDR set below:
+      # - "${OBSIDIAN_SSH_BIND:-127.0.0.1}:${OBSIDIAN_SSH_PORT:-2222}:2222"
     environment:
       OBSIDIAN_DB_DRIVER: postgres
       OBSIDIAN_DB_DSN: postgres://obsidian:${POSTGRES_PASSWORD:-obsidian}@db:5432/obsidian?sslmode=disable
@@ -46,6 +48,16 @@ services:
       OBSIDIAN_COOKIE_SECURE: "${OBSIDIAN_COOKIE_SECURE:-true}"
       OBSIDIAN_ADMIN_USER: ${OBSIDIAN_ADMIN_USER:-}
       OBSIDIAN_ADMIN_PASSWORD: ${OBSIDIAN_ADMIN_PASSWORD:-}
+      # The administration console over SSH — `ssh admin@host -p 2222`, which
+      # lands in the console and not in a shell. Commented out rather than
+      # defaulted on: it accepts passwords, so it should appear because you
+      # decided it should. Uncomment this and the port below together, and
+      # keep the port on loopback or behind your own firewall for the same
+      # reason the HTTP one is.
+      #
+      # The host key lives in the arc-data volume, so the fingerprint your
+      # clients pin survives a rebuild. Losing that volume changes it.
+      # OBSIDIAN_SSH_ADDR: ":2222"
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
       # Only the attachments and the generated key would live here; with
