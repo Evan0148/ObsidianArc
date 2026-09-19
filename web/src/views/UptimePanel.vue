@@ -11,10 +11,11 @@ import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
 import OaBadge from '@/components/OaBadge.vue';
 import OaFormSection from '@/components/OaFormSection.vue';
+import OaIconButton from '@/components/OaIconButton.vue';
 import OaLineChart from '@/components/OaLineChart.vue';
 import OaPanel from '@/components/OaPanel.vue';
 import { t } from '@/composables/useI18n';
-import { IconChevron } from '@/icons';
+import { IconChevron, IconCollapse, IconExpand } from '@/icons';
 import { formatUptime } from '@/lib/format';
 
 interface ModelUptimeItem {
@@ -35,6 +36,9 @@ interface UptimeResponse {
 }
 
 const router = useRouter();
+
+const panel = ref<InstanceType<typeof OaPanel> | null>(null);
+const fullscreen = ref(false);
 
 const loading = ref(true);
 const error = ref('');
@@ -70,6 +74,10 @@ function collapseAll(): void {
   expanded.value = new Set();
 }
 
+function toggleFullscreen(): void {
+  fullscreen.value = panel.value?.toggleFullscreen() ?? false;
+}
+
 async function load(): Promise<void> {
   loading.value = true;
   error.value = '';
@@ -87,13 +95,26 @@ onMounted(load);
 
 <template>
   <OaPanel
+    ref="panel"
     :title="t('uptimeTitle')"
     :footer="false"
     :width="460"
     :busy="loading"
     :error="error"
+    body-class="oa-uptime-body"
     @close="router.replace('/')"
   >
+    <template #actions>
+      <OaIconButton
+        class="oa-icon-btn"
+        :label="t(fullscreen ? 'exitFullscreen' : 'fullscreen')"
+        @click="toggleFullscreen"
+      >
+        <IconCollapse v-if="fullscreen" :size="16" />
+        <IconExpand v-else :size="16" />
+      </OaIconButton>
+    </template>
+
     <div v-if="data" class="oa-uptime-content">
       <div
         class="oa-uptime-banner"
