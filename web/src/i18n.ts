@@ -1428,6 +1428,8 @@ const en = {
   feedbackReplyDeleteConfirm: 'Delete this reply?',
   feedbackChallengeTitle: 'Verify this report',
   feedbackChallengeBody: 'Complete this quick check and what you wrote is sent.',
+  feedbackShowStaffName: 'Sign replies with the operator’s name',
+  feedbackShowStaffNameHint: 'On, a reader sees who answered them; off, the answer is signed “Operator” and the name is never sent to their browser. The backoffice always shows it.',
   feedbackReplyChallengeTitle: 'Verify this reply',
   feedbackReplyChallengeBody: 'Complete this quick check and your reply is sent.',
   feedbackStatusOpen: 'Open',

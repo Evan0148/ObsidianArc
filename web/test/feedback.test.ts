@@ -155,6 +155,39 @@ describe('the feedback panel somebody writes in', () => {
     expect(panels.querySelectorAll('.oa-thread-turn')).toHaveLength(3);
   });
 
+  // Whether the name arrives at all is the server's decision; the panel draws
+  // what it was sent, and reads as staff either way.
+  it('signs a staff reply with the name when the server sent one', async () => {
+    const mine = record({ replies: 1 });
+    vi.spyOn(feedbackApi, 'listFeedback').mockResolvedValue({
+      feedback: [mine], remaining: 9, max_per_day: 10,
+    });
+    vi.spyOn(feedbackApi, 'fetchFeedbackUnread').mockResolvedValue({ unread: 0 });
+    const read = vi.spyOn(feedbackApi, 'fetchThread').mockResolvedValue(thread({
+      feedback: mine, replies: [reply({ username: 'onyx', nickname: '黑曜' })],
+    }));
+    await mount(FeedbackPanel);
+    panels.querySelector<HTMLButtonElement>('.oa-feedback-item')!.click();
+    await settle();
+    expect(panels.querySelector('.oa-thread-turn.staff .oa-thread-who')!.textContent)
+      .toContain(`${t('feedbackFromStaff')} · 黑曜`);
+
+    // Switched off upstream: no name in the payload, and none on screen.
+    // The keys are absent, not empty: that is what the server sends once the
+    // switch is off.
+    const { username: _u, nickname: _n, ...anonymous } = reply();
+    read.mockResolvedValue(thread({ feedback: mine, replies: [anonymous] }));
+    // The panel's back arrow is an icon, so it is found by its name rather
+    // than by its text.
+    panels.querySelector<HTMLButtonElement>(`button[aria-label="${t('back')}"]`)!.click();
+    await settle();
+    panels.querySelector<HTMLButtonElement>('.oa-feedback-item')!.click();
+    await settle();
+    const who = panels.querySelector('.oa-thread-turn.staff .oa-thread-who')!.textContent ?? '';
+    expect(who).toContain(t('feedbackFromStaff'));
+    expect(who).not.toContain('·');
+  });
+
   it('shows what this account has already sent, with the status it was given', async () => {
     vi.spyOn(feedbackApi, 'listFeedback').mockResolvedValue({
       feedback: [record({ status: 'resolved', title: 'Already reported' })],

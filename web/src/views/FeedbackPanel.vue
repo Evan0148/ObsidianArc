@@ -269,6 +269,21 @@ function priorityLabel(value: FeedbackPriority): string {
   return t(PRIORITIES.find((entry) => entry.value === value)!.label);
 }
 
+/**
+ * Who said it.
+ *
+ * The operator's name is shown when the server sent one — whether it does is
+ * an instance setting, and when it is off the name never leaves the server,
+ * so there is nothing here to decide. An answer signed by a person reads as
+ * one; an unsigned answer still reads as staff, which is the part that
+ * matters.
+ */
+function turnWho(turn: { from_staff: boolean; username?: string; nickname?: string }): string {
+  if (!turn.from_staff) return t('feedbackYou');
+  const name = turn.nickname || turn.username;
+  return name ? `${t('feedbackFromStaff')} · ${name}` : t('feedbackFromStaff');
+}
+
 function statusLabel(record: Feedback): string {
   return t(record.status === 'resolved' ? 'feedbackStatusResolved' : 'feedbackStatusOpen');
 }
@@ -323,7 +338,7 @@ onMounted(() => void refresh());
           :class="turn.from_staff ? 'staff' : 'mine'"
         >
           <header class="oa-thread-who">
-            <span>{{ turn.from_staff ? t('feedbackFromStaff') : t('feedbackYou') }}</span>
+            <span>{{ turnWho(turn) }}</span>
             <time :title="absoluteTime(turn.created_at)">{{ relativeTime(turn.created_at) }}</time>
           </header>
           <OaMarkdown class="ai-answer oa-thread-body" :text="turn.body" />

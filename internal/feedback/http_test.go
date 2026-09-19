@@ -315,3 +315,61 @@ func TestRepliesPassTheSameChallengeReportsDo(t *testing.T) {
 		t.Errorf("challenge checks = %d, want one per attempt", verified)
 	}
 }
+
+// Whether a reader is told which operator answered them is an instance
+// setting, and when it is off the name is removed here rather than hidden by
+// the screen — a name the client is sent is a name anybody can read out of
+// the response, whatever the page chooses to draw.
+func TestTheOperatorsNameIsWithheldWhenTheInstanceSaysSo(t *testing.T) {
+	store, author, staff := fixture(t)
+	handlers := NewHandlers(store)
+	mux := http.NewServeMux()
+	handlers.Routes(mux)
+	ctx := auth.WithUser(context.Background(), author)
+
+	record, err := store.Create(context.Background(), author.ID, report(KindBug, PriorityLow, "Mine"))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := store.AddReply(context.Background(), ReplyInput{
+		FeedbackID: record.ID, UserID: staff.ID, FromStaff: true, Body: "Looking into it.",
+	}); err != nil {
+		t.Fatalf("reply: %v", err)
+	}
+	if _, err := store.AddReply(context.Background(), ReplyInput{
+		FeedbackID: record.ID, UserID: author.ID, Body: "Thanks.", RequireOwner: true,
+	}); err != nil {
+		t.Fatalf("reply: %v", err)
+	}
+
+	// Nil is the setting's own default, which is to sign the answer.
+	if body := get(t, mux, ctx, "/api/feedback/"+record.ID).Body.String(); !strings.Contains(body, `"username":"other"`) {
+		t.Errorf("thread = %s, want the operator named by default", body)
+	}
+
+	show := true
+	handlers.ShowStaffName = func() bool { return show }
+	if body := get(t, mux, ctx, "/api/feedback/"+record.ID).Body.String(); !strings.Contains(body, `"username":"other"`) {
+		t.Errorf("thread with the switch on = %s, want the operator named", body)
+	}
+
+	show = false
+	body := get(t, mux, ctx, "/api/feedback/"+record.ID).Body.String()
+	if strings.Contains(body, `"username":"other"`) {
+		t.Errorf("thread with the switch off = %s, want no operator name in it at all", body)
+	}
+	// The reader's own turns are still theirs, and the report still names its
+	// author to its author: the switch is about staff, not about anonymity.
+	if !strings.Contains(body, `"username":"author"`) {
+		t.Errorf("thread = %s, want the reader's own name kept", body)
+	}
+	// And the operator's screen is unaffected — it reads the admin endpoint,
+	// which never consults this setting.
+	thread, err := store.Thread(context.Background(), nil, record.ID, "")
+	if err != nil {
+		t.Fatalf("operator read: %v", err)
+	}
+	if thread.Replies[0].Username != "other" {
+		t.Errorf("the backoffice lost the name too: %+v", thread.Replies[0])
+	}
+}

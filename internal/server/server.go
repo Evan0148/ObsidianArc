@@ -703,6 +703,11 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		Enabled: func() bool { return settingsService.Bool(settings.TurnstileOnFeedback) },
 		Secret:  func() string { return settingsService.Get(settings.TurnstileSecretKey) },
 	}
+	// Read per request rather than captured, so turning it off takes effect
+	// on the next thread somebody opens rather than on the next restart.
+	feedbackHandlers.ShowStaffName = func() bool {
+		return settingsService.Bool(settings.FeedbackShowStaffName)
+	}
 	feedbackHandlers.Routes(mux)
 	trial.NewHandlers(settingsService, models, registry, proxyTrust, cfg.SecretKey).Routes(mux)
 	adminHandlers := admin.NewHandlers(db, users, groups, providers, models, settingsService, registry, authService, usageStore, quotaService, conversations, announcements, keys, requestLog, securityLog, cards, healthStore, feedbackStore)

@@ -14,7 +14,7 @@ import AdminControlCard from './AdminControlCard.vue';
 import AdminWorkbench from './AdminWorkbench.vue';
 import type { WorkbenchGroup } from './workbench';
 import { useSettingsDraft } from './settingsDraft';
-import { IconHome, IconSpark, IconFile, IconKey, IconInfo, IconBell, IconSliders, IconTrash } from '@/icons';
+import { IconHome, IconSpark, IconFile, IconKey, IconInfo, IconBell, IconMessage, IconSliders, IconTrash } from '@/icons';
 import OaNumberField from '@/components/OaNumberField.vue';
 import OaSelectField from '@/components/OaSelectField.vue';
 import OaSwitchField from '@/components/OaSwitchField.vue';
@@ -32,6 +32,7 @@ const SEARCH_GROUPS = {
   secIdentity: ['secIdentity', 'siteName', 'siteNameHint', 'signInNote', 'signInNoteHint'],
   secAbout: ['controlAbout', 'aboutHeading', 'aboutHeadingHint', 'aboutText', 'aboutTextHint'],
   secHomeNotice: ['homeNotice', 'homeNoticeHint', 'homeNoticeDismissible', 'homeNoticeDismissibleHint'],
+  secFeedback: ['navFeedback', 'feedbackShowStaffName', 'feedbackShowStaffNameHint'],
   secLanding: [
     'secLanding', 'landingMode', 'landingModeHint', 'landingLogin', 'landingIntro', 'landingChat',
     'landingIntroHTML', 'landingIntroHTMLHint', 'trialEnabled', 'trialEnabledHint', 'trialTurns',
@@ -78,6 +79,7 @@ const form = ref({
   aboutText: '',
   homeNotice: '',
   homeNoticeDismissible: true,
+  feedbackShowStaffName: true,
   landingMode: 'login',
   landingIntro: '',
   trialEnabled: false,
@@ -121,6 +123,7 @@ function collect(): Record<string, string> {
     'about.body': form.value.aboutText.trim(),
     'home.notice': form.value.homeNotice.trim(),
     'home.notice_dismissible': String(form.value.homeNoticeDismissible),
+    'feedback.show_staff_name': String(form.value.feedbackShowStaffName),
     'landing.mode': form.value.landingMode,
     'landing.intro': form.value.landingIntro.trim(),
     'landing.trial_enabled': String(form.value.trialEnabled),
@@ -237,6 +240,7 @@ async function load(): Promise<void> {
       aboutText: values['about.body'] ?? '',
       homeNotice: values['home.notice'] ?? '',
       homeNoticeDismissible: (values['home.notice_dismissible'] ?? 'true') === 'true',
+      feedbackShowStaffName: (values['feedback.show_staff_name'] ?? 'true') === 'true',
       landingMode: values['landing.mode'] ?? 'login',
       landingIntro: values['landing.intro'] ?? '',
       trialEnabled: values['landing.trial_enabled'] === 'true',
@@ -264,13 +268,13 @@ async function load(): Promise<void> {
 }
 
 const categories: WorkbenchGroup[] = [
-  { id: 'site', label: 'controlSite', hint: 'controlSiteHint', icon: IconHome, sections: ['secIdentity', 'secLanding', 'secAbout', 'secHomeNotice'] },
+  { id: 'site', label: 'controlSite', hint: 'controlSiteHint', icon: IconHome, sections: ['secIdentity', 'secLanding', 'secAbout', 'secHomeNotice', 'secFeedback'] },
   { id: 'chat', label: 'controlChat', hint: 'controlChatHint', icon: IconSpark, sections: ['secChat', 'secLimits'] },
   { id: 'files', label: 'controlFiles', hint: 'controlFilesHint', icon: IconFile, sections: ['secAttachments', 'secCleanup'] },
   { id: 'integrations', label: 'controlIntegrations', hint: 'controlIntegrationsHint', icon: IconKey, sections: ['apiKeys', 'backupSettings'] },
 ];
 
-const columns: [string[], string[]] = [['secIdentity', 'secAbout', 'secChat', 'secAttachments', 'apiKeys'], ['secLanding', 'secHomeNotice', 'secLimits', 'secCleanup', 'backupSettings']];
+const columns: [string[], string[]] = [['secIdentity', 'secAbout', 'secChat', 'secAttachments', 'apiKeys'], ['secLanding', 'secHomeNotice', 'secFeedback', 'secLimits', 'secCleanup', 'backupSettings']];
 
 onMounted(load);
 </script>
@@ -390,6 +394,13 @@ onMounted(load);
           v-model="form.homeNoticeDismissible"
           :label="t('homeNoticeDismissible')"
           :hint="t('homeNoticeDismissibleHint')"
+        />
+      </AdminControlCard>
+      <AdminControlCard id="secFeedback" v-show="visible('secFeedback')" :title="t('navFeedback')" :icon="IconMessage">
+        <OaSwitchField
+          v-model="form.feedbackShowStaffName"
+          :label="t('feedbackShowStaffName')"
+          :hint="t('feedbackShowStaffNameHint')"
         />
       </AdminControlCard>
       <AdminControlCard id="secLimits" v-show="visible('secLimits')" :title="t('secLimits')" :icon="IconSliders">

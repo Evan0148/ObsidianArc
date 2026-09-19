@@ -31,6 +31,11 @@ type Handlers struct {
 	// way apikey.Handlers.ClientIP is. A nil ClientIP simply means Turnstile
 	// is asked without one.
 	ClientIP func(*http.Request) string
+	// Whether a reader is told which operator answered them. Nil means yes,
+	// which is the setting's own default. When it says no the name is
+	// removed here rather than hidden by the screen: a name the client is
+	// sent is a name anybody can read out of the response.
+	ShowStaffName func() bool
 }
 
 func NewHandlers(store *Store) *Handlers { return &Handlers{store: store} }
@@ -136,6 +141,14 @@ func (h *Handlers) thread(w http.ResponseWriter, r *http.Request) error {
 	thread, err := h.store.Thread(r.Context(), nil, r.PathValue("id"), account.ID)
 	if err != nil {
 		return TranslateError(err)
+	}
+	if h.ShowStaffName != nil && !h.ShowStaffName() {
+		for i := range thread.Replies {
+			if thread.Replies[i].FromStaff {
+				thread.Replies[i].Username = ""
+				thread.Replies[i].Nickname = ""
+			}
+		}
 	}
 	if thread.Feedback.AuthorUnread {
 		// Detached, like every other write that happens after the answer is

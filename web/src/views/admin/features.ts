@@ -48,6 +48,13 @@ export interface SearchGroup {
 export const ADMIN_FEATURES: AdminFeatureItem[] = [
   { id: 'secAbout', pageSlug: 'settings', titleKey: 'controlAbout', searchKeys: ['aboutHeading', 'aboutHeadingHint', 'aboutText', 'aboutTextHint'] },
   { id: 'secHomeNotice', pageSlug: 'settings', titleKey: 'homeNotice', searchKeys: ['homeNoticeHint', 'homeNoticeDismissible', 'homeNoticeDismissibleHint'] },
+  {
+    id: 'secFeedback',
+    pageSlug: 'settings',
+    titleKey: 'navFeedback',
+    searchKeys: ['feedbackShowStaffName', 'feedbackShowStaffNameHint'],
+    keywords: ['反馈署名', '显示管理员名字', '匿名回复', '回复署名', 'staff name', 'sign replies', 'anonymous'],
+  },
   { id: 'secRegistrationLimits', pageSlug: 'security', titleKey: 'controlRegistrationLimits', searchKeys: ['signupsPerMinute', 'signupsPerHour', 'signupsPerIP', 'signupsIPWindow'] },
   { id: 'secVerificationScenes', pageSlug: 'security', titleKey: 'controlVerificationScenes', searchKeys: ['turnstileOnLogin', 'turnstileOnSignup', 'turnstileOnAPIKey', 'turnstileOnRedeem', 'turnstileOnFeedback'] },
   { id: 'secChatChallenge', pageSlug: 'security', titleKey: 'controlChatChallenge', searchKeys: ['chatChallengeRequests', 'chatChallengeWindow', 'chatChallengeClearance'] },

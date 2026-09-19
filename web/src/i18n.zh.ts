@@ -1397,6 +1397,8 @@ export const zh: Record<StringKey, string> = {
   feedbackReplyDeleteConfirm: '确认删除这条回复？',
   feedbackChallengeTitle: '验证这条反馈',
   feedbackChallengeBody: '完成这次快速验证，你写的内容就会提交。',
+  feedbackShowStaffName: '回复署管理员的名字',
+  feedbackShowStaffNameHint: '开启时用户能看到是谁回复的；关闭后只署「管理员」，名字根本不会发到用户浏览器里。后台始终显示。',
   feedbackReplyChallengeTitle: '验证这条回复',
   feedbackReplyChallengeBody: '完成这次快速验证，你的回复就会发出。',
   feedbackStatusOpen: '待处理',

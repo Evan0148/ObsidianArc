@@ -62,6 +62,14 @@ const (
 	// challenge only on an instance that has actually been spammed.
 	TurnstileOnFeedback = "turnstile.on_feedback"
 
+	// Whether a reader is told which operator answered their report. On by
+	// default: an answer signed by a person reads as one, and the people
+	// answering are the same handful whose names are already on the
+	// announcements. An instance that would rather its staff not be
+	// addressed by name can turn it off, and then the name does not leave
+	// the server at all.
+	FeedbackShowStaffName = "feedback.show_staff_name"
+
 	// Asking a model whether a sign-up looks like a person. The prompt is not
 	// a setting: one that could be edited could be turned into "refuse
 	// everybody from this domain", and this runs before an account exists,
@@ -227,13 +235,14 @@ var Defaults = map[string]string{
 	// is configuring, not yet switching on, and a challenge that appeared the
 	// moment a key was saved would lock out the half-finished setup it was
 	// saved during.
-	TurnstileOnLogin:    "false",
-	TurnstileOnSignup:   "false",
-	TurnstileOnAPIKey:   "false",
-	TurnstileOnRedeem:   "false",
-	TurnstileOnFeedback: "false",
-	SignupReview:        "false",
-	SignupReviewModel:   "",
+	TurnstileOnLogin:      "false",
+	TurnstileOnSignup:     "false",
+	TurnstileOnAPIKey:     "false",
+	TurnstileOnRedeem:     "false",
+	TurnstileOnFeedback:   "false",
+	FeedbackShowStaffName: "true",
+	SignupReview:          "false",
+	SignupReviewModel:     "",
 	// Loose, normal or strict. Normal refuses what reads as generated and
 	// allows what reads as chosen; the other two move the line, and strict
 	// also refuses when the model cannot answer at all.

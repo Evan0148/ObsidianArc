@@ -217,14 +217,14 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
 | Binary (SQLite + embedded SPA) | < 30 MB | 20.0 MB (16.3 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 135 kB | 153.49 kB to open the chat (129.35 JS + 24.14 CSS) |
+| Frontend, on the wire | < 135 kB | 153.62 kB to open the chat (129.48 JS + 24.14 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
 
 The bundle and binaries were remeasured on 2026-09-19 (UTC), after the user
 feedback screens, the conversation on them, and the per-account exemption
-switch. The chat payload is 18.49 kB above the existing target; that target is
-unchanged. The first paint is 4.60 kB above the 148.89 kB recorded earlier the
+switch. The chat payload is 18.62 kB above the existing target; that target is
+unchanged. The first paint is 4.73 kB above the 148.89 kB recorded earlier the
 same day: the panel somebody writes a report in, the thread they read the
 answer in, their share of the stylesheet, and the English strings every one of
 those screens uses. The operator's pages stayed in the backoffice chunk, which
@@ -250,7 +250,7 @@ dependency — but it is a megabyte of code that only runs when
 Binary sizes use Go 1.27.0,
 Linux amd64, `-trimpath -ldflags "-s -w"`; transfer sizes are gzip-compressed
 JS and CSS in decimal kB, with totals rounded after summing. Binary sizes
-are decimal MB (20,021,408 bytes with SQLite; 16,310,432 bytes without it).
+are decimal MB (20,029,600 bytes with SQLite; 16,314,528 bytes without it).
 
 The target moved with the interface. It was < 80 kB while the frontend was
 hand-written DOM calls, and 71.6 kB against it; adopting Vue put roughly 45 kB
