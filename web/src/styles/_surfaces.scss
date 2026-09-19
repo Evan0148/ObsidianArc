@@ -619,6 +619,14 @@
   color: var(--ai-text-secondary);
 }
 
+/* Membership expiry shown under group description when enabled by operator. */
+.oa-usage-group-expiry {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ai-text-secondary);
+}
+
 /* The allowance bars in the account drawer. The rows are the same ones the
    composer menu draws; only the spacing between them is this screen's
    business. */

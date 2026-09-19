@@ -13,12 +13,19 @@ import (
 // English-only, so a new noun family's cmd_*.go should add its heading
 // here rather than lean on it.
 var groupTitles = map[string]Text{
-	"session":    {EN: "Session", ZH: "会话"},
-	"accounts":   {EN: "Accounts", ZH: "账户"},
-	"groups":     {EN: "Groups", ZH: "分组"},
-	"catalogue":  {EN: "Providers & Models", ZH: "服务商与模型"},
-	"operations": {EN: "Operations", ZH: "运维"},
-	"instance":   {EN: "Instance", ZH: "实例设置"},
+	"session":     {EN: "Session", ZH: "会话"},
+	"accounts":    {EN: "Accounts", ZH: "账户"},
+	"groups":      {EN: "Groups", ZH: "分组"},
+	"catalogue":   {EN: "Providers & Models", ZH: "服务商与模型"},
+	"operations":  {EN: "Operations", ZH: "运维"},
+	"instance":    {EN: "Instance", ZH: "实例设置"},
+	"chat":        {EN: "Chat", ZH: "对话"},
+	"projects":    {EN: "Projects", ZH: "项目"},
+	"credit":      {EN: "Credit & Quota", ZH: "额度与用量"},
+	"keys":        {EN: "API Keys", ZH: "API 密钥"},
+	"preferences": {EN: "Preferences", ZH: "偏好设置"},
+	"profile":     {EN: "Profile", ZH: "个人资料"},
+	"backup":      {EN: "Backup & Restore", ZH: "备份与恢复"},
 }
 
 func groupHeading(group, lang string) string {

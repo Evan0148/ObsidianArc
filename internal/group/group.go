@@ -38,10 +38,12 @@ type Group struct {
 	AllowStats bool `json:"allow_stats"`
 	// Whether members may delete their own conversations. Off is for an
 	// instance that has to be able to answer for what was said on it.
-	AllowDeleteConversations bool  `json:"allow_delete_conversations"`
-	SortOrder                int   `json:"sort_order"`
-	CreatedAt                int64 `json:"created_at"`
-	UpdatedAt                int64 `json:"updated_at"`
+	AllowDeleteConversations bool `json:"allow_delete_conversations"`
+	// Whether members of this group see their group expiry date in the usage panel.
+	ShowExpiry bool  `json:"show_expiry"`
+	SortOrder  int   `json:"sort_order"`
+	CreatedAt  int64 `json:"created_at"`
+	UpdatedAt  int64 `json:"updated_at"`
 }
 
 var (
@@ -58,7 +60,7 @@ const (
 )
 
 const columns = `id, name, description, is_default, allow_all_models, api_access,
-	allow_stats, allow_delete_conversations, sort_order, created_at, updated_at`
+	allow_stats, allow_delete_conversations, show_expiry, sort_order, created_at, updated_at`
 
 type Store struct{ db *database.DB }
 
@@ -80,6 +82,7 @@ type CreateInput struct {
 	// what it means, and the admin form ticks both to match.
 	AllowStats               bool
 	AllowDeleteConversations bool
+	ShowExpiry               bool
 	SortOrder                int
 }
 
@@ -103,15 +106,16 @@ func (s *Store) Create(ctx context.Context, q database.Queryer, in CreateInput) 
 
 		AllowStats:               in.AllowStats,
 		AllowDeleteConversations: in.AllowDeleteConversations,
+		ShowExpiry:               in.ShowExpiry,
 
 		SortOrder: in.SortOrder,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
 
-	_, err = q.Exec(ctx, `INSERT INTO user_groups (`+columns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err = q.Exec(ctx, `INSERT INTO user_groups (`+columns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.ID, record.Name, record.Description, record.IsDefault, record.AllowAllModels,
-		record.APIAccess, record.AllowStats, record.AllowDeleteConversations,
+		record.APIAccess, record.AllowStats, record.AllowDeleteConversations, record.ShowExpiry,
 		record.SortOrder, record.CreatedAt, record.UpdatedAt)
 	if err != nil {
 		if isUnique(err) {
@@ -190,6 +194,7 @@ type Update struct {
 	APIAccess                *bool
 	AllowStats               *bool
 	AllowDeleteConversations *bool
+	ShowExpiry               *bool
 	SortOrder                *int
 }
 
@@ -231,6 +236,10 @@ func (s *Store) Update(ctx context.Context, q database.Queryer, groupID string, 
 	if in.AllowDeleteConversations != nil {
 		sets = append(sets, "allow_delete_conversations = ?")
 		args = append(args, *in.AllowDeleteConversations)
+	}
+	if in.ShowExpiry != nil {
+		sets = append(sets, "show_expiry = ?")
+		args = append(args, *in.ShowExpiry)
 	}
 	if in.SortOrder != nil {
 		sets = append(sets, "sort_order = ?")
@@ -285,7 +294,7 @@ func scan(row rowScanner) (Group, error) {
 	var record Group
 	err := row.Scan(&record.ID, &record.Name, &record.Description, &record.IsDefault,
 		&record.AllowAllModels, &record.APIAccess, &record.AllowStats,
-		&record.AllowDeleteConversations, &record.SortOrder, &record.CreatedAt, &record.UpdatedAt)
+		&record.AllowDeleteConversations, &record.ShowExpiry, &record.SortOrder, &record.CreatedAt, &record.UpdatedAt)
 	if err != nil {
 		if database.IsNotFound(err) {
 			return Group{}, ErrNotFound

@@ -819,11 +819,18 @@ func init() {
 			m := asMap(data)
 			c := asMap(m["conversation"])
 			jsonMode := rt.effectiveJSON()
-			if err := rt.Fields([][2]string{
+			fields := [][2]string{
 				{"id", asStr(c["id"])}, {"title", asStr(c["title"])}, {"model_id", asStr(c["model_id"])},
-				{"pinned", yesNo(asBoolVal(c["pinned"]))}, {"messages", fmt.Sprint(asNum(c["message_count"]))},
+			}
+			if pid := asStr(c["project_id"]); pid != "" {
+				fields = append(fields, [2]string{"project_id", pid})
+			}
+			fields = append(fields, [][2]string{
+				{"pinned", yesNo(asBoolVal(c["pinned"]))}, {"archived", yesNo(asBoolVal(c["archived"]))},
+				{"messages", fmt.Sprint(asNum(c["message_count"]))},
 				{"created_at", formatMS(c["created_at"])}, {"updated_at", formatMS(c["updated_at"])},
-			}); err != nil {
+			}...)
+			if err := rt.Fields(fields); err != nil {
 				return err
 			}
 			if jsonMode {

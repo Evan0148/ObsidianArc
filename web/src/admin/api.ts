@@ -129,6 +129,7 @@ export interface Group {
   api_access: boolean;
   allow_stats: boolean;
   allow_delete_conversations: boolean;
+  show_expiry: boolean;
   sort_order: number;
   members: number;
   model_ids: string[];

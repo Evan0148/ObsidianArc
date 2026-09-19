@@ -93,6 +93,7 @@ type accountPayload struct {
 	AllowStats                bool `json:"allow_stats"`
 	AllowDeleteConversations  bool `json:"allow_delete_conversations"`
 	AllowArchiveConversations bool `json:"allow_archive_conversations"`
+	GroupShowExpiry           bool `json:"group_show_expiry"`
 }
 
 func (h *Handlers) account(r *http.Request, account user.User) accountPayload {
@@ -101,6 +102,7 @@ func (h *Handlers) account(r *http.Request, account user.User) accountPayload {
 		AllowStats:                true,
 		AllowDeleteConversations:  true,
 		AllowArchiveConversations: account.IsAdmin() || (h.settings != nil && h.settings.Bool(settings.AllowArchive)),
+		GroupShowExpiry:           true,
 	}
 	if account.GroupID != "" {
 		if found, err := h.groups.ByID(r.Context(), nil, account.GroupID); err == nil {
@@ -108,6 +110,7 @@ func (h *Handlers) account(r *http.Request, account user.User) accountPayload {
 			payload.GroupDescription = found.Description
 			payload.AllowStats = found.AllowStats
 			payload.AllowDeleteConversations = found.AllowDeleteConversations
+			payload.GroupShowExpiry = found.ShowExpiry
 		}
 	}
 	return payload

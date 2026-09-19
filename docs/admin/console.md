@@ -6,18 +6,24 @@
 
 ## 它能做什么
 
-后台的 58 个接口全部有对应命令，共 74 条。按名词分组：
+控制台完整覆盖全部 58 个后台管理接口与 40 个用户端接口，共 104 条命令。按功能分组：
 
-| 分组 | 命令 |
-| --- | --- |
-| 账户 | `user list` `show` `edit` `delete` `passwd` `keys` `key-revoke` `chats` `transcript` `cards` |
-| 用户组 | `group list` `show` `create` `edit` `delete` `members` `assign` |
-| 服务商与模型 | `provider …` `model …` |
-| 运维 | `dash` `res` `health …` `usage …` `quota …` `code …` `log …` |
-| 实例 | `setting …` `notice …` `security …` `attachment purge` `meta` `refs` |
-| 会话 | `help` `clear` `exit` `whoami` `version` `history` `watch` `lang` `format` `echo` |
+| 分组 | 命令 | 适用对象 |
+| --- | --- | --- |
+| 账户 (Accounts) | `user list` `show` `create` `edit` `delete` `passwd` `keys` `key-revoke` `chats` `transcript` `cards` | 管理员 (`users`) |
+| 用户组 (Groups) | `group list` `show` `create` `edit` `delete` `members` `assign` | 管理员 (`groups`) |
+| 服务商与模型 (Catalogue) | `provider list` `show` `create` `edit` `delete` `detect` · `model list` `show` `create` `edit` `delete` `order` `import` | 管理员 (`providers`/`models`) |
+| 运维 (Operations) | `dash` `res` · `health status` `probe` `reset` · `usage summary` `rpm` `records` `reset` · `quota list` `set` `delete` · `code list` `create` `redemptions` `delete` · `log list` `facets` `prune` | 管理员 (`dashboard`/`resources`/`availability`/`usage`/`codes`/`logs`) |
+| 实例 (Instance) | `setting list` `get` `set` `import` · `notice list` `create` `edit` `delete` · `security events` `review` · `attachment purge` · `meta` `refs` `member-options` | 管理员 (`settings`/`announcements`/`security`) |
+| 会话 (Session) | `help` `clear` `exit` `whoami` `version` `history` `watch` `lang` `format` `echo` | 所有用户 |
+| 个人对话 (Chat) | `chat list` `show` `rename` `delete` `delete-all` `archive` `unarchive` | 所有用户 (Anyone) |
+| 项目管理 (Projects) | `project list` `show` `create` `edit` `delete` | 所有用户 (Anyone) |
+| 额度与卡密 (Credit) | `credit show` `history` `cards` `use` `redeem` | 所有用户 (Anyone) |
+| API 密钥 (Keys) | `key list` `create` `edit` `delete` | 所有用户 (Anyone) |
+| 偏好与资料 (Profile) | `pref list` `set` `wallpaper-clear` · `me show` `edit` `passwd` `verify` | 所有用户 (Anyone) |
+| 备份与恢复 (Backup) | `backup export` `backup import` | 所有用户 (Anyone) |
 
-完整列表以 `help` 为准——它只列出**你当前有权执行**的命令，不会把你用不了的东西摆出来。
+完整列表以 `help` 为准——它只列出**你当前有权执行**的命令，不会把未授权的命令呈现出来。每个命令均可通过 `<command> --help` 或 `help <command>` 查看中英双语的详细参数、用法和示例。
 
 ## 权限
 

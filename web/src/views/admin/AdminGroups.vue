@@ -66,6 +66,7 @@ const form = ref({
   apiAccess: true,
   allowStats: true,
   allowDelete: true,
+  showExpiry: true,
   sortOrder: 0 as number | null,
   grants: {} as Record<string, 'use' | 'view'>,
   rpm: null as number | null,
@@ -153,6 +154,7 @@ function open(row: Group | null): void {
     // existing one can until somebody takes it away.
     allowStats: row?.allow_stats ?? true,
     allowDelete: row?.allow_delete_conversations ?? true,
+    showExpiry: row?.show_expiry ?? true,
     sortOrder: row?.sort_order ?? 0,
     grants,
     rpm: policy.rpm,
@@ -183,6 +185,7 @@ async function save(): Promise<void> {
       api_access: form.value.apiAccess,
       allow_stats: form.value.allowStats,
       allow_delete_conversations: form.value.allowDelete,
+      show_expiry: form.value.showExpiry,
       sort_order: form.value.sortOrder ?? 0,
       model_ids: modelIDs,
       model_grants: modelGrants,
@@ -355,6 +358,11 @@ onMounted(load);
       v-model="form.allowDelete"
       :label="t('groupAllowDelete')"
       :hint="t('groupAllowDeleteHint')"
+    />
+    <OaSwitchField
+      v-model="form.showExpiry"
+      :label="t('groupShowExpiry')"
+      :hint="t('groupShowExpiryHint')"
     />
 
     <OaFormSection :title="t('secAllowance')" :hint="t('allowanceHint')" />

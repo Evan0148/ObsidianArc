@@ -26,18 +26,18 @@ func init() {
 		Name:    "chat list",
 		Group:   "chat",
 		Summary: Text{EN: "List your own conversations", ZH: "列出你自己的对话"},
-		Usage:   "chat list [--limit N]",
+		Usage:   "chat list [--limit N] [--archived] [--project ID]",
 		Help: Text{
 			EN: "Lists your conversations, pinned first and then newest first.",
 			ZH: "列出你的对话，置顶的排在最前，其余按最新排序。",
 		},
 		Flags: []Flag{
 			{Name: "--limit", Hint: Text{EN: "page size, default 60, max 200", ZH: "每页数量，默认 60，最多 200"}, Value: "N", Default: "60"},
-			{Name: "--archived", Hint: Text{EN: "show archived conversations", ZH: "显示已归档的对话"}, Value: "BOOL"},
+			{Name: "--archived", Hint: Text{EN: "show archived conversations", ZH: "显示已归档的对话"}},
 			{Name: "--project", Hint: Text{EN: "filter by project id", ZH: "按项目 ID 筛选"}, Value: "ID"},
 		},
-		Examples:   []string{"chat list", "chat list --limit 20", "chat list --archived=true"},
-		SeeAlso:    []string{"chat show", "chat archive", "chat unarchive"},
+		Examples:   []string{"chat list", "chat list --limit 20", "chat list --archived", "chat list --project 01H9Z…"},
+		SeeAlso:    []string{"chat show", "chat archive", "chat unarchive", "project list"},
 		Permission: Anyone,
 		Endpoints:  []string{"GET /api/conversations"},
 		Run: func(_ context.Context, rt *Runtime) error {
@@ -90,12 +90,18 @@ func init() {
 			m := asMap(data)
 			c := asMap(m["conversation"])
 			jsonMode := rt.effectiveJSON()
-			if err := rt.Fields([][2]string{
+			fields := [][2]string{
 				{"id", asStr(c["id"])}, {"title", asStr(c["title"])}, {"model_id", asStr(c["model_id"])},
+			}
+			if pid := asStr(c["project_id"]); pid != "" {
+				fields = append(fields, [2]string{"project_id", pid})
+			}
+			fields = append(fields, [][2]string{
 				{"pinned", yesNo(asBoolVal(c["pinned"]))}, {"archived", yesNo(asBoolVal(c["archived"]))},
 				{"messages", fmt.Sprint(asNum(c["message_count"]))},
 				{"created_at", formatMS(c["created_at"])}, {"updated_at", formatMS(c["updated_at"])},
-			}); err != nil {
+			}...)
+			if err := rt.Fields(fields); err != nil {
 				return err
 			}
 			if jsonMode {

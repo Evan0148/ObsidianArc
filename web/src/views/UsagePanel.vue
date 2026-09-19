@@ -26,7 +26,7 @@ import type { Stat } from '@/components/stat';
 import { celebrate } from '@/composables/useConfetti';
 import { t } from '@/composables/useI18n';
 import { IconClose, IconLock, IconPlus } from '@/icons';
-import { compactNumber, relativeTime } from '@/lib/format';
+import { absoluteTime, compactNumber, relativeTime } from '@/lib/format';
 import { currentPreferences, currentUser, siteInfo, syncPreferences } from '@/stores/session';
 
 interface Totals {
@@ -86,6 +86,15 @@ const enforced = computed(() => summary.value?.windows.filter((window) => window
 const unlimited = computed(() => !!summary.value && (summary.value.unlimited || !enforced.value.length));
 const groupName = computed(() => currentUser.value?.group_name.trim() ?? '');
 const groupDescription = computed(() => currentUser.value?.group_description?.trim() ?? '');
+const groupShowExpiry = computed(() => currentUser.value?.group_show_expiry !== false);
+const groupExpiryText = computed(() => {
+  if (!groupShowExpiry.value) return '';
+  const expiresAt = currentUser.value?.group_expires_at ?? 0;
+  if (expiresAt > 0) {
+    return t('groupExpiryDate', { when: absoluteTime(expiresAt) });
+  }
+  return t('groupExpiryNever');
+});
 const autoUseResetCard = computed({
   get: () => currentPreferences.value['auto_use_reset_card'] === true,
   set: (enabled: boolean) => syncPreferences({ auto_use_reset_card: enabled }),
@@ -269,6 +278,9 @@ onMounted(() => {
         class="ai-answer oa-usage-group-description"
         :text="groupDescription"
       />
+      <p v-if="groupShowExpiry && groupExpiryText" class="oa-usage-group-expiry">
+        {{ groupExpiryText }}
+      </p>
     </section>
 
     <OaFormSection :title="t('secAllowance')" />

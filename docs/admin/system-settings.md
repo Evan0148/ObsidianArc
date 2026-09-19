@@ -38,6 +38,8 @@
 | `landing.trial_model` | 空 | 试用模型 |
 | `chat.default_system_prompt` | 空 | 默认系统提示词 |
 | `chat.max_turns` | `40` | 发送给上游的历史范围上限 |
+| `chat.allow_archive` | `true` | 是否允许用户归档会话 |
+| `chat.agent_max_rounds` | `8` | 智能体工作流（工具调用）单次提问最大轮数上限 |
 
 访客试用只在 `landing.mode=chat` 时提供。介绍页支持受控 HTML，首页通知则是纯文本，两者格式不同。
 
@@ -48,8 +50,15 @@
 | `api.enabled` | `false` | 全站 API 开关，也限制管理员 |
 | `quota.admins_bypass` | `true` | 管理员是否绕过额度限制 |
 | `quota.usage_display` | `absolute` | 具体数值、已用比例或剩余比例 |
+| `quota.max_concurrent` | `0` | 全站最大并发流式请求数限制；0 表示不限 |
 
 API 开关与额度豁免是两项独立设置。用户组还需要 `api_access` 权限；额度上限在全局、用户组或用户策略中配置。
+
+## 工作台草稿与保存
+
+后台系统设置具备**草稿自动暂存**能力（`settingsDraft`）：
+- 当在表单中修改多项设置而未点击“保存”时，即使切换到后台其他页面或关闭标签页，修改内容也会暂存在本地存储中。
+- 再次进入系统设置时会自动检测未保存的草稿，提示是否恢复草稿或丢弃，防止误触导致输入丢失。
 
 ## 附件保留与清理
 

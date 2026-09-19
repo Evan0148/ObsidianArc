@@ -657,16 +657,22 @@ a short list of deliberate rules, each with its reason beside it.
 POST   /api/auth/register           POST /api/auth/login
 POST   /api/auth/logout             GET  /api/auth/me
 GET    /api/models                  → only what this user may actually use
-GET    /api/conversations           POST /api/conversations
-GET    /api/conversations/{id}      PATCH /api/conversations/{id}   (title, pin)
+GET    /api/conversations           DELETE /api/conversations
+GET    /api/conversations/{id}      PATCH /api/conversations/{id}   (title, pin, archive)
 DELETE /api/conversations/{id}
+GET    /api/projects                POST /api/projects
+GET    /api/projects/{id}           PATCH /api/projects/{id}
+DELETE /api/projects/{id}
 POST   /api/chat                    → SSE
 POST   /api/attachments             GET  /api/attachments/{id}
+POST   /api/images/generate
 GET    /api/usage/me                → current windows, limits, resets_at
-GET    /api/preferences             PUT  /api/preferences
+GET    /api/uptime                  → system & model availability
+GET    /api/announcements           POST /api/announcements/read
+GET    /api/preferences             PATCH /api/preferences
 PATCH  /api/profile
 GET/POST/PATCH/DELETE /api/admin/{users,groups,providers,models}/…
-POST   /api/admin/providers/{id}/models/detect
+POST   /api/admin/providers/{id}/detect
 GET    /api/admin/usage             GET/PUT /api/admin/settings
 ```
 

@@ -18,6 +18,8 @@ export interface Account {
   group_name: string;
   /** Markdown written by the operator for members of this group. */
   group_description?: string;
+  /** Whether the operator configured this group to show expiry date in usage drawer. */
+  group_show_expiry?: boolean;
   status: AccountStatus;
   created_at: number;
   updated_at: number;
