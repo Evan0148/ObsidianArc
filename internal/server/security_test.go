@@ -31,6 +31,7 @@ type instance struct {
 	t       *testing.T
 	handler http.Handler
 	db      *database.DB
+	server  *Server
 }
 
 // tweak lets one test ask for an instance that differs in a single respect —
@@ -73,7 +74,7 @@ func newInstance(t *testing.T, tweak ...func(*config.Config)) *instance {
 	if err != nil {
 		t.Fatalf("build server: %v", err)
 	}
-	return &instance{t: t, handler: app.Handler(), db: db}
+	return &instance{t: t, handler: app.Handler(), db: db, server: app}
 }
 
 type session struct {

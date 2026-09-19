@@ -677,6 +677,8 @@ const en = {
   theDefaultGroup: 'The default group',
   adminsIgnoreLimits: 'Administrators ignore usage limits',
   adminsIgnoreLimitsHint: 'Leave this on unless someone else operates the server: an administrator who runs out of allowance cannot raise it back.',
+  maxConcurrentPerUser: 'Max concurrent generations per user',
+  maxConcurrentPerUserHint: 'Max simultaneous in-flight answers per account. Administrators are exempt. 0 means unlimited.',
   usageDisplay: 'Show an allowance as',
   usageDisplayHint: 'Only the wording changes. What is enforced is the same either way.',
   usageDisplayAbsolute: 'The figures — 20 / 100',

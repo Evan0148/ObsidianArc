@@ -132,8 +132,14 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		}
 
 		// One account, a bounded number of open generations. Claimed before
-		// the allowance so a refusal here costs nothing to undo.
-		freeSlot, err := quotaService.Begin(account.ID)
+		// the allowance so a refusal here costs nothing to undo. Administrators
+		// are exempt from concurrency caps; for regular accounts, the ceiling
+		// is operator-configurable (<= 0 means unlimited).
+		maxConcurrent := settingsService.Int(settings.QuotaMaxConcurrent, quota.DefaultMaxConcurrent)
+		if account.IsAdmin() {
+			maxConcurrent = 0
+		}
+		freeSlot, err := quotaService.Begin(account.ID, maxConcurrent)
 		if err != nil {
 			return nil, httpx.TooManyRequests("too_many_in_flight",
 				"Too many answers are already being generated for this account.")

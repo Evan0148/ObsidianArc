@@ -658,6 +658,8 @@ export const zh: Record<StringKey, string> = {
   theDefaultGroup: '默认用户组',
   adminsIgnoreLimits: '管理员不受用量限制',
   adminsIgnoreLimitsHint: '除非服务器由别人运维，否则请保持开启：管理员用量用完之后就没法再把它调回来了。',
+  maxConcurrentPerUser: '单用户最大并发生成数',
+  maxConcurrentPerUserHint: '每个账号允许同时处于生成状态的最大请求数。管理员不受此限制。0 表示无限制。',
   usageDisplay: '用量显示为',
   usageDisplayHint: '只改措辞，实际限制不变。',
   usageDisplayAbsolute: '具体数值 — 20 / 100',

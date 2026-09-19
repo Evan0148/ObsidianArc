@@ -165,6 +165,7 @@ var writableSettings = map[string]bool{
 	settings.ChatChallengeWindowSecs:   true,
 	settings.ChatChallengeClearMins:    true,
 	settings.AdminsBypassQuota:         true,
+	settings.QuotaMaxConcurrent:        true,
 	settings.HealthProbe:               true,
 	settings.HealthWindowMins:          true,
 	settings.HealthDisableAfter:        true,

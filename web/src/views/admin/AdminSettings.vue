@@ -44,8 +44,8 @@ const SEARCH_GROUPS = {
     'secChat', 'instanceSystemPrompt', 'instanceSystemPromptHint', 'turnsResent', 'turnsResentHint',
   ],
   secLimits: [
-    'secLimits', 'adminsIgnoreLimits', 'adminsIgnoreLimitsHint', 'usageDisplay', 'usageDisplayHint',
-    'usageDisplayAbsolute', 'usageDisplayRemaining', 'usageDisplayUsed',
+    'secLimits', 'adminsIgnoreLimits', 'adminsIgnoreLimitsHint', 'maxConcurrentPerUser', 'maxConcurrentPerUserHint',
+    'usageDisplay', 'usageDisplayHint', 'usageDisplayAbsolute', 'usageDisplayRemaining', 'usageDisplayUsed',
   ],
   secAttachments: [
     'secAttachments', 'attachmentsHint', 'attachmentMaxMB', 'attachmentMaxMBHint', 'attachmentRetain',
@@ -105,6 +105,7 @@ const form = ref({
   systemPrompt: '',
   maxTurns: 40 as number | null,
   adminBypass: false,
+  maxConcurrent: 4 as number | null,
   usageDisplay: 'absolute',
   attachmentMaxMB: 6 as number | null,
   attachmentRetain: false,
@@ -144,6 +145,7 @@ function collect(): Record<string, string> {
     'landing.trial_turns': String(form.value.trialTurns ?? 3),
     'landing.trial_model': form.value.trialModel,
     'quota.admins_bypass': String(form.value.adminBypass),
+    'quota.max_concurrent': String(form.value.maxConcurrent ?? 4),
     'quota.usage_display': form.value.usageDisplay,
     'chat.default_system_prompt': form.value.systemPrompt.trim(),
     'chat.max_turns': String(form.value.maxTurns ?? 40),
@@ -255,6 +257,7 @@ async function load(): Promise<void> {
       systemPrompt: values['chat.default_system_prompt'] ?? '',
       maxTurns: Number(values['chat.max_turns'] ?? 40),
       adminBypass: values['quota.admins_bypass'] === 'true',
+      maxConcurrent: values['quota.max_concurrent'] !== undefined ? Number(values['quota.max_concurrent']) : 4,
       usageDisplay: values['quota.usage_display'] ?? 'absolute',
       attachmentMaxMB: Number(values['attachments.max_mb'] ?? 6),
       attachmentRetain: values['attachments.retain'] === 'true',
@@ -377,6 +380,13 @@ onMounted(load);
         v-model="form.adminBypass"
         :label="t('adminsIgnoreLimits')"
         :hint="t('adminsIgnoreLimitsHint')"
+      />
+      <OaNumberField
+        v-model="form.maxConcurrent"
+        :label="t('maxConcurrentPerUser')"
+        :min="0"
+        :max="100"
+        :hint="t('maxConcurrentPerUserHint')"
       />
       <OaSelectField
         v-model="form.usageDisplay"

@@ -73,6 +73,7 @@ const (
 	ChatChallengeClearMins    = "security.chat_challenge_clear_minutes"
 	AdminsBypassQuota         = "quota.admins_bypass"
 	UsageDisplay              = "quota.usage_display"
+	QuotaMaxConcurrent        = "quota.max_concurrent"
 	LandingMode               = "landing.mode"
 	LandingIntro              = "landing.intro"
 	TrialEnabled              = "landing.trial_enabled"
@@ -240,6 +241,7 @@ var Defaults = map[string]string{
 	ChatChallengeClearMins:  "30",
 	AdminsBypassQuota:       "true",
 	UsageDisplay:            UsageAbsolute,
+	QuotaMaxConcurrent:      "4",
 	LandingMode:             LandingLogin,
 	LandingIntro:            "",
 	TrialEnabled:            "false",

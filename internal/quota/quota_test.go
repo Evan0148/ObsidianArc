@@ -718,24 +718,36 @@ func TestConcurrencyCapIsPerAccount(t *testing.T) {
 
 	releases := make([]func(), 0, MaxConcurrentPerUser)
 	for i := 0; i < MaxConcurrentPerUser; i++ {
-		release, err := service.Begin("user-1")
+		release, err := service.Begin("user-1", MaxConcurrentPerUser)
 		if err != nil {
 			t.Fatalf("slot %d of an allowed %d was refused", i+1, MaxConcurrentPerUser)
 		}
 		releases = append(releases, release)
 	}
 
-	if _, err := service.Begin("user-1"); err != ErrTooManyInFlight {
+	if _, err := service.Begin("user-1", MaxConcurrentPerUser); err != ErrTooManyInFlight {
 		t.Fatalf("err = %v, want ErrTooManyInFlight", err)
 	}
 	// Another account is unaffected.
-	if _, err := service.Begin("user-2"); err != nil {
+	if _, err := service.Begin("user-2", MaxConcurrentPerUser); err != nil {
 		t.Fatalf("a second account was blocked by the first: %v", err)
 	}
 
 	releases[0]()
 	releases[0]() // idempotent: a deferred release may also be called early
-	if _, err := service.Begin("user-1"); err != nil {
+	if _, err := service.Begin("user-1", MaxConcurrentPerUser); err != nil {
 		t.Fatalf("a freed slot was not reusable: %v", err)
+	}
+}
+
+func TestConcurrencyCapZeroIsUnlimited(t *testing.T) {
+	service, _ := newService(t)
+
+	for i := 0; i < 20; i++ {
+		release, err := service.Begin("user-1", 0)
+		if err != nil {
+			t.Fatalf("unlimited slot %d failed: %v", i+1, err)
+		}
+		defer release()
 	}
 }

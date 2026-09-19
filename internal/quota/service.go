@@ -733,22 +733,29 @@ func AsExceeded(err error) (*ExceededError, bool) {
 // many upstream connections as it likes. This is the backstop on connections
 // rather than on cost, and it is small because a person cannot read four
 // answers at once.
-const MaxConcurrentPerUser = 4
+const (
+	DefaultMaxConcurrent = 4
+	MaxConcurrentPerUser = DefaultMaxConcurrent
+)
 
 var ErrTooManyInFlight = errors.New("quota: too many generations in flight for this account")
 
 // Begin claims a slot and returns the release. The release is idempotent, so
-// a caller may defer it and still call it early.
+// a caller may defer it and still call it early. A maxConcurrent <= 0 means
+// unlimited concurrency for the account.
 //
 // In memory, like the other counters that exist only to shape one process's
 // behaviour: two instances behind a load balancer each enforce their own, and
 // the cost ceiling above is what holds in that case.
-func (s *Service) Begin(userID string) (func(), error) {
+func (s *Service) Begin(userID string, maxConcurrent int) (func(), error) {
+	if maxConcurrent <= 0 {
+		return func() {}, nil
+	}
 	s.mu.Lock()
 	if s.inFlight == nil {
 		s.inFlight = map[string]int{}
 	}
-	if s.inFlight[userID] >= MaxConcurrentPerUser {
+	if s.inFlight[userID] >= maxConcurrent {
 		s.mu.Unlock()
 		return nil, ErrTooManyInFlight
 	}
