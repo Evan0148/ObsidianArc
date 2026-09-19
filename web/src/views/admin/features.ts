@@ -467,8 +467,8 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     id: 'secLimits',
     pageSlug: 'settings',
     titleKey: 'secLimits',
-    searchKeys: ['adminsIgnoreLimits', 'usageDisplay', 'usageDisplayAbsolute', 'usageDisplayRemaining', 'usageDisplayUsed'],
-    keywords: ['配额与用量显示', '管理员免配额', '用量显示格式', '百分比显示', 'admins ignore limits', 'usage display'],
+    searchKeys: ['adminsIgnoreLimits', 'maxConcurrentPerUser', 'maxConcurrentPerUserHint', 'usageDisplay', 'usageDisplayAbsolute', 'usageDisplayRemaining', 'usageDisplayUsed'],
+    keywords: ['配额与用量显示', '管理员免配额', '单用户并发生成上限', '并发上限', '并发数', '429', '用量显示格式', '百分比显示', 'admins ignore limits', 'max concurrent', 'usage display'],
   },
   {
     id: 'secAttachments',
