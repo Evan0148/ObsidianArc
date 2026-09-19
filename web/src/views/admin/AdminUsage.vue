@@ -7,6 +7,7 @@
 // a separate feature.
 
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { useIntervalFn } from '@vueuse/core';
 import {
   adminApi, emptyPolicy,
   type Group, type QuotaWindowKind, type UsageBreakdown, type UsageMetric,
@@ -106,9 +107,13 @@ const recordTotal = ref(0);
 const recordPage = ref<PageState>({ page: 1, pageSize: 20 });
 const recordsBusy = ref(false);
 let recordRequest = 0;
+// The summary fetch needs a ticket of its own. A request that outlives a
+// range or metric change must not paint its stale numbers over the newer
+// one's — loadRecords has always done this; this is the other half.
+let summaryRequest = 0;
 let periodSince = 0;
 let periodUntil = 0;
-async function loadRecords(): Promise<void> {
+async function loadRecords(quiet = false): Promise<void> {
   const ticket = ++recordRequest;
   recordsBusy.value = true;
   try {
@@ -122,7 +127,7 @@ async function loadRecords(): Promise<void> {
     if (ticket !== recordRequest) return;
     records.value = result.records ?? [];
     recordTotal.value = result.total;
-  } catch (failure) { if (ticket === recordRequest) error.value = String(failure); }
+  } catch (failure) { if (!quiet && ticket === recordRequest) error.value = String(failure); }
   finally { if (ticket === recordRequest) recordsBusy.value = false; }
 }
 function changeRecords(next: PageState): void { recordPage.value = next; void loadRecords(); }
@@ -421,6 +426,17 @@ async function refreshRPM(): Promise<void> {
   }
 }
 
+// The period and metric the page is currently showing, as a query. Shared by
+// load() and the timer below: two copies would eventually disagree about
+// which window is on screen.
+function periodQuery(): string {
+  const params = new URLSearchParams();
+  if (periodSince > 0) params.set('since', String(periodSince));
+  if (periodUntil > 0) params.set('until', String(periodUntil));
+  params.set('metric', metric.value);
+  return `?${params.toString()}`;
+}
+
 async function load(): Promise<void> {
   error.value = '';
   if (range.value === 'custom') {
@@ -432,32 +448,60 @@ async function load(): Promise<void> {
     periodUntil = 0;
   }
   recordPage.value.page = 1;
-  const params = new URLSearchParams();
-  if (periodSince > 0) params.set('since', String(periodSince));
-  if (periodUntil > 0) params.set('until', String(periodUntil));
-  params.set('metric', metric.value);
-  const query = `?${params.toString()}`;
+  const query = periodQuery();
 
+  const ticket = ++summaryRequest;
   try {
     const [summary] = await Promise.all([
       adminApi.usage(query),
       loadRecords(),
     ]);
-    totals.value = summary.totals;
-    byModel.value = summary.by_model;
-    byProvider.value = summary.by_provider;
-    byUser.value = summary.by_user;
-    series.value = summary.series;
-    bucketMs.value = summary.bucket_ms;
-    if (typeof summary.current_rpm === 'number') {
-      currentRPM.value = summary.current_rpm;
-    }
+    if (ticket !== summaryRequest) return;
+    applySummary(summary);
   } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : String(failure);
+    if (ticket === summaryRequest) {
+      error.value = failure instanceof Error ? failure.message : String(failure);
+    }
   } finally {
     loaded.value = true;
   }
 }
+
+function applySummary(summary: Awaited<ReturnType<typeof adminApi.usage>>): void {
+  totals.value = summary.totals;
+  byModel.value = summary.by_model;
+  byProvider.value = summary.by_provider;
+  byUser.value = summary.by_user;
+  series.value = summary.series;
+  bucketMs.value = summary.bucket_ms;
+  if (typeof summary.current_rpm === 'number') {
+    currentRPM.value = summary.current_rpm;
+  }
+}
+
+// The page re-reads itself while it is open: these are aggregates over the
+// ledger and they move the moment a request lands, so an operator watching a
+// running instance should not have to reach for a refresh.
+//
+// It reuses the period load() worked out and leaves recordPage alone — the
+// timer only asks the same question again; it does not change the operator's
+// filters or throw them back to the first page. A failed refresh is ignored,
+// because the last good figures are a better answer than an error where they
+// were, and success clears the error so a page that opened against an
+// unreachable server recovers on its own.
+const REFRESH_MS = 15000;
+
+function refreshQuietly(): void {
+  const ticket = ++summaryRequest;
+  void adminApi.usage(periodQuery()).then((summary) => {
+    if (ticket !== summaryRequest) return;
+    applySummary(summary);
+    error.value = '';
+  }).catch(() => {});
+  void loadRecords(true);
+}
+
+useIntervalFn(refreshQuietly, REFRESH_MS);
 
 onMounted(() => {
   void load();
