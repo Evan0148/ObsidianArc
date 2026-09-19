@@ -221,10 +221,12 @@ export interface Meta {
 // The reader's client already describes this shape, and one row of JSON
 // should not have two declarations that can drift apart.
 import type { Announcement, DisplayMode } from '../api/announcements';
-import type { Feedback, FeedbackKind, FeedbackPriority, FeedbackStatus } from '../api/feedback';
+import type {
+  Feedback, FeedbackKind, FeedbackPriority, FeedbackReply, FeedbackStatus, FeedbackThread,
+} from '../api/feedback';
 
 export type { Announcement, DisplayMode };
-export type { Feedback, FeedbackKind, FeedbackPriority, FeedbackStatus };
+export type { Feedback, FeedbackKind, FeedbackPriority, FeedbackReply, FeedbackStatus, FeedbackThread };
 
 /**
  * The count block above the operator's feedback list.
@@ -239,6 +241,8 @@ export interface FeedbackSummary {
   bugs: number;
   ideas: number;
   high_open: number;
+  /** Threads whose last word is the reader's, and so are owed an answer. */
+  awaiting: number;
 }
 
 // --- reads ---------------------------------------------------------------------
@@ -557,8 +561,15 @@ export const adminApi = {
       offset: number;
       summary: FeedbackSummary;
     }>(`/api/admin/feedback${query}`),
-  // Status is the only thing an operator may change: the report itself is
-  // what somebody wrote.
+  // Fetching a thread is also what marks it read on the operator's side:
+  // there is no other reason to open one.
+  feedbackThread: (id: string) => api.get<FeedbackThread>(`/api/admin/feedback/${id}`),
+  replyToFeedback: (id: string, body: string) =>
+    api.post<FeedbackReply>(`/api/admin/feedback/${id}/replies`, { body }),
+  deleteFeedbackReply: (id: string, replyID: string) =>
+    api.delete<void>(`/api/admin/feedback/${id}/replies/${replyID}`),
+  // Status is the only thing about the report itself an operator may change:
+  // the words are what somebody wrote.
   setFeedbackStatus: (id: string, status: FeedbackStatus) =>
     api.patch<Feedback>(`/api/admin/feedback/${id}`, { status }),
   deleteFeedback: (id: string) => api.delete<void>(`/api/admin/feedback/${id}`),

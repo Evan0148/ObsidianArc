@@ -323,3 +323,330 @@ func TestReportsGoWithTheAccount(t *testing.T) {
 		t.Errorf("%d reports outlived their author", total)
 	}
 }
+
+// --- the conversation ---------------------------------------------------------
+
+func TestRepliesMoveTheUnreadFlagToTheOtherSide(t *testing.T) {
+	store, author, staff := fixture(t)
+	ctx := context.Background()
+
+	record, err := store.Create(ctx, author.ID, report(KindBug, PriorityMedium, "Something"))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// A fresh report is already waiting for the operator, and its author has
+	// obviously read their own words.
+	fresh, err := store.ByID(ctx, nil, record.ID)
+	if err != nil {
+		t.Fatalf("by id: %v", err)
+	}
+	if fresh.AuthorUnread {
+		t.Error("a new report is unread for the person who just wrote it")
+	}
+
+	if _, err := store.AddReply(ctx, ReplyInput{
+		FeedbackID: record.ID, UserID: staff.ID, FromStaff: true, Body: "Which model?",
+	}); err != nil {
+		t.Fatalf("staff reply: %v", err)
+	}
+	after, err := store.ByID(ctx, nil, record.ID)
+	if err != nil {
+		t.Fatalf("by id: %v", err)
+	}
+	if !after.AuthorUnread || after.OperatorUnread {
+		t.Errorf("after a staff reply: author_unread=%v operator_unread=%v, want true/false",
+			after.AuthorUnread, after.OperatorUnread)
+	}
+	if after.Replies != 1 {
+		t.Errorf("replies = %d, want 1", after.Replies)
+	}
+
+	if _, err := store.AddReply(ctx, ReplyInput{
+		FeedbackID: record.ID, UserID: author.ID, Body: "The fast one.", RequireOwner: true,
+	}); err != nil {
+		t.Fatalf("author reply: %v", err)
+	}
+	back, err := store.ByID(ctx, nil, record.ID)
+	if err != nil {
+		t.Fatalf("by id: %v", err)
+	}
+	if back.AuthorUnread || !back.OperatorUnread {
+		t.Errorf("after the author answers: author_unread=%v operator_unread=%v, want false/true",
+			back.AuthorUnread, back.OperatorUnread)
+	}
+
+	// Oldest first: a conversation only reads in the order it was said.
+	replies, err := store.Replies(ctx, nil, record.ID)
+	if err != nil {
+		t.Fatalf("replies: %v", err)
+	}
+	if len(replies) != 2 || replies[0].Body != "Which model?" || !replies[0].FromStaff || replies[1].FromStaff {
+		t.Errorf("thread = %+v, want the staff question then the author's answer", replies)
+	}
+	if replies[0].Username != "other" {
+		t.Errorf("reply author = %q, want it resolved from the join", replies[0].Username)
+	}
+}
+
+// The author's own endpoint passes RequireOwner, and the store is where that
+// is enforced — not in a check above it that a second caller could forget.
+func TestAnAuthorCannotReplyToSomebodyElsesThread(t *testing.T) {
+	store, author, stranger := fixture(t)
+	ctx := context.Background()
+
+	record, err := store.Create(ctx, author.ID, report(KindBug, PriorityLow, "Mine"))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	_, err = store.AddReply(ctx, ReplyInput{
+		FeedbackID: record.ID, UserID: stranger.ID, Body: "hello", RequireOwner: true,
+	})
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound — absent, not forbidden", err)
+	}
+	// An operator, on the other hand, answers other people's threads for a
+	// living, and says so by not asking for ownership.
+	if _, err := store.AddReply(ctx, ReplyInput{
+		FeedbackID: record.ID, UserID: stranger.ID, FromStaff: true, Body: "looking into it",
+	}); err != nil {
+		t.Errorf("operator reply refused: %v", err)
+	}
+}
+
+func TestThreadIsScopedToItsOwner(t *testing.T) {
+	store, author, stranger := fixture(t)
+	ctx := context.Background()
+
+	record, err := store.Create(ctx, author.ID, report(KindBug, PriorityLow, "Mine"))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := store.Thread(ctx, nil, record.ID, stranger.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("stranger's read = %v, want ErrNotFound", err)
+	}
+	thread, err := store.Thread(ctx, nil, record.ID, author.ID)
+	if err != nil {
+		t.Fatalf("author's read: %v", err)
+	}
+	if thread.Feedback.ID != record.ID || len(thread.Replies) != 0 {
+		t.Errorf("thread = %+v, want the report and no replies yet", thread)
+	}
+	// The operator passes no owner at all.
+	if _, err := store.Thread(ctx, nil, record.ID, ""); err != nil {
+		t.Errorf("operator's read: %v", err)
+	}
+}
+
+func TestMarkSeenAndUnreadCount(t *testing.T) {
+	store, author, staff := fixture(t)
+	ctx := context.Background()
+
+	first, err := store.Create(ctx, author.ID, report(KindBug, PriorityLow, "One"))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	second, err := store.Create(ctx, author.ID, report(KindIdea, PriorityLow, "Two"))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	for _, id := range []string{first.ID, second.ID} {
+		if _, err := store.AddReply(ctx, ReplyInput{
+			FeedbackID: id, UserID: staff.ID, FromStaff: true, Body: "answered",
+		}); err != nil {
+			t.Fatalf("reply: %v", err)
+		}
+	}
+
+	count, err := store.UnreadFor(ctx, nil, author.ID)
+	if err != nil {
+		t.Fatalf("unread: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("unread = %d, want 2", count)
+	}
+
+	if err := store.MarkSeen(ctx, first.ID, false); err != nil {
+		t.Fatalf("mark seen: %v", err)
+	}
+	if count, _ = store.UnreadFor(ctx, nil, author.ID); count != 1 {
+		t.Errorf("unread after reading one = %d, want 1", count)
+	}
+	// Reading one side never clears the other's.
+	row, err := store.ByID(ctx, nil, first.ID)
+	if err != nil {
+		t.Fatalf("by id: %v", err)
+	}
+	if row.OperatorUnread {
+		t.Error("the author's read cleared the operator's flag too")
+	}
+	// And it is not a change to the record: the operator's list shows that.
+	if row.UpdatedAt != first.UpdatedAt && row.Replies == 0 {
+		t.Error("reading a thread moved updated_at")
+	}
+
+	staffSide, err := store.Counts(ctx, nil)
+	if err != nil {
+		t.Fatalf("counts: %v", err)
+	}
+	if staffSide.Awaiting != 0 {
+		t.Errorf("awaiting = %d, want 0 — the operator spoke last in both", staffSide.Awaiting)
+	}
+	if _, err := store.AddReply(ctx, ReplyInput{
+		FeedbackID: first.ID, UserID: author.ID, Body: "still broken", RequireOwner: true,
+	}); err != nil {
+		t.Fatalf("author reply: %v", err)
+	}
+	if staffSide, _ = store.Counts(ctx, nil); staffSide.Awaiting != 1 {
+		t.Errorf("awaiting = %d, want 1", staffSide.Awaiting)
+	}
+}
+
+// The thread's length cap is the same check-then-write shape the daily cap
+// is, held by the thread's own row rather than the author's — two people can
+// be writing into one conversation at once, which is exactly the case a
+// per-account lock would miss.
+func TestTheThreadCapHoldsUnderConcurrentReplies(t *testing.T) {
+	store, author, staff := fixture(t)
+	ctx := context.Background()
+
+	record, err := store.Create(ctx, author.ID, report(KindBug, PriorityLow, "Busy"))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	for i := 0; i < MaxRepliesPerThread-1; i++ {
+		if _, err := store.AddReply(ctx, ReplyInput{
+			FeedbackID: record.ID, UserID: staff.ID, FromStaff: true, Body: "filler",
+		}); err != nil {
+			t.Fatalf("filler %d: %v", i, err)
+		}
+	}
+
+	const writers = 8
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		accepted int
+		refused  int
+		other    []error
+	)
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		// Both sides at once, which is the shape a thread actually sees.
+		staffTurn := i%2 == 0
+		go func() {
+			defer wg.Done()
+			writer := author.ID
+			if staffTurn {
+				writer = staff.ID
+			}
+			_, err := store.AddReply(ctx, ReplyInput{
+				FeedbackID: record.ID, UserID: writer, FromStaff: staffTurn, Body: "racer",
+			})
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err == nil:
+				accepted++
+			case errors.Is(err, ErrThreadFull):
+				refused++
+			default:
+				other = append(other, err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if len(other) > 0 {
+		t.Fatalf("unexpected error: %v", other[0])
+	}
+	if accepted != 1 {
+		t.Errorf("%d of %d racers took the last slot, want exactly 1", accepted, writers)
+	}
+	if refused != writers-1 {
+		t.Errorf("%d refusals, want %d", refused, writers-1)
+	}
+	replies, err := store.Replies(ctx, nil, record.ID)
+	if err != nil {
+		t.Fatalf("replies: %v", err)
+	}
+	if len(replies) != MaxRepliesPerThread {
+		t.Errorf("%d replies stored, want the cap of %d", len(replies), MaxRepliesPerThread)
+	}
+}
+
+func TestDeletingOneReplyAndThenTheWholeThread(t *testing.T) {
+	store, author, staff := fixture(t)
+	ctx := context.Background()
+
+	record, err := store.Create(ctx, author.ID, report(KindBug, PriorityLow, "Spammed"))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	junk, err := store.AddReply(ctx, ReplyInput{
+		FeedbackID: record.ID, UserID: staff.ID, FromStaff: true, Body: "buy my thing",
+	})
+	if err != nil {
+		t.Fatalf("reply: %v", err)
+	}
+	kept, err := store.AddReply(ctx, ReplyInput{
+		FeedbackID: record.ID, UserID: staff.ID, FromStaff: true, Body: "actually looking into it",
+	})
+	if err != nil {
+		t.Fatalf("reply: %v", err)
+	}
+
+	// A reply id from another thread must not be enough to delete this one's.
+	if err := store.DeleteReply(ctx, "01ARZ3NDEKTSV4RRFFQ69G5FAV", junk.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("cross-thread delete = %v, want ErrNotFound", err)
+	}
+	if err := store.DeleteReply(ctx, record.ID, junk.ID); err != nil {
+		t.Fatalf("delete reply: %v", err)
+	}
+	replies, err := store.Replies(ctx, nil, record.ID)
+	if err != nil {
+		t.Fatalf("replies: %v", err)
+	}
+	if len(replies) != 1 || replies[0].ID != kept.ID {
+		t.Errorf("thread = %+v, want only the reply worth keeping", replies)
+	}
+
+	// And the whole report takes the rest of the conversation with it.
+	if err := store.Delete(ctx, record.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	left, err := store.Replies(ctx, nil, record.ID)
+	if err != nil {
+		t.Fatalf("replies: %v", err)
+	}
+	if len(left) != 0 {
+		t.Errorf("%d replies outlived the report they were about", len(left))
+	}
+}
+
+func TestAReplyNeedsSomethingInIt(t *testing.T) {
+	store, author, _ := fixture(t)
+	ctx := context.Background()
+
+	record, err := store.Create(ctx, author.ID, report(KindBug, PriorityLow, "Something"))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	for name, body := range map[string]string{
+		"blank": "   ",
+		"long":  strings.Repeat("x", MaxBodyChars+1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := store.AddReply(ctx, ReplyInput{
+				FeedbackID: record.ID, UserID: author.ID, Body: body, RequireOwner: true,
+			})
+			if !errors.Is(err, ErrInvalidBody) {
+				t.Errorf("err = %v, want ErrInvalidBody", err)
+			}
+		})
+	}
+	if _, err := store.AddReply(ctx, ReplyInput{
+		FeedbackID: "01ARZ3NDEKTSV4RRFFQ69G5FAV", UserID: author.ID, Body: "x",
+	}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("reply to a thread that is not there = %v, want ErrNotFound", err)
+	}
+}

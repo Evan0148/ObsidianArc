@@ -3866,13 +3866,27 @@
   list-style: none;
 }
 
+/* A row is a button because every one of them opens the conversation on that
+   report — the same shape the operator's cards have, at list size. */
 .oa-feedback-item {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  width: 100%;
+  box-sizing: border-box;
   padding: 9px 12px;
+  border: none;
   border-radius: 12px;
   background: var(--ai-surface-container-low);
+  color: var(--ai-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.13s ease;
+}
+
+.oa-feedback-item:hover {
+  background: var(--ai-surface-container);
 }
 
 .oa-feedback-item-head {
@@ -3897,4 +3911,98 @@
   gap: 3px 10px;
   font-size: 11px;
   color: var(--ai-text-secondary);
+}
+
+/* --- a conversation on one report ---------------------------------------------
+ *
+ * The same shape on both sides of it: the operator sees it in the backoffice
+ * panel and the author sees it in theirs, and a thread that looked like two
+ * different things depending on who opened it would be two things to keep in
+ * step. What differs is one tint — whose turn it was — because that is the
+ * only fact a reader needs at a glance.
+ */
+
+.oa-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.oa-thread-turn {
+  position: relative;
+  padding: 11px 13px;
+  border-radius: 14px;
+  background: var(--ai-surface-container-low);
+}
+
+/* The operator's turns are the answers, so they are the ones that stand out
+   of the column. A fill, not a border: nothing here is outlined. */
+.oa-thread-turn.staff {
+  background: var(--ai-surface-container-high);
+}
+
+.oa-thread-who {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--ai-text-secondary);
+}
+
+/* The prose itself is drawn by the transcript's renderer, so it arrives
+   carrying `.ai-answer` and everything that class already knows about
+   paragraphs, code blocks and lists. All this adds is the size it reads at
+   inside a panel, which is smaller than a chat message. */
+.oa-thread-body.ai-answer {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.oa-thread-body.ai-answer > :first-child {
+  margin-top: 0;
+}
+
+.oa-thread-body.ai-answer > :last-child {
+  margin-bottom: 0;
+}
+
+/* Revealed by the turn it belongs to, the way a conversation row reveals its
+   own delete: a column of always-visible delete buttons down the side of
+   somebody's words reads as an invitation. */
+.oa-thread-remove {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  padding: 2px 8px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ai-text-secondary);
+  font: inherit;
+  font-size: 10.5px;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.13s ease, background 0.13s ease, color 0.13s ease;
+}
+
+.oa-thread-turn:hover .oa-thread-remove,
+.oa-thread-remove:focus-visible,
+.oa-thread-remove.armed {
+  opacity: 1;
+}
+
+.oa-thread-remove:hover,
+.oa-thread-remove.armed {
+  background: color-mix(in srgb, var(--ai-danger) 18%, transparent);
+  color: var(--ai-danger);
+}
+
+/* Shorter than the box a whole report is written in: a reply is usually a
+   sentence, and a tall empty box asks for an essay nobody has. */
+.oa-feedback-answer textarea {
+  min-height: 92px;
+  line-height: 1.6;
+  resize: vertical;
 }

@@ -186,8 +186,11 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.Handle("DELETE /api/admin/announcements/{id}", protected("announcements", h.deleteAnnouncement))
 
 	mux.Handle("GET /api/admin/feedback", protected("feedback", h.listFeedback))
+	mux.Handle("GET /api/admin/feedback/{id}", protected("feedback", h.showFeedback))
 	mux.Handle("PATCH /api/admin/feedback/{id}", protected("feedback", h.updateFeedback))
 	mux.Handle("DELETE /api/admin/feedback/{id}", protected("feedback", h.deleteFeedback))
+	mux.Handle("POST /api/admin/feedback/{id}/replies", protected("feedback", h.replyToFeedback))
+	mux.Handle("DELETE /api/admin/feedback/{id}/replies/{reply}", protected("feedback", h.deleteFeedbackReply))
 
 	mux.Handle("GET /api/admin/references", protected("", h.references))
 	mux.Handle("GET /api/admin/member-options", protected("groups", h.listMemberOptions))

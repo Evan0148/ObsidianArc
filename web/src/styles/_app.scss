@@ -208,6 +208,7 @@
 }
 
 .oa-account-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -223,6 +224,21 @@
 
 .oa-account-btn:hover {
   background: var(--ai-state-hover);
+}
+
+/* An answer is waiting on one of this account's reports. A dot rather than a
+   count, for the reason the bell carries one: how many is not a number
+   anybody acts on, and a digit here would be the loudest thing in the
+   header. Sat on the avatar, which is the part of this control that is still
+   visible once the name is hidden on a narrow screen. */
+.oa-account-dot {
+  position: absolute;
+  top: 3px;
+  left: 26px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ai-danger);
 }
 
 .oa-account-name {

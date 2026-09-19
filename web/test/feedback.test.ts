@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp, h, nextTick, shallowRef, type App, type Component } from 'vue';
 import { adminApi } from '../src/admin/api';
 import * as feedbackApi from '../src/api/feedback';
-import type { Feedback } from '../src/api/feedback';
+import type { Feedback, FeedbackReply, FeedbackThread } from '../src/api/feedback';
 import { providePanelHost } from '../src/composables/usePanelHost';
 import { site, siteInfo } from '../src/stores/session';
 import { changeLanguage, t } from '../src/composables/useI18n';
@@ -67,8 +67,21 @@ function record(over: Partial<Feedback> = {}): Feedback {
     id: 'f1', user_id: 'u1', kind: 'bug', priority: 'high', status: 'open',
     title: 'Streaming stops', body: 'It stops half way.\n\nEvery time.',
     created_at: Date.now(), updated_at: Date.now(), username: 'reader', nickname: 'Reader',
+    replies: 0, author_unread: false, operator_unread: false,
     ...over,
   };
+}
+
+function reply(over: Partial<FeedbackReply> = {}): FeedbackReply {
+  return {
+    id: 'r1', feedback_id: 'f1', user_id: 'admin', from_staff: true,
+    body: 'Fixed in **v2026.09.20**.', created_at: Date.now(),
+    username: 'operator', ...over,
+  };
+}
+
+function thread(over: Partial<FeedbackThread> = {}): FeedbackThread {
+  return { feedback: record(), replies: [reply()], ...over };
 }
 
 describe('the feedback panel somebody writes in', () => {
@@ -110,6 +123,35 @@ describe('the feedback panel somebody writes in', () => {
     await settle();
     expect(send).not.toHaveBeenCalled();
     expect(panels.textContent).toContain(t('feedbackNeedBody'));
+  });
+
+  it('opens one of its own reports, reads the answer and adds to it', async () => {
+    const mine = record({ replies: 1, author_unread: true });
+    vi.spyOn(feedbackApi, 'listFeedback').mockResolvedValue({
+      feedback: [mine], remaining: 9, max_per_day: 10,
+    });
+    const read = vi.spyOn(feedbackApi, 'fetchThread').mockResolvedValue(thread({ feedback: mine }));
+    const answer = vi.spyOn(feedbackApi, 'replyToFeedback')
+      .mockResolvedValue(reply({ id: 'r2', from_staff: false, body: 'still happening' }));
+    vi.spyOn(feedbackApi, 'fetchFeedbackUnread').mockResolvedValue({ unread: 0 });
+    await mount(FeedbackPanel);
+
+    // An unanswered report is marked in the list it sits in.
+    expect(panels.querySelector('.oa-feedback-item .oa-menu-unread')).not.toBeNull();
+
+    panels.querySelector<HTMLButtonElement>('.oa-feedback-item')!.click();
+    await settle();
+    expect(read).toHaveBeenCalledWith('f1');
+    expect(panels.querySelectorAll('.oa-thread-turn')).toHaveLength(2);
+    expect(panels.textContent).toContain(t('feedbackFromStaff'));
+    expect(panels.querySelector('.oa-thread-turn.staff strong')?.textContent).toBe('v2026.09.20');
+
+    type(panels.querySelector<HTMLTextAreaElement>('.oa-feedback-answer textarea')!, 'still happening');
+    await settle();
+    button(panels, t('feedbackReplySend')).click();
+    await settle();
+    expect(answer).toHaveBeenCalledWith('f1', 'still happening');
+    expect(panels.querySelectorAll('.oa-thread-turn')).toHaveLength(3);
   });
 
   it('shows what this account has already sent, with the status it was given', async () => {
@@ -177,7 +219,7 @@ describe('the feedback panel somebody writes in', () => {
 });
 
 describe('the operator’s feedback page', () => {
-  const summary = { total: 2, open: 1, bugs: 1, ideas: 1, high_open: 1 };
+  const summary = { total: 2, open: 1, bugs: 1, ideas: 1, high_open: 1, awaiting: 1 };
 
   function list(rows: Feedback[]) {
     return vi.spyOn(adminApi, 'feedback').mockResolvedValue({
@@ -199,18 +241,69 @@ describe('the operator’s feedback page', () => {
 
   it('opens one report whole and resolves it without editing what was written', async () => {
     list([record()]);
+    vi.spyOn(adminApi, 'feedbackThread').mockResolvedValue(thread({ replies: [] }));
     const patch = vi.spyOn(adminApi, 'setFeedbackStatus').mockResolvedValue(record({ status: 'resolved' }));
     await mount(AdminFeedback);
 
     host.querySelector<HTMLButtonElement>('.oa-feedback-card')!.click();
     await settle();
-    // Newlines and all: the blank line in the middle is half of what was said.
-    expect(panels.querySelector('.oa-feedback-detail-body')!.textContent)
-      .toBe('It stops half way.\n\nEvery time.');
+    // Both paragraphs survive the Markdown pass: the blank line in the middle
+    // is half of what was said.
+    const body = panels.querySelector('.oa-thread-turn .oa-thread-body')!;
+    expect(body.textContent).toContain('It stops half way.');
+    expect(body.textContent).toContain('Every time.');
 
     button(panels, t('feedbackResolve')).click();
     await settle();
     expect(patch).toHaveBeenCalledWith('f1', 'resolved');
+  });
+
+  it('renders both sides of the conversation as Markdown and answers it', async () => {
+    list([record({ replies: 1, operator_unread: true })]);
+    vi.spyOn(adminApi, 'feedbackThread').mockResolvedValue(thread());
+    const send = vi.spyOn(adminApi, 'replyToFeedback').mockResolvedValue(reply({ id: 'r2', body: 'and again' }));
+    await mount(AdminFeedback);
+
+    // The card says who spoke last, which is the one thing here to act on.
+    expect(host.querySelector('.oa-feedback-card')!.textContent).toContain(t('feedbackAwaiting'));
+
+    host.querySelector<HTMLButtonElement>('.oa-feedback-card')!.click();
+    await settle();
+
+    const turns = panels.querySelectorAll('.oa-thread-turn');
+    expect(turns).toHaveLength(2);
+    expect(turns[1]!.classList.contains('staff')).toBe(true);
+    // Rendered, not printed: the asterisks became an element, and no step
+    // anywhere assembled an HTML string to get there.
+    expect(turns[1]!.querySelector('strong')?.textContent).toBe('v2026.09.20');
+
+    const box = panels.querySelector<HTMLTextAreaElement>('.oa-feedback-answer textarea')!;
+    type(box, 'and again');
+    await settle();
+    button(panels, t('feedbackReplySend')).click();
+    await settle();
+    expect(send).toHaveBeenCalledWith('f1', 'and again');
+    expect(box.value).toBe('');
+  });
+
+  // A report somebody else wrote is rendered in the operator's own screen, so
+  // the renderer's two narrowings are what this screen leans on.
+  it('never draws an image or a javascript: link out of a stranger\'s report', async () => {
+    list([record()]);
+    vi.spyOn(adminApi, 'feedbackThread').mockResolvedValue(thread({
+      replies: [reply({
+        from_staff: false,
+        body: '![](https://tracker.example/x.png) and [click](javascript:alert(1))',
+      })],
+    }));
+    await mount(AdminFeedback);
+    host.querySelector<HTMLButtonElement>('.oa-feedback-card')!.click();
+    await settle();
+
+    expect(panels.querySelectorAll('img')).toHaveLength(0);
+    for (const anchor of panels.querySelectorAll('a')) {
+      expect(anchor.getAttribute('href') ?? '').not.toContain('javascript:');
+    }
   });
 
   it('narrows the list by status without leaving the page it was on', async () => {

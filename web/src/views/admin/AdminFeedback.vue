@@ -7,21 +7,35 @@
 // other column three words wide. The log screen made the same choice for the
 // same reason, and this reuses its shape.
 //
-// Reading one opens the panel beside the list, which is where the whole body
-// and the two things an operator can do with it live. Resolving is a status
-// and nothing else — the report stays exactly as it was written, because it
-// is a record of what somebody said rather than a ticket to edit.
+// Reading one opens the panel beside the list, which is where the whole
+// conversation is: the report, every reply either side has written, and the
+// box to write the next one. Resolving is a status and nothing else — the
+// words stay exactly as they were written, because they are a record of what
+// somebody said rather than a ticket to edit.
+//
+// Both sides write Markdown, drawn by the transcript's own renderer. That
+// matters more here than on the reader's side: this is where text a stranger
+// wrote is rendered in an operator's own screen, and that renderer builds
+// nodes instead of HTML strings, refuses every scheme but http(s) and mailto,
+// and draws an image as a link — so a "bug report" cannot turn the person
+// reading it into a hit on somebody's tracker.
 
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { adminApi, type Feedback, type FeedbackStatus, type FeedbackSummary } from '@/admin/api';
+import {
+  adminApi,
+  type Feedback, type FeedbackStatus, type FeedbackSummary, type FeedbackThread,
+} from '@/admin/api';
 import { ApiError } from '@/api/client';
 import OaBadge from '@/components/OaBadge.vue';
+import OaConfirmButton from '@/components/OaConfirmButton.vue';
 import OaIconButton from '@/components/OaIconButton.vue';
+import OaMarkdown from '@/components/OaMarkdown.vue';
 import OaPagination from '@/components/OaPagination.vue';
 import OaPanel from '@/components/OaPanel.vue';
 import OaSearchField from '@/components/OaSearchField.vue';
 import OaSelectField from '@/components/OaSelectField.vue';
 import OaStatGrid from '@/components/OaStatGrid.vue';
+import OaTextArea from '@/components/OaTextArea.vue';
 import type { Stat } from '@/components/stat';
 import type { PageState } from '@/components/table-types';
 import { t } from '@/composables/useI18n';
@@ -48,6 +62,9 @@ const status = ref('');
 const search = ref('');
 
 const opened = ref<Feedback | null>(null);
+/** The conversation on the opened report, once it has arrived. */
+const thread = ref<FeedbackThread | null>(null);
+const answer = ref('');
 const busy = ref(false);
 const panelError = ref('');
 
@@ -70,6 +87,9 @@ const stats = computed<Stat[]>(() => {
   return [
     { label: t('feedbackStatTotal'), value: String(counts.total) },
     { label: t('feedbackStatOpen'), value: String(counts.open) },
+    // The one number here that is about the operator rather than the
+    // instance: somebody asked something and is still waiting.
+    { label: t('feedbackStatAwaiting'), value: String(counts.awaiting) },
     { label: t('feedbackStatHigh'), value: String(counts.high_open) },
     { label: t('feedbackStatBugs'), value: String(counts.bugs) },
     { label: t('feedbackStatIdeas'), value: String(counts.ideas) },
@@ -131,6 +151,66 @@ function page(next: PageState): void {
   void load();
 }
 
+/**
+ * Opens one report and its conversation.
+ *
+ * Fetching the thread is also what clears the operator's side of the unread
+ * pair — on the server, and in the row behind the panel, so the "waiting for
+ * an answer" mark cannot survive the read that answered it.
+ */
+async function open(row: Feedback): Promise<void> {
+  opened.value = row;
+  thread.value = null;
+  answer.value = '';
+  panelError.value = '';
+  busy.value = true;
+  try {
+    thread.value = await adminApi.feedbackThread(row.id);
+    row.operator_unread = false;
+    if (summary.value && summary.value.awaiting > 0) summary.value.awaiting -= 1;
+  } catch (failure) {
+    panelError.value = failure instanceof ApiError ? failure.message : String(failure);
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function reply(): Promise<void> {
+  const current = thread.value;
+  const text = answer.value.trim();
+  if (!current || !text || busy.value) return;
+  busy.value = true;
+  panelError.value = '';
+  try {
+    const record = await adminApi.replyToFeedback(current.feedback.id, text);
+    current.replies.push(record);
+    answer.value = '';
+    // The list carries the reply count and the badge that says who spoke
+    // last, so it is worth the round trip.
+    await load();
+  } catch (failure) {
+    panelError.value = failure instanceof ApiError ? failure.message : String(failure);
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function removeReply(replyID: string): Promise<void> {
+  const current = thread.value;
+  if (!current || busy.value) return;
+  busy.value = true;
+  panelError.value = '';
+  try {
+    await adminApi.deleteFeedbackReply(current.feedback.id, replyID);
+    current.replies = current.replies.filter((turn) => turn.id !== replyID);
+    await load();
+  } catch (failure) {
+    panelError.value = failure instanceof ApiError ? failure.message : String(failure);
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function setStatus(next: FeedbackStatus): Promise<void> {
   const record = opened.value;
   if (!record) return;
@@ -154,6 +234,7 @@ async function remove(): Promise<void> {
   try {
     await adminApi.deleteFeedback(record.id);
     opened.value = null;
+    thread.value = null;
     await load();
   } catch (failure) {
     panelError.value = failure instanceof ApiError ? failure.message : String(failure);
@@ -261,12 +342,15 @@ onMounted(load);
           class="oa-feedback-card"
           :class="{ resolved: row.status === 'resolved', selected: opened?.id === row.id }"
           :style="{ '--item-idx': String(index) }"
-          @click="opened = row"
+          @click="open(row)"
         >
           <span class="oa-feedback-card-rail" :class="row.kind" aria-hidden="true" />
           <span class="oa-feedback-card-main">
             <span class="oa-feedback-card-head">
               <span class="oa-feedback-card-title">{{ row.title }}</span>
+              <!-- The reader spoke last. The one thing on this screen an
+                   operator is supposed to act on, so it is said in words. -->
+              <OaBadge v-if="row.operator_unread" tone="danger">{{ t('feedbackAwaiting') }}</OaBadge>
               <OaBadge :tone="row.status === 'resolved' ? 'muted' : 'default'">
                 {{ statusLabel(row) }}
               </OaBadge>
@@ -276,6 +360,7 @@ onMounted(load);
               <OaBadge tone="muted">{{ kindLabel(row) }}</OaBadge>
               <OaBadge :tone="priorityTone(row)">{{ priorityLabel(row) }}</OaBadge>
               <span>{{ t('feedbackFrom', { name: authorOf(row) }) }}</span>
+              <span v-if="row.replies">{{ t('feedbackReplyCount', { count: row.replies }) }}</span>
               <span>{{ relativeTime(row.created_at) }}</span>
             </span>
           </span>
@@ -302,7 +387,7 @@ onMounted(load);
     :width="520"
     :busy="busy"
     :error="panelError"
-    @close="opened = null"
+    @close="opened = null; thread = null"
     @confirm="setStatus(opened.status === 'resolved' ? 'open' : 'resolved')"
     @destructive="remove"
   >
@@ -321,8 +406,61 @@ onMounted(load);
       <dd>{{ relativeTime(opened.updated_at) }}</dd>
     </dl>
 
-    <!-- Interpolated, never v-html: this is text somebody else typed, and the
-         one thing it must never be is markup. -->
-    <p class="oa-feedback-detail-body">{{ opened.body }}</p>
+    <p v-if="!thread" class="oa-menu-empty">{{ t('loading') }}</p>
+
+    <template v-else>
+      <div class="oa-thread">
+        <!-- The report is the first thing that was said, so it is the first
+             turn rather than a header above the conversation. -->
+        <article class="oa-thread-turn mine">
+          <header class="oa-thread-who">
+            <span>{{ authorOf(thread.feedback) }}</span>
+            <time :title="absoluteTime(thread.feedback.created_at)">
+              {{ relativeTime(thread.feedback.created_at) }}
+            </time>
+          </header>
+          <OaMarkdown class="ai-answer oa-thread-body" :text="thread.feedback.body" />
+        </article>
+
+        <article
+          v-for="turn in thread.replies"
+          :key="turn.id"
+          class="oa-thread-turn"
+          :class="turn.from_staff ? 'staff' : 'mine'"
+        >
+          <header class="oa-thread-who">
+            <span>{{ turn.from_staff ? t('feedbackFromStaff') : authorOf(thread.feedback) }}</span>
+            <time :title="absoluteTime(turn.created_at)">{{ relativeTime(turn.created_at) }}</time>
+          </header>
+          <OaMarkdown class="ai-answer oa-thread-body" :text="turn.body" />
+          <!-- For spam inside a thread worth keeping. Never window.confirm:
+               it answers false on its own in some browsers. -->
+          <OaConfirmButton
+            class="oa-thread-remove"
+            :label="t('deleteLabel')"
+            :armed-label="t('feedbackReplyDeleteConfirm')"
+            :armed-title="t('feedbackReplyDeleteConfirm')"
+            :resting-title="t('deleteLabel')"
+            :disabled="busy"
+            @confirm="removeReply(turn.id)"
+          />
+        </article>
+      </div>
+
+      <OaTextArea
+        v-model="answer"
+        class="oa-feedback-answer"
+        :label="t('feedbackReply')"
+        :placeholder="t('feedbackReplyStaffPlaceholder')"
+        :hint="t('feedbackMarkdownHint')"
+        :rows="5"
+      />
+      <button
+        type="button"
+        class="oa-btn primary"
+        :disabled="busy || !answer.trim()"
+        @click="reply"
+      >{{ busy ? '…' : t('feedbackReplySend') }}</button>
+    </template>
   </OaPanel>
 </template>

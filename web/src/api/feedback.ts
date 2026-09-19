@@ -1,8 +1,13 @@
-// Feedback, as the person sending it sees it.
+// Feedback, as the person who sent it sees it: their reports, the
+// conversation on each one, and their own turn in it.
 //
 // The enums are the server's own values, English on purpose like every other
 // protocol string in this project: the screen translates them at render, and
 // what travels is what the API documents.
+//
+// Bodies are Markdown on both sides and are handed around as the text they
+// were typed as. Nothing here renders anything — `OaMarkdown` does, through
+// the transcript's own node-building renderer.
 
 import { api } from './client';
 
@@ -20,12 +25,34 @@ export interface Feedback {
   body: string;
   created_at: number;
   updated_at: number;
+  /** How many turns the conversation has, the report itself aside. */
+  replies: number;
+  /** Whether this side has seen the other's last word. */
+  author_unread: boolean;
+  operator_unread: boolean;
   /**
    * Who wrote it. Filled only in the operator's listing — an author reading
    * their own knows who they are, and the join is not free.
    */
   username?: string;
   nickname?: string;
+}
+
+/** One turn in a thread. `from_staff` is which side said it. */
+export interface FeedbackReply {
+  id: string;
+  feedback_id: string;
+  user_id: string;
+  from_staff: boolean;
+  body: string;
+  created_at: number;
+  username?: string;
+  nickname?: string;
+}
+
+export interface FeedbackThread {
+  feedback: Feedback;
+  replies: FeedbackReply[];
 }
 
 export interface FeedbackList {
@@ -48,4 +75,23 @@ export function sendFeedback(body: {
   turnstile?: string;
 }): Promise<Feedback> {
   return api.post<Feedback>('/api/feedback', body);
+}
+
+/**
+ * One of the caller's own threads.
+ *
+ * Fetching it is also what marks the answer read — there is no other reason
+ * to open a thread, so the server does not make the client say so twice.
+ */
+export function fetchThread(id: string): Promise<FeedbackThread> {
+  return api.get<FeedbackThread>(`/api/feedback/${id}`);
+}
+
+export function replyToFeedback(id: string, body: string): Promise<FeedbackReply> {
+  return api.post<FeedbackReply>(`/api/feedback/${id}/replies`, { body });
+}
+
+/** How many of this account's reports have an answer it has not opened. */
+export function fetchFeedbackUnread(): Promise<{ unread: number }> {
+  return api.get<{ unread: number }>('/api/feedback/unread');
 }

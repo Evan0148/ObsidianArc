@@ -6,11 +6,12 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // The "feedback" family, split across both tiers on purpose.
 //
-// Reading, resolving and deleting are the operator's half and carry the
+// Reading, answering, resolving and deleting are the operator's half and carry the
 // "feedback" grant, exactly as the backoffice page does. Sending one is
 // `feedback send`, an Anyone-tier command reaching POST /api/feedback — the
 // same route the panel in the chat posts to, so a report typed at the
@@ -79,43 +80,28 @@ func init() {
 	registerCommand(Command{
 		Name:    "feedback show",
 		Group:   "feedback",
-		Summary: Text{EN: "Show one report in full", ZH: "完整显示一条反馈"},
+		Summary: Text{EN: "Show one report and its whole conversation", ZH: "显示一条反馈及其全部往来"},
 		Usage:   "feedback show <feedback-id>",
 		Help: Text{
-			EN: "Shows the whole report, including the body as it was written.",
-			ZH: "显示整条反馈，正文按提交时的原文展示。",
+			EN: "Shows the report as it was written, then every reply in the order they were said. Opening a thread here counts as having read it, exactly as it does in the backoffice, so the \"waiting for an answer\" mark clears.",
+			ZH: "先显示反馈原文，再按时间顺序显示全部回复。在这里打开一条，和在后台打开一样算作已读，「待回复」标记会随之清除。",
 		},
 		Args:       []Arg{{Name: "feedback-id", Hint: Text{EN: "from feedback list", ZH: "来自 feedback list"}, Required: true}},
 		Examples:   []string{"feedback show 01H9Z…", "feedback show 01H9Z… --json"},
-		SeeAlso:    []string{"feedback list", "feedback resolve"},
+		SeeAlso:    []string{"feedback list", "feedback reply"},
 		Permission: "feedback",
-		Endpoints:  []string{"GET /api/admin/feedback"},
+		Endpoints:  []string{"GET /api/admin/feedback/{id}"},
 		Run: func(_ context.Context, rt *Runtime) error {
 			ref, err := requireRef(rt, "feedback id")
 			if err != nil {
 				return err
 			}
-			// The list endpoint is the only reader: one report is a filtered
-			// list of one, which is cheaper than a route that exists solely
-			// so the console can spell a path.
-			data, _, err := rt.Call(http.MethodGet,
-				"/api/admin/feedback?"+url.Values{"limit": {"200"}}.Encode(), nil)
+			data, _, err := rt.Call(http.MethodGet, "/api/admin/feedback/"+url.PathEscape(ref), nil)
 			if err != nil {
 				return err
 			}
-			var found map[string]any
-			for _, raw := range asSlice(asMap(data)["feedback"]) {
-				if f := asMap(raw); asStr(f["id"]) == ref {
-					found = f
-					break
-				}
-			}
-			if found == nil {
-				if rt.Session.Lang == "zh" {
-					return rt.Errorf("没有这条反馈。")
-				}
-				return rt.Errorf("no such feedback.")
-			}
+			thread := asMap(data)
+			found := asMap(thread["feedback"])
 			jsonMode := rt.effectiveJSON()
 			if err := rt.Fields([][2]string{
 				{"id", asStr(found["id"])},
@@ -125,6 +111,7 @@ func init() {
 				{"from", asStr(found["username"])},
 				{"user_id", asStr(found["user_id"])},
 				{"title", asStr(found["title"])},
+				{"replies", fmt.Sprint(asNum(found["replies"]))},
 				{"created_at", formatMS(found["created_at"])},
 				{"updated_at", formatMS(found["updated_at"])},
 			}); err != nil {
@@ -133,8 +120,22 @@ func init() {
 			if jsonMode {
 				return nil
 			}
+
 			fmt.Fprintln(rt.Out)
 			fmt.Fprintln(rt.Out, asStr(found["body"]))
+
+			// Markdown as it was typed, not rendered: the terminal is not a
+			// browser, and the source is what somebody would paste back into
+			// an issue anyway.
+			for _, raw := range asSlice(thread["replies"]) {
+				reply := asMap(raw)
+				who := asStr(reply["username"])
+				if asBoolVal(reply["from_staff"]) {
+					who += " (staff)"
+				}
+				fmt.Fprintf(rt.Out, "\n--- %s · %s · %s\n%s\n",
+					who, formatMS(reply["created_at"]), asStr(reply["id"]), asStr(reply["body"]))
+			}
 			return nil
 		},
 	})
@@ -168,6 +169,91 @@ func init() {
 		Permission: "feedback",
 		Endpoints:  []string{"PATCH /api/admin/feedback/{id}"},
 		Run:        setFeedbackStatus("open"),
+	})
+
+	registerCommand(Command{
+		Name:    "feedback reply",
+		Group:   "feedback",
+		Summary: Text{EN: "Answer a report", ZH: "回复一条反馈"},
+		Usage:   `feedback reply <feedback-id> --text "…"`,
+		Help: Text{
+			EN: "Writes a reply as an operator. Markdown, the same as the panel — it is rendered for the reader by the same renderer the transcript uses. The author sees it on their own feedback panel and gets a mark on their account menu; replying does not change the status, because answering something and being finished with it are different claims.",
+			ZH: "以管理员身份回复。内容是 Markdown，和面板里一样，展示给用户时用的是和对话界面同一个渲染器。提交人会在自己的反馈面板里看到，账户菜单上也会出现提示；回复不会改状态——回答了和处理完了是两回事。",
+		},
+		Args: []Arg{{Name: "feedback-id", Hint: Text{EN: "from feedback list", ZH: "来自 feedback list"}, Required: true}},
+		Flags: []Flag{
+			{Name: "--text", Hint: Text{EN: "what to say, Markdown", ZH: "回复内容，支持 Markdown"}, Value: "TEXT"},
+		},
+		Examples: []string{
+			`feedback reply 01H9Z… --text "Fixed in v2026.09.20, thank you."`,
+			`feedback reply 01H9Z… --text "Which model were you using?"`,
+		},
+		SeeAlso:    []string{"feedback show", "feedback resolve"},
+		Permission: "feedback",
+		Endpoints:  []string{"POST /api/admin/feedback/{id}/replies"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			ref, err := requireRef(rt, "feedback id")
+			if err != nil {
+				return err
+			}
+			text := rt.String("text")
+			if strings.TrimSpace(text) == "" {
+				if rt.Session.Lang == "zh" {
+					return rt.Errorf("需要 --text 写点什么。")
+				}
+				return rt.Errorf("--text is required")
+			}
+			data, _, err := rt.Call(http.MethodPost,
+				"/api/admin/feedback/"+url.PathEscape(ref)+"/replies",
+				map[string]any{"body": text})
+			if err != nil {
+				return err
+			}
+			reply := asMap(data)
+			return rt.Fields([][2]string{
+				{"id", asStr(reply["id"])},
+				{"feedback_id", asStr(reply["feedback_id"])},
+				{"created_at", formatMS(reply["created_at"])},
+			})
+		},
+	})
+
+	registerCommand(Command{
+		Name:    "feedback reply delete",
+		Group:   "feedback",
+		Summary: Text{EN: "Delete one reply from a thread", ZH: "删除会话里的某一条回复"},
+		Usage:   "feedback reply delete <feedback-id> <reply-id> --yes",
+		Help: Text{
+			EN: "Removes a single turn, for spam inside a thread that is otherwise worth keeping. `feedback delete` is the blunter answer that takes the whole report with it.",
+			ZH: "只删掉其中一条，用于一条本身值得保留的会话里混进来的垃圾内容。要连整条反馈一起删，用 `feedback delete`。",
+		},
+		Args: []Arg{
+			{Name: "feedback-id", Hint: Text{EN: "from feedback list", ZH: "来自 feedback list"}, Required: true},
+			{Name: "reply-id", Hint: Text{EN: "from feedback show", ZH: "来自 feedback show"}, Required: true},
+		},
+		Examples:    []string{"feedback reply delete 01H9Z… 01H9A… --yes", "feedback reply delete 01H9Z… 01H9A… -y"},
+		SeeAlso:     []string{"feedback show", "feedback delete"},
+		Permission:  "feedback",
+		Destructive: true,
+		Endpoints:   []string{"DELETE /api/admin/feedback/{id}/replies/{reply}"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			if rt.NArg() < 2 {
+				if rt.Session.Lang == "zh" {
+					return rt.Errorf("需要反馈 id 和回复 id。")
+				}
+				return rt.Errorf("a feedback id and a reply id are required")
+			}
+			path := "/api/admin/feedback/" + url.PathEscape(rt.Arg(0)) + "/replies/" + url.PathEscape(rt.Arg(1))
+			if _, _, err := rt.Call(http.MethodDelete, path, nil); err != nil {
+				return err
+			}
+			if rt.Session.Lang == "zh" {
+				rt.Printf("已删除回复 %s。\n", rt.Arg(1))
+			} else {
+				rt.Printf("deleted reply %s.\n", rt.Arg(1))
+			}
+			return nil
+		},
 	})
 
 	registerCommand(Command{

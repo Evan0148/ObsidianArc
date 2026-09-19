@@ -1,29 +1,33 @@
 <script setup lang="ts">
 // Where somebody tells the operator that something is broken, or that it
-// could be better.
+// could be better — and where they read what came back.
 //
-// A column beside the chat like every other panel here, and the form is the
-// whole of it: two questions with two or three answers each, a title, and a
+// Two screens in one column, the way the keys panel edits a row: the form,
+// and the conversation on one report. A second panel beside the first would
+// say "you have left the place you were", which is not what opening your own
+// report is.
+//
+// The form is two questions with two or three answers each, a title, and a
 // box big enough that a real description does not feel unwelcome. The
 // segmented controls are there rather than selects because every option fits
 // on screen — a menu that has to be opened to show two choices is a menu that
 // exists to hide one of them.
 //
-// Below the form is what this account has already sent, with the status an
-// administrator has put on it. That list is the reason this is not a mail
-// form: it is the only way somebody can see that their report arrived and
-// what came of it, which is also what stops the same report arriving four
-// times.
+// Everything anybody writes here is Markdown, drawn by the transcript's own
+// renderer: it builds nodes and never assembles an HTML string, so an answer
+// from an operator is safe to draw in a reader's page for the same reason a
+// model's answer is.
 
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ApiError } from '@/api/client';
 import {
-  listFeedback, sendFeedback,
-  type Feedback, type FeedbackKind, type FeedbackPriority,
+  fetchThread, listFeedback, replyToFeedback, sendFeedback,
+  type Feedback, type FeedbackKind, type FeedbackPriority, type FeedbackThread,
 } from '@/api/feedback';
 import OaBadge from '@/components/OaBadge.vue';
 import OaIconButton from '@/components/OaIconButton.vue';
+import OaMarkdown from '@/components/OaMarkdown.vue';
 import OaOverlay from '@/components/OaOverlay.vue';
 import OaPanel from '@/components/OaPanel.vue';
 import OaTextArea from '@/components/OaTextArea.vue';
@@ -31,7 +35,8 @@ import OaTextField from '@/components/OaTextField.vue';
 import OaTurnstile from '@/components/OaTurnstile.vue';
 import { t, type StringKey } from '@/composables/useI18n';
 import { IconClose, IconLock } from '@/icons';
-import { relativeTime } from '@/lib/format';
+import { absoluteTime, relativeTime } from '@/lib/format';
+import { refreshFeedbackUnread } from '@/stores/feedback';
 import { siteInfo } from '@/stores/session';
 
 const KINDS: Array<{ value: FeedbackKind; label: StringKey }> = [
@@ -58,6 +63,11 @@ const loaded = ref(false);
 const busy = ref(false);
 const error = ref('');
 const sent = ref(false);
+
+/** The report being read, or null while the form is on screen. */
+const thread = ref<FeedbackThread | null>(null);
+const threadBusy = ref(false);
+const answer = ref('');
 
 const titleField = ref<InstanceType<typeof OaTextField> | null>(null);
 const guard = ref<InstanceType<typeof OaTurnstile> | null>(null);
@@ -162,6 +172,54 @@ function touched(): void {
   sent.value = false;
 }
 
+// --- the conversation on one report ------------------------------------------
+
+/**
+ * Opening a report is also what marks its answer read — on the server, in the
+ * row behind this panel, and in the dot the account menu draws from, so the
+ * three cannot disagree about whether this reader has seen it.
+ */
+async function open(record: Feedback): Promise<void> {
+  error.value = '';
+  threadBusy.value = true;
+  answer.value = '';
+  try {
+    thread.value = await fetchThread(record.id);
+    const row = mine.value.find((item) => item.id === record.id);
+    if (row) row.author_unread = false;
+    void refreshFeedbackUnread();
+  } catch (failure) {
+    error.value = failure instanceof ApiError ? failure.message : t('failed');
+  } finally {
+    threadBusy.value = false;
+  }
+}
+
+function back(): void {
+  thread.value = null;
+  error.value = '';
+}
+
+async function reply(): Promise<void> {
+  const current = thread.value;
+  const text = answer.value.trim();
+  if (!current || !text || threadBusy.value) return;
+  threadBusy.value = true;
+  error.value = '';
+  try {
+    const record = await replyToFeedback(current.feedback.id, text);
+    current.replies.push(record);
+    current.feedback.replies = current.replies.length;
+    answer.value = '';
+    // The list behind the thread carries the count and the status badge.
+    await refresh();
+  } catch (failure) {
+    error.value = failure instanceof ApiError ? failure.message : t('failed');
+  } finally {
+    threadBusy.value = false;
+  }
+}
+
 function kindLabel(record: Feedback): string {
   return t(record.kind === 'bug' ? 'feedbackKindBug' : 'feedbackKindIdea');
 }
@@ -170,96 +228,167 @@ function priorityLabel(value: FeedbackPriority): string {
   return t(PRIORITIES.find((entry) => entry.value === value)!.label);
 }
 
+function statusLabel(record: Feedback): string {
+  return t(record.status === 'resolved' ? 'feedbackStatusResolved' : 'feedbackStatusOpen');
+}
+
 onMounted(() => void refresh());
 </script>
 
 <template>
+  <!-- One column, two screens. The footer belongs to the form; the thread
+       saves itself, so it has none. -->
   <OaPanel
-    :title="t('feedback')"
+    :title="thread ? thread.feedback.title : t('feedback')"
+    :back="!!thread"
+    :footer="!thread"
     :confirm-label="t('feedbackSend')"
     :confirmable="!full"
     :width="480"
     :busy="busy"
     :error="error"
     @close="router.push('/')"
+    @back="back"
     @confirm="send"
   >
-    <p class="oa-field-hint">{{ t('feedbackIntro') }}</p>
-
-    <div class="oa-field">
-      <span class="oa-field-label">{{ t('feedbackKind') }}</span>
-      <div class="oa-segmented">
-        <button
-          v-for="entry in KINDS"
-          :key="entry.value"
-          type="button"
-          class="oa-segmented-option"
-          :class="{ active: kind === entry.value }"
-          @click="kind = entry.value; touched()"
-        >{{ t(entry.label) }}</button>
+    <template v-if="thread">
+      <div class="oa-feedback-detail-badges">
+        <OaBadge tone="muted">{{ kindLabel(thread.feedback) }}</OaBadge>
+        <OaBadge :tone="thread.feedback.priority === 'high' ? 'warning' : 'muted'">
+          {{ priorityLabel(thread.feedback.priority) }}
+        </OaBadge>
+        <OaBadge :tone="thread.feedback.status === 'resolved' ? 'muted' : 'default'">
+          {{ statusLabel(thread.feedback) }}
+        </OaBadge>
       </div>
-    </div>
 
-    <div class="oa-field">
-      <span class="oa-field-label">{{ t('feedbackPriority') }}</span>
-      <div class="oa-segmented">
-        <button
-          v-for="entry in PRIORITIES"
-          :key="entry.value"
-          type="button"
-          class="oa-segmented-option"
-          :class="{ active: priority === entry.value }"
-          @click="priority = entry.value; touched()"
-        >{{ t(entry.label) }}</button>
+      <div class="oa-thread">
+        <!-- The report itself is the first thing said, so it is drawn as the
+             first turn rather than as a header above the conversation. -->
+        <article class="oa-thread-turn mine">
+          <header class="oa-thread-who">
+            <span>{{ t('feedbackYou') }}</span>
+            <time :title="absoluteTime(thread.feedback.created_at)">
+              {{ relativeTime(thread.feedback.created_at) }}
+            </time>
+          </header>
+          <OaMarkdown class="ai-answer oa-thread-body" :text="thread.feedback.body" />
+        </article>
+
+        <article
+          v-for="turn in thread.replies"
+          :key="turn.id"
+          class="oa-thread-turn"
+          :class="turn.from_staff ? 'staff' : 'mine'"
+        >
+          <header class="oa-thread-who">
+            <span>{{ turn.from_staff ? t('feedbackFromStaff') : t('feedbackYou') }}</span>
+            <time :title="absoluteTime(turn.created_at)">{{ relativeTime(turn.created_at) }}</time>
+          </header>
+          <OaMarkdown class="ai-answer oa-thread-body" :text="turn.body" />
+        </article>
       </div>
-    </div>
 
-    <OaTextField
-      ref="titleField"
-      v-model="title"
-      :label="t('feedbackTitleLabel')"
-      :placeholder="t('feedbackTitlePlaceholder')"
-      :max-length="120"
-      @update:model-value="touched"
-    />
+      <OaTextArea
+        v-model="answer"
+        class="oa-feedback-answer"
+        :label="t('feedbackReply')"
+        :placeholder="t('feedbackReplyPlaceholder')"
+        :hint="t('feedbackMarkdownHint')"
+        :rows="5"
+      />
+      <button
+        type="button"
+        class="oa-btn primary"
+        :disabled="threadBusy || !answer.trim()"
+        @click="reply"
+      >{{ threadBusy ? '…' : t('feedbackReplySend') }}</button>
+    </template>
 
-    <!-- Deliberately tall. A three-line box tells somebody to be brief, and
-         the thing that makes a report worth having is the part they would
-         have left out. -->
-    <OaTextArea
-      v-model="body"
-      class="oa-feedback-body"
-      :label="t('feedbackBodyLabel')"
-      :placeholder="t('feedbackBodyPlaceholder')"
-      :hint="t('feedbackBodyHint')"
-      :rows="12"
-      @update:model-value="touched"
-    />
+    <template v-else>
+      <p class="oa-field-hint">{{ t('feedbackIntro') }}</p>
 
-    <p v-if="sent" class="oa-feedback-sent">{{ t('feedbackSent') }}</p>
-    <p v-else-if="full" class="oa-feedback-full">{{ t('feedbackNoneLeft') }}</p>
-    <p v-else-if="loaded" class="oa-field-hint">{{ t('feedbackRemaining', { count: remaining }) }}</p>
+      <div class="oa-field">
+        <span class="oa-field-label">{{ t('feedbackKind') }}</span>
+        <div class="oa-segmented">
+          <button
+            v-for="entry in KINDS"
+            :key="entry.value"
+            type="button"
+            class="oa-segmented-option"
+            :class="{ active: kind === entry.value }"
+            @click="kind = entry.value; touched()"
+          >{{ t(entry.label) }}</button>
+        </div>
+      </div>
 
-    <section class="oa-feedback-mine">
-      <h3 class="oa-panel-section-title">{{ t('feedbackMine') }}</h3>
-      <p v-if="!loaded" class="oa-menu-empty">{{ t('loading') }}</p>
-      <p v-else-if="!mine.length" class="oa-menu-empty">{{ t('feedbackMineEmpty') }}</p>
-      <ul v-else class="oa-feedback-list">
-        <li v-for="record in mine" :key="record.id" class="oa-feedback-item">
-          <div class="oa-feedback-item-head">
-            <span class="oa-feedback-item-title">{{ record.title }}</span>
-            <OaBadge :tone="record.status === 'resolved' ? 'muted' : 'default'">
-              {{ t(record.status === 'resolved' ? 'feedbackStatusResolved' : 'feedbackStatusOpen') }}
-            </OaBadge>
-          </div>
-          <div class="oa-feedback-item-meta">
-            <span>{{ kindLabel(record) }}</span>
-            <span>{{ priorityLabel(record.priority) }}</span>
-            <span>{{ relativeTime(record.created_at) }}</span>
-          </div>
-        </li>
-      </ul>
-    </section>
+      <div class="oa-field">
+        <span class="oa-field-label">{{ t('feedbackPriority') }}</span>
+        <div class="oa-segmented">
+          <button
+            v-for="entry in PRIORITIES"
+            :key="entry.value"
+            type="button"
+            class="oa-segmented-option"
+            :class="{ active: priority === entry.value }"
+            @click="priority = entry.value; touched()"
+          >{{ t(entry.label) }}</button>
+        </div>
+      </div>
+
+      <OaTextField
+        ref="titleField"
+        v-model="title"
+        :label="t('feedbackTitleLabel')"
+        :placeholder="t('feedbackTitlePlaceholder')"
+        :max-length="120"
+        @update:model-value="touched"
+      />
+
+      <!-- Deliberately tall. A three-line box tells somebody to be brief, and
+           the thing that makes a report worth having is the part they would
+           have left out. -->
+      <OaTextArea
+        v-model="body"
+        class="oa-feedback-body"
+        :label="t('feedbackBodyLabel')"
+        :placeholder="t('feedbackBodyPlaceholder')"
+        :hint="t('feedbackMarkdownHint')"
+        :rows="12"
+        @update:model-value="touched"
+      />
+
+      <p v-if="sent" class="oa-feedback-sent">{{ t('feedbackSent') }}</p>
+      <p v-else-if="full" class="oa-feedback-full">{{ t('feedbackNoneLeft') }}</p>
+      <p v-else-if="loaded" class="oa-field-hint">{{ t('feedbackRemaining', { count: remaining }) }}</p>
+
+      <section class="oa-feedback-mine">
+        <h3 class="oa-panel-section-title">{{ t('feedbackMine') }}</h3>
+        <p v-if="loaded && mine.length" class="oa-field-hint">{{ t('feedbackMineHint') }}</p>
+        <p v-if="!loaded" class="oa-menu-empty">{{ t('loading') }}</p>
+        <p v-else-if="!mine.length" class="oa-menu-empty">{{ t('feedbackMineEmpty') }}</p>
+        <ul v-else class="oa-feedback-list">
+          <li v-for="record in mine" :key="record.id">
+            <!-- A button, because every one of them opens the conversation. -->
+            <button type="button" class="oa-feedback-item" @click="open(record)">
+              <span class="oa-feedback-item-head">
+                <span v-if="record.author_unread" class="oa-menu-unread" :title="t('feedbackHasReply')" />
+                <span class="oa-feedback-item-title">{{ record.title }}</span>
+                <OaBadge :tone="record.status === 'resolved' ? 'muted' : 'default'">
+                  {{ statusLabel(record) }}
+                </OaBadge>
+              </span>
+              <span class="oa-feedback-item-meta">
+                <span>{{ kindLabel(record) }}</span>
+                <span>{{ priorityLabel(record.priority) }}</span>
+                <span v-if="record.replies">{{ t('feedbackReplyCount', { count: record.replies }) }}</span>
+                <span>{{ relativeTime(record.created_at) }}</span>
+              </span>
+            </button>
+          </li>
+        </ul>
+      </section>
+    </template>
   </OaPanel>
 
   <!-- Where the operator asked for one. The daily cap already holds one

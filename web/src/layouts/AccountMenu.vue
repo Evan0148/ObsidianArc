@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { logout, type Account } from '@/api/auth';
 import OaAvatar from '@/components/OaAvatar.vue';
@@ -7,11 +8,17 @@ import OaMenuItem from '@/components/OaMenuItem.vue';
 import { t } from '@/composables/useI18n';
 import { IconArchive, IconChart, IconGear, IconImage, IconInfo, IconKey, IconLogout, IconMessage, IconPulse, IconSliders } from '@/icons';
 import { displayName } from '@/lib/account';
+import { feedbackUnread, forgetFeedbackUnread, refreshFeedbackUnread } from '@/stores/feedback';
 import { forget, siteInfo, isAdmin, canAdmin } from '@/stores/session';
 
 const props = defineProps<{ account: Account }>();
 
 const router = useRouter();
+
+// Once per page load, like the bell beside it. An answer that arrives while
+// somebody is sitting on the page is found the next time they move, which is
+// the same bargain every other unread mark here makes.
+onMounted(() => void refreshFeedbackUnread());
 
 function go(close: () => void, path: string): void {
   close();
@@ -26,6 +33,7 @@ async function signOut(close: () => void): Promise<void> {
     // The cookie may already be gone. Either way the local state goes.
   }
   forget();
+  forgetFeedbackUnread();
   await router.replace('/login');
 }
 </script>
@@ -36,12 +44,15 @@ async function signOut(close: () => void): Promise<void> {
       <button
         type="button"
         class="oa-account-btn"
-        :title="t('account')"
+        :title="feedbackUnread ? `${t('account')} · ${t('feedbackHasReply')}` : t('account')"
         aria-haspopup="menu"
         :aria-expanded="open ? 'true' : 'false'"
         @click="toggle"
       >
         <OaAvatar :account="props.account" />
+        <!-- A dot rather than a count, for the reason the bell carries one:
+             how many answers are waiting is not a number anybody acts on. -->
+        <span v-if="feedbackUnread" class="oa-account-dot" />
         <span class="oa-account-name">{{ displayName(props.account) }}</span>
       </button>
     </template>
@@ -92,6 +103,9 @@ async function signOut(close: () => void): Promise<void> {
       </OaMenuItem>
       <OaMenuItem :title="t('feedback')" @click="go(close, '/feedback')">
         <template #leading><IconMessage :size="14" /></template>
+        <template v-if="feedbackUnread" #trailing>
+          <span class="oa-menu-unread" :title="t('feedbackHasReply')" />
+        </template>
       </OaMenuItem>
       <OaMenuItem :title="t('about')" @click="go(close, '/about')">
         <template #leading><IconInfo :size="14" /></template>

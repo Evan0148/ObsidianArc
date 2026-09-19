@@ -132,3 +132,120 @@ func TestTheListSaysHowMuchOfTheDayIsLeft(t *testing.T) {
 		t.Errorf("list body = %s, want %d remaining", body, MaxPerDay-2)
 	}
 }
+
+func get(t *testing.T, mux *http.ServeMux, actorCtx context.Context, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodGet, path, nil).WithContext(actorCtx)
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+	return recorder
+}
+
+// Opening a thread is what "I have read the answer" means. It is cleared on
+// the read rather than by a second call the client has to remember, because a
+// client that forgot would leave a mark on somebody's menu for good.
+func TestReadingAThreadClearsTheAuthorsMark(t *testing.T) {
+	store, author, staff := fixture(t)
+	handlers := NewHandlers(store)
+	mux := http.NewServeMux()
+	handlers.Routes(mux)
+	ctx := auth.WithUser(context.Background(), author)
+
+	record, err := store.Create(context.Background(), author.ID, report(KindBug, PriorityLow, "Something"))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := store.AddReply(context.Background(), ReplyInput{
+		FeedbackID: record.ID, UserID: staff.ID, FromStaff: true, Body: "Answered.",
+	}); err != nil {
+		t.Fatalf("reply: %v", err)
+	}
+
+	if body := get(t, mux, ctx, "/api/feedback/unread").Body.String(); !strings.Contains(body, `"unread":1`) {
+		t.Errorf("unread before reading = %s, want 1", body)
+	}
+
+	response := get(t, mux, ctx, "/api/feedback/"+record.ID)
+	if response.Code != http.StatusOK {
+		t.Fatalf("thread = %d %s", response.Code, response.Body.String())
+	}
+	// The reply travels with the thread, and the flag the client is handed is
+	// already the post-read one.
+	if body := response.Body.String(); !strings.Contains(body, "Answered.") ||
+		!strings.Contains(body, `"author_unread":false`) {
+		t.Errorf("thread body = %s", body)
+	}
+	if body := get(t, mux, ctx, "/api/feedback/unread").Body.String(); !strings.Contains(body, `"unread":0`) {
+		t.Errorf("unread after reading = %s, want 0", body)
+	}
+}
+
+// Somebody else's thread is absent, not forbidden — the same answer the
+// author's own queries give, because the scope is in the WHERE clause.
+func TestAThreadBelongingToSomebodyElseIsAbsent(t *testing.T) {
+	store, author, stranger := fixture(t)
+	handlers := NewHandlers(store)
+	mux := http.NewServeMux()
+	handlers.Routes(mux)
+
+	record, err := store.Create(context.Background(), author.ID, report(KindBug, PriorityLow, "Mine"))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	strangerCtx := auth.WithUser(context.Background(), stranger)
+	if response := get(t, mux, strangerCtx, "/api/feedback/"+record.ID); response.Code != http.StatusNotFound {
+		t.Errorf("read = %d, want 404", response.Code)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/feedback/"+record.ID+"/replies",
+		strings.NewReader(`{"body":"let me in"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request = request.WithContext(strangerCtx)
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusNotFound {
+		t.Errorf("reply = %d %s, want 404", recorder.Code, recorder.Body.String())
+	}
+	if replies, _ := store.Replies(context.Background(), nil, record.ID); len(replies) != 0 {
+		t.Errorf("%d replies were written by somebody who cannot read the thread", len(replies))
+	}
+}
+
+// The author answering their own thread is the author speaking, whatever
+// else that account may be allowed to do elsewhere in the instance. The side
+// is decided by which endpoint was reached, and the decoder refuses a body
+// that even tries to say otherwise.
+func TestAnAuthorsOwnReplyIsNeverMarkedAsStaff(t *testing.T) {
+	store, author, _ := fixture(t)
+	handlers := NewHandlers(store)
+	mux := http.NewServeMux()
+	handlers.Routes(mux)
+	ctx := auth.WithUser(context.Background(), author)
+
+	record, err := store.Create(context.Background(), author.ID, report(KindBug, PriorityLow, "Mine"))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	reply := func(body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/api/feedback/"+record.ID+"/replies",
+			strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		request = request.WithContext(ctx)
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, request)
+		return recorder
+	}
+
+	if asking := reply(`{"body":"more detail","from_staff":true}`); asking.Code != http.StatusBadRequest {
+		t.Errorf("a body claiming staff = %d %s, want 400", asking.Code, asking.Body.String())
+	}
+	plain := reply(`{"body":"more detail"}`)
+	if plain.Code != http.StatusCreated {
+		t.Fatalf("reply = %d %s", plain.Code, plain.Body.String())
+	}
+	if body := plain.Body.String(); !strings.Contains(body, `"from_staff":false`) {
+		t.Errorf("reply = %s, want from_staff false", body)
+	}
+}

@@ -6,10 +6,13 @@
 // able to look up afterwards, and a report that arrives in one operator's
 // mailbox is a report the next operator never sees.
 //
-// The body is plain text held as written. It is shown only in the
-// backoffice, to an administrator, inside a Vue template that escapes what
-// it interpolates — so nothing here renders markup, and nothing here needs
-// to sanitise any.
+// A report is a conversation: both sides reply, and both write Markdown. It
+// is stored exactly as typed and rendered by `chat/markdown.ts`, which builds
+// nodes and never assembles an HTML string — so there is nothing to sanitise
+// on the way in, and a report written by a stranger is safe to render in the
+// operator's own screen. That renderer also declines to emit <img>, which is
+// what stops a reported "bug" from turning every operator who reads it into a
+// hit on somebody's tracker.
 package feedback
 
 import (
@@ -97,6 +100,11 @@ const (
 	// defects will meet it, low enough that a bored account cannot fill the
 	// operator's list faster than it can be read.
 	MaxPerDay = 10
+	// Per thread, both sides together. A conversation that has run this long
+	// is one that should have become a defect somewhere else, and the cap is
+	// what stops a thread growing without bound in a table everybody's list
+	// query touches.
+	MaxRepliesPerThread = 50
 )
 
 // DayWindow is the span MaxPerDay is counted over.
@@ -110,6 +118,7 @@ var (
 	ErrInvalidPrio   = errors.New("feedback: unknown priority")
 	ErrInvalidStatus = errors.New("feedback: unknown status")
 	ErrTooMany       = errors.New("feedback: this account has sent its daily maximum")
+	ErrThreadFull    = errors.New("feedback: this conversation has reached its maximum length")
 )
 
 type Feedback struct {
@@ -123,10 +132,40 @@ type Feedback struct {
 	CreatedAt int64    `json:"created_at"`
 	UpdatedAt int64    `json:"updated_at"`
 
+	// How long the conversation is, and whether the side reading this list
+	// has seen its last word. AuthorUnread is what puts a dot on the reader's
+	// account menu; OperatorUnread is what marks a thread as waiting for an
+	// answer in the backoffice.
+	Replies        int  `json:"replies"`
+	AuthorUnread   bool `json:"author_unread"`
+	OperatorUnread bool `json:"operator_unread"`
+
 	// Filled for the operator's listing, empty for the author's own — they
 	// know who they are, and the join is not free.
 	Username string `json:"username,omitempty"`
 	Nickname string `json:"nickname,omitempty"`
+}
+
+// Reply is one turn in a thread. Both sides write Markdown, and it is stored
+// exactly as typed: it is rendered by the same node-building renderer the
+// transcript uses, which never assembles an HTML string, so there is nothing
+// here to sanitise on the way in and nothing to regret on the way out.
+type Reply struct {
+	ID         string `json:"id"`
+	FeedbackID string `json:"feedback_id"`
+	UserID     string `json:"user_id"`
+	FromStaff  bool   `json:"from_staff"`
+	Body       string `json:"body"`
+	CreatedAt  int64  `json:"created_at"`
+
+	Username string `json:"username,omitempty"`
+	Nickname string `json:"nickname,omitempty"`
+}
+
+// Thread is a report and everything said about it since.
+type Thread struct {
+	Feedback Feedback `json:"feedback"`
+	Replies  []Reply  `json:"replies"`
 }
 
 type Store struct{ db *database.DB }
@@ -134,7 +173,35 @@ type Store struct{ db *database.DB }
 func NewStore(db *database.DB) *Store { return &Store{db: db} }
 
 const columns = `f.id, f.user_id, f.kind, f.priority, f.status, f.title, f.body,
-	f.created_at, f.updated_at`
+	f.created_at, f.updated_at, f.author_unread, f.operator_unread,
+	(SELECT COUNT(*) FROM feedback_replies r WHERE r.feedback_id = f.id)`
+
+// Counted rather than kept in a column on the row: a counter maintained by
+// hand is a counter that drifts, and this one is read by queries that are
+// already touching the table it counts.
+const replyColumns = `p.id, p.feedback_id, p.user_id, p.from_staff, p.body, p.created_at`
+
+type rowScanner interface{ Scan(dest ...any) error }
+
+// scanFeedback reads `columns` in order, with whatever the caller's query
+// appended after them — one place that knows the order, rather than three
+// that have to be corrected together every time a column is added.
+func scanFeedback(row rowScanner, record *Feedback, extra ...any) error {
+	dest := []any{
+		&record.ID, &record.UserID, &record.Kind, &record.Priority, &record.Status,
+		&record.Title, &record.Body, &record.CreatedAt, &record.UpdatedAt,
+		&record.AuthorUnread, &record.OperatorUnread, &record.Replies,
+	}
+	return row.Scan(append(dest, extra...)...)
+}
+
+func scanReply(row rowScanner, record *Reply, extra ...any) error {
+	dest := []any{
+		&record.ID, &record.FeedbackID, &record.UserID,
+		&record.FromStaff, &record.Body, &record.CreatedAt,
+	}
+	return row.Scan(append(dest, extra...)...)
+}
 
 func (s *Store) pick(q database.Queryer) database.Queryer {
 	if q == nil {
@@ -317,9 +384,7 @@ func (s *Store) List(ctx context.Context, q database.Queryer, filter Filter) (re
 	records = []Feedback{}
 	for rows.Next() {
 		var record Feedback
-		if err := rows.Scan(&record.ID, &record.UserID, &record.Kind, &record.Priority,
-			&record.Status, &record.Title, &record.Body, &record.CreatedAt, &record.UpdatedAt,
-			&record.Username, &record.Nickname); err != nil {
+		if err := scanFeedback(rows, &record, &record.Username, &record.Nickname); err != nil {
 			return nil, 0, fmt.Errorf("feedback: scan: %w", err)
 		}
 		records = append(records, record)
@@ -342,8 +407,7 @@ func (s *Store) ListFor(ctx context.Context, q database.Queryer, userID string) 
 	out := []Feedback{}
 	for rows.Next() {
 		var record Feedback
-		if err := rows.Scan(&record.ID, &record.UserID, &record.Kind, &record.Priority,
-			&record.Status, &record.Title, &record.Body, &record.CreatedAt, &record.UpdatedAt); err != nil {
+		if err := scanFeedback(rows, &record); err != nil {
 			return nil, fmt.Errorf("feedback: scan: %w", err)
 		}
 		out = append(out, record)
@@ -353,12 +417,10 @@ func (s *Store) ListFor(ctx context.Context, q database.Queryer, userID string) 
 
 func (s *Store) ByID(ctx context.Context, q database.Queryer, feedbackID string) (Feedback, error) {
 	var record Feedback
-	err := s.pick(q).QueryRow(ctx,
+	err := scanFeedback(s.pick(q).QueryRow(ctx,
 		`SELECT `+columns+`, u.username, u.nickname
-		 FROM feedback f JOIN users u ON u.id = f.user_id WHERE f.id = ?`, feedbackID).
-		Scan(&record.ID, &record.UserID, &record.Kind, &record.Priority, &record.Status,
-			&record.Title, &record.Body, &record.CreatedAt, &record.UpdatedAt,
-			&record.Username, &record.Nickname)
+		 FROM feedback f JOIN users u ON u.id = f.user_id WHERE f.id = ?`, feedbackID),
+		&record, &record.Username, &record.Nickname)
 	if err != nil {
 		if database.IsNotFound(err) {
 			return Feedback{}, ErrNotFound
@@ -366,6 +428,192 @@ func (s *Store) ByID(ctx context.Context, q database.Queryer, feedbackID string)
 		return Feedback{}, fmt.Errorf("feedback: by id: %w", err)
 	}
 	return record, nil
+}
+
+// ReplyInput is one turn about to be written.
+type ReplyInput struct {
+	FeedbackID string
+	// Who is writing, and which side of the conversation they are on.
+	// FromStaff is recorded rather than derived later: somebody who answers
+	// reports today and loses the grant tomorrow still said it as an operator.
+	UserID    string
+	FromStaff bool
+	Body      string
+	// RequireOwner refuses the write unless the thread belongs to UserID. The
+	// author's own endpoint sets it; the operator's does not, because an
+	// operator answers other people's threads for a living.
+	RequireOwner bool
+}
+
+// AddReply writes one turn and moves the thread's two unread flags.
+//
+// The length cap is a check followed by a write, so it holds the thread's own
+// row across both — the same lock the daily cap takes on the author's row,
+// against the same failure: two replies arriving together, both seeing the
+// last free slot.
+func (s *Store) AddReply(ctx context.Context, in ReplyInput) (Reply, error) {
+	body := strings.TrimSpace(in.Body)
+	if body == "" || utf8.RuneCountInString(body) > MaxBodyChars {
+		return Reply{}, ErrInvalidBody
+	}
+
+	now := time.Now().UnixMilli()
+	record := Reply{
+		ID:         id.New(),
+		FeedbackID: in.FeedbackID,
+		UserID:     in.UserID,
+		FromStaff:  in.FromStaff,
+		Body:       body,
+		CreatedAt:  now,
+	}
+
+	err := s.db.Tx(ctx, func(tx *database.Tx) error {
+		locked, err := tx.Exec(ctx,
+			`UPDATE feedback SET updated_at = updated_at WHERE id = ?`, in.FeedbackID)
+		if err != nil {
+			return fmt.Errorf("feedback: lock thread: %w", err)
+		}
+		if affected, rowsErr := locked.RowsAffected(); rowsErr == nil && affected == 0 {
+			return ErrNotFound
+		}
+
+		// Ownership is read inside the lock rather than before it, so a
+		// thread cannot be answered on the strength of a check made against a
+		// row that has since been deleted.
+		var owner string
+		if err := tx.QueryRow(ctx,
+			`SELECT user_id FROM feedback WHERE id = ?`, in.FeedbackID).Scan(&owner); err != nil {
+			if database.IsNotFound(err) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("feedback: read owner: %w", err)
+		}
+		// Reported as absent rather than as forbidden, which is also all the
+		// author's own queries know: they are scoped by owner in the WHERE
+		// clause, so there is nothing there that can tell the difference.
+		if in.RequireOwner && owner != in.UserID {
+			return ErrNotFound
+		}
+
+		var count int
+		if err := tx.QueryRow(ctx,
+			`SELECT COUNT(*) FROM feedback_replies WHERE feedback_id = ?`, in.FeedbackID).Scan(&count); err != nil {
+			return fmt.Errorf("feedback: count replies: %w", err)
+		}
+		if count >= MaxRepliesPerThread {
+			return ErrThreadFull
+		}
+
+		if _, err := tx.Exec(ctx, `INSERT INTO feedback_replies
+			(id, feedback_id, user_id, from_staff, body, created_at)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			record.ID, record.FeedbackID, record.UserID, record.FromStaff,
+			record.Body, record.CreatedAt); err != nil {
+			return fmt.Errorf("feedback: insert reply: %w", err)
+		}
+
+		// Whoever just wrote has by definition read everything before it, so
+		// one statement sets both flags: the other side is now owed a look,
+		// and this side is not.
+		_, err = tx.Exec(ctx,
+			`UPDATE feedback SET author_unread = ?, operator_unread = ?, updated_at = ? WHERE id = ?`,
+			in.FromStaff, !in.FromStaff, now, in.FeedbackID)
+		if err != nil {
+			return fmt.Errorf("feedback: mark unread: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return Reply{}, err
+	}
+	return record, nil
+}
+
+// Replies is one thread's turns, oldest first — the order they were said in,
+// which is the only order a conversation reads in.
+func (s *Store) Replies(ctx context.Context, q database.Queryer, feedbackID string) ([]Reply, error) {
+	rows, err := s.pick(q).Query(ctx,
+		`SELECT `+replyColumns+`, u.username, u.nickname
+		 FROM feedback_replies p JOIN users u ON u.id = p.user_id
+		 WHERE p.feedback_id = ? ORDER BY p.created_at`, feedbackID)
+	if err != nil {
+		return nil, fmt.Errorf("feedback: replies: %w", err)
+	}
+	defer rows.Close()
+
+	out := []Reply{}
+	for rows.Next() {
+		var record Reply
+		if err := scanReply(rows, &record, &record.Username, &record.Nickname); err != nil {
+			return nil, fmt.Errorf("feedback: scan reply: %w", err)
+		}
+		out = append(out, record)
+	}
+	return out, rows.Err()
+}
+
+// Thread is one report and everything said about it.
+//
+// ownerID scopes it to one author — the reader's own endpoint passes theirs,
+// and the operator's passes "" — so a thread that belongs to somebody else is
+// reported as absent rather than as forbidden, which is the same answer the
+// author's other queries give.
+func (s *Store) Thread(ctx context.Context, q database.Queryer, feedbackID, ownerID string) (Thread, error) {
+	record, err := s.ByID(ctx, q, feedbackID)
+	if err != nil {
+		return Thread{}, err
+	}
+	if ownerID != "" && record.UserID != ownerID {
+		return Thread{}, ErrNotFound
+	}
+	replies, err := s.Replies(ctx, q, feedbackID)
+	if err != nil {
+		return Thread{}, err
+	}
+	return Thread{Feedback: record, Replies: replies}, nil
+}
+
+// MarkSeen clears one side's unread flag, which is what opening a thread
+// means. Idempotent, and it never touches the other side's.
+func (s *Store) MarkSeen(ctx context.Context, feedbackID string, staff bool) error {
+	column := "author_unread"
+	if staff {
+		column = "operator_unread"
+	}
+	// updated_at is deliberately left alone: reading something is not a
+	// change to it, and the operator's list shows that column.
+	if _, err := s.db.Exec(ctx,
+		`UPDATE feedback SET `+column+` = ? WHERE id = ?`, false, feedbackID); err != nil {
+		return fmt.Errorf("feedback: mark seen: %w", err)
+	}
+	return nil
+}
+
+// UnreadFor is the dot on one reader's account menu: how many of their own
+// reports have an answer they have not opened yet.
+func (s *Store) UnreadFor(ctx context.Context, q database.Queryer, userID string) (int, error) {
+	var count int
+	err := s.pick(q).QueryRow(ctx,
+		`SELECT COUNT(*) FROM feedback WHERE user_id = ? AND author_unread = ?`,
+		userID, true).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("feedback: unread: %w", err)
+	}
+	return count, nil
+}
+
+// DeleteReply removes one turn. For spam inside an otherwise real thread —
+// deleting the whole report is the other, blunter answer.
+func (s *Store) DeleteReply(ctx context.Context, feedbackID, replyID string) error {
+	result, err := s.db.Exec(ctx,
+		`DELETE FROM feedback_replies WHERE id = ? AND feedback_id = ?`, replyID, feedbackID)
+	if err != nil {
+		return fmt.Errorf("feedback: delete reply: %w", err)
+	}
+	if affected, rowsErr := result.RowsAffected(); rowsErr == nil && affected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // SetStatus is the whole of what an operator can change. The report itself
@@ -405,6 +653,9 @@ type Summary struct {
 	Bugs     int `json:"bugs"`
 	Ideas    int `json:"ideas"`
 	HighOpen int `json:"high_open"`
+	// Threads whose last word is the reader's. The one number on this screen
+	// that is about the operator rather than about the instance.
+	Awaiting int `json:"awaiting"`
 }
 
 // Counts answers the summary in one round trip. SUM(CASE …) rather than
@@ -419,11 +670,12 @@ func (s *Store) Counts(ctx context.Context, q database.Queryer) (Summary, error)
 		COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0),
 		COALESCE(SUM(CASE WHEN kind = ? THEN 1 ELSE 0 END), 0),
 		COALESCE(SUM(CASE WHEN kind = ? THEN 1 ELSE 0 END), 0),
-		COALESCE(SUM(CASE WHEN status = ? AND priority = ? THEN 1 ELSE 0 END), 0)
+		COALESCE(SUM(CASE WHEN status = ? AND priority = ? THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN operator_unread = ? THEN 1 ELSE 0 END), 0)
 		FROM feedback`,
 		string(StatusOpen), string(KindBug), string(KindIdea),
-		string(StatusOpen), string(PriorityHigh)).
-		Scan(&out.Total, &out.Open, &out.Bugs, &out.Ideas, &out.HighOpen)
+		string(StatusOpen), string(PriorityHigh), true).
+		Scan(&out.Total, &out.Open, &out.Bugs, &out.Ideas, &out.HighOpen, &out.Awaiting)
 	if err != nil {
 		return Summary{}, fmt.Errorf("feedback: counts: %w", err)
 	}
