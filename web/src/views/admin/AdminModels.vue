@@ -255,6 +255,7 @@ const form = ref({
   routeTo: '',
   reasoningStyle: '' as ReasoningStyle | '',
   tiers: [] as ReasoningTier[],
+  requestOverride: '',
   requestWeight: 0 as number | null,
   inputWeight: 1 as number | null,
   outputWeight: 1 as number | null,
@@ -305,8 +306,14 @@ function open(row: AdminModel | null, from: AdminModel | null = null): void {
   const source = row ?? from;
 
   const grants: Record<string, 'use' | 'view'> = {};
-  for (const grant of source?.group_grants ?? []) {
-    if (grant.access === 'use' || grant.access === 'view') grants[grant.group_id] = grant.access;
+  if (source?.group_grants) {
+    for (const grant of source.group_grants) {
+      if (grant.access === 'use' || grant.access === 'view') grants[grant.group_id] = grant.access;
+    }
+  } else if (!source) {
+    for (const g of groups.value) {
+      grants[g.id] = 'use';
+    }
   }
 
   form.value = {
@@ -333,6 +340,7 @@ function open(row: AdminModel | null, from: AdminModel | null = null): void {
     routeTo: source?.route_to_id ?? '',
     reasoningStyle: source?.reasoning_style ?? '',
     tiers: source?.reasoning_tiers ?? [],
+    requestOverride: source?.request_override ?? '',
     requestWeight: source?.request_weight ?? 0,
     inputWeight: source?.input_token_weight ?? 1,
     outputWeight: source?.output_token_weight ?? 1,
@@ -354,10 +362,28 @@ function duplicate(): void {
 async function save(): Promise<void> {
   busy.value = true;
   panelError.value = '';
+
+  const trimmedOverride = form.value.requestOverride.trim();
+  if (trimmedOverride) {
+    try {
+      const parsed = JSON.parse(trimmedOverride);
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        panelError.value = t('invalidRequestOverrideJSON');
+        busy.value = false;
+        return;
+      }
+    } catch {
+      panelError.value = t('invalidRequestOverrideJSON');
+      busy.value = false;
+      return;
+    }
+  }
+
   const payload: Record<string, unknown> = {
     route_to_id: form.value.routeTo,
     reasoning_style: form.value.reasoningStyle,
     reasoning_tiers: form.value.tiers,
+    request_override: trimmedOverride || '{}',
     model_id: form.value.modelID.trim(),
     api_name: form.value.apiName.trim(),
     system_prompt: form.value.systemPrompt.trim(),
@@ -565,7 +591,7 @@ async function load(): Promise<void> {
   checkDrawerTarget();
 }
 
-const DRAWER_HASHES = new Set(['#addModel', '#secCapabilities', '#secWeights', '#secGroupAccess', '#secRouting', '#secThinking']);
+const DRAWER_HASHES = new Set(['#addModel', '#secCapabilities', '#secWeights', '#secGroupAccess', '#secRouting', '#secThinking', '#secRequestOverride']);
 
 function checkDrawerTarget(): void {
   if (DRAWER_HASHES.has(route.hash) && !panelOpen.value && providers.value.length > 0) {
@@ -894,6 +920,15 @@ let sortState: SortState | null = null;
       ]"
     />
     <ReasoningTiers v-model="form.tiers" />
+
+    <OaFormSection id="secRequestOverride" :title="t('secRequestOverride')" :hint="t('requestOverrideHint')" />
+    <OaTextArea
+      v-model="form.requestOverride"
+      :label="t('requestOverride')"
+      placeholder='{"reasoning_effort": "low"}'
+      :rows="3"
+      :hint="t('requestOverrideFieldHint')"
+    />
 
     <OaFormSection id="secWeights" :title="t('secWeights')" :hint="t('weightsHint')" />
     <OaNumberField

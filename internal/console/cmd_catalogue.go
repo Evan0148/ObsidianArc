@@ -444,6 +444,8 @@ func init() {
 				{"supports_streaming", yesNo(asBoolVal(m["supports_streaming"]))},
 				{"supports_tools", yesNo(asBoolVal(m["supports_tools"]))},
 				{"supports_image_gen", yesNo(asBoolVal(m["supports_image_gen"]))},
+				{"supports_chat_image_gen", yesNo(asBoolVal(m["supports_chat_image_gen"]))},
+				{"request_override", asStr(m["request_override"])},
 				{"sort_order", fmt.Sprint(asNum(m["sort_order"]))}, {"created_at", formatMS(m["created_at"])},
 			}); err != nil {
 				return err
@@ -496,6 +498,7 @@ func init() {
 			{Name: "--supports-tools", Hint: Text{EN: "bool", ZH: "布尔值"}, Value: "BOOL"},
 			{Name: "--supports-image-gen", Hint: Text{EN: "bool", ZH: "布尔值"}, Value: "BOOL"},
 			{Name: "--supports-chat-image-gen", Hint: Text{EN: "bool", ZH: "布尔值"}, Value: "BOOL"},
+			{Name: "--request-override", Hint: Text{EN: "JSON string for request body overrides", ZH: "请求体覆写的 JSON 字符串"}, Value: "JSON"},
 		}
 	}
 
@@ -545,6 +548,7 @@ func init() {
 		body.boolv(rt, "supports-tools", "supports_tools")
 		body.boolv(rt, "supports-image-gen", "supports_image_gen")
 		body.boolv(rt, "supports-chat-image-gen", "supports_chat_image_gen")
+		body.str(rt, "request-override", "request_override")
 		return body, nil
 	}
 

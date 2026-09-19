@@ -45,8 +45,9 @@ type modelImport struct {
 	Hidden       bool   `json:"hidden"`
 	SortOrder    int    `json:"sort_order"`
 
-	ReasoningStyle adapter.ReasoningStyle `json:"reasoning_style"`
-	ReasoningTiers []model.ReasoningTier  `json:"reasoning_tiers"`
+	ReasoningStyle  adapter.ReasoningStyle `json:"reasoning_style"`
+	ReasoningTiers  []model.ReasoningTier  `json:"reasoning_tiers"`
+	RequestOverride string                 `json:"request_override,omitempty"`
 	// Resolved in a second pass, once every model in the file exists: a route
 	// may point at one further down it.
 	RouteTo *modelRef `json:"route_to"`
@@ -139,20 +140,21 @@ func (h *Handlers) importModels(w http.ResponseWriter, r *http.Request) error {
 			saved, err = h.models.Update(ctx, record.ID, updateFromImport(entry))
 		} else {
 			saved, err = h.models.Create(ctx, model.CreateInput{
-				ProviderID:     providerID,
-				ModelID:        entry.ModelID,
-				APIName:        entry.APIName,
-				SystemPrompt:   entry.SystemPrompt,
-				DisplayName:    entry.DisplayName,
-				Description:    entry.Description,
-				Avatar:         entry.Avatar,
-				Enabled:        entry.Enabled,
-				Hidden:         entry.Hidden,
-				SortOrder:      entry.SortOrder,
-				ReasoningStyle: entry.ReasoningStyle,
-				ReasoningTiers: entry.ReasoningTiers,
-				Capabilities:   entry.Capabilities,
-				Weights:        entry.Weights,
+				ProviderID:      providerID,
+				ModelID:         entry.ModelID,
+				APIName:         entry.APIName,
+				SystemPrompt:    entry.SystemPrompt,
+				DisplayName:     entry.DisplayName,
+				Description:     entry.Description,
+				Avatar:          entry.Avatar,
+				Enabled:         entry.Enabled,
+				Hidden:          entry.Hidden,
+				SortOrder:       entry.SortOrder,
+				ReasoningStyle:  entry.ReasoningStyle,
+				ReasoningTiers:  entry.ReasoningTiers,
+				RequestOverride: entry.RequestOverride,
+				Capabilities:    entry.Capabilities,
+				Weights:         entry.Weights,
 			})
 		}
 		if err != nil {
@@ -267,6 +269,7 @@ func updateFromImport(entry modelImport) model.Update {
 		SortOrder:            &entry.SortOrder,
 		ReasoningStyle:       &entry.ReasoningStyle,
 		ReasoningTiers:       &entry.ReasoningTiers,
+		RequestOverride:      &entry.RequestOverride,
 		SupportsReasoning:    &capabilities.SupportsReasoning,
 		SupportsImages:       &capabilities.SupportsImages,
 		SupportsVision:       &capabilities.SupportsVision,

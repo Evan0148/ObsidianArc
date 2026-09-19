@@ -109,6 +109,7 @@ export interface AdminModel {
   supports_tools: boolean;
   supports_image_gen: boolean;
   supports_chat_image_gen: boolean;
+  request_override?: string;
   context_window: number;
   max_output_tokens: number;
 

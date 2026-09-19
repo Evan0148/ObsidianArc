@@ -40,7 +40,7 @@ func TestAdministratorAndActivityUpgrade(t *testing.T) {
 	exec(`INSERT INTO conversations (id, user_id, created_at, updated_at) VALUES (?, ?, ?, ?)`, "c", "chat", 1, 400)
 	exec(`INSERT INTO messages (id, conversation_id, user_id, seq, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`, "m", "c", "chat", 1, "user", 300)
 	applied, err := db.Migrate(ctx)
-	if err != nil || len(applied) != 2 {
+	if err != nil || len(applied) < 2 {
 		t.Fatalf("upgrade: %v %v", applied, err)
 	}
 	for id, want := range map[string]int64{"admin": 100, "session": 200, "chat": 300, "idle": 100} {

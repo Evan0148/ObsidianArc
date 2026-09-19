@@ -807,6 +807,11 @@ export const zh: Record<StringKey, string> = {
   reasoningStyleModel: '思考参数风格',
   reasoningStyleModelHint: '仅对这个模型覆盖服务商的设置。绝大多数情况下选“继承”就对了。',
   styleInherit: '继承服务商设置',
+  secRequestOverride: 'API 请求覆写',
+  requestOverrideHint: '合并进发送给服务商的上游请求体中的 JSON 参数。',
+  requestOverride: '请求体覆写 (JSON)',
+  requestOverrideFieldHint: '任意 JSON 对象，例如 {"reasoning_effort": "low"} 或 {"temperature": 0.7}。将合并至发往服务商的请求体中。',
+  invalidRequestOverrideJSON: '请求覆写必须是合法的 JSON 对象。',
 
   // --- landing page
   secLanding: '未登录首页',

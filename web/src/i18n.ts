@@ -829,6 +829,11 @@ const en = {
   reasoningStyleModel: 'Reasoning style',
   reasoningStyleModelHint: 'Overrides the provider for this model alone. Inherit is almost always right.',
   styleInherit: 'Inherit from the provider',
+  secRequestOverride: 'API request override',
+  requestOverrideHint: 'JSON parameters merged into the outbound request body sent to the provider.',
+  requestOverride: 'Request body override (JSON)',
+  requestOverrideFieldHint: 'Arbitrary JSON object, e.g. {"reasoning_effort": "low"} or {"temperature": 0.7}. Merged into provider request body.',
+  invalidRequestOverrideJSON: 'Request override must be a valid JSON object.',
 
   // --- landing page
   secLanding: 'Front door',

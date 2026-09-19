@@ -242,6 +242,13 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     searchKeys: ['reasoningStyleModel', 'reasoningTiers'],
     keywords: ['思考配置', '推理等级', '深度思考', 'extended thinking', 'reasoning tiers', 'reasoning_effort'],
   },
+  {
+    id: 'secRequestOverride',
+    pageSlug: 'models',
+    titleKey: 'secRequestOverride',
+    searchKeys: ['requestOverride', 'requestOverrideHint'],
+    keywords: ['请求覆写', '请求体覆写', 'API覆写', 'request override', 'payload override'],
+  },
 
   // --- Availability
   {

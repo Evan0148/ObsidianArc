@@ -476,6 +476,7 @@ func (h *Handlers) buildRequest(body completionRequest, resolved model.Resolved)
 		Stream:      stream,
 		Tools:       tools,
 		ToolChoice:  choice,
+		Extra:       resolved.Upstream.Extra(),
 	}, nil
 }
 

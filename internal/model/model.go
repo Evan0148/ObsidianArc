@@ -113,9 +113,10 @@ type Model struct {
 	// Overrides the provider's reasoning style for this model alone.
 	// Empty means whatever the provider says.
 	ReasoningStyle adapter.ReasoningStyle `json:"reasoning_style"`
-	// The amounts of thinking this model offers. Empty is the built-in
-	// three, which is what every model configured before tiers existed has.
-	ReasoningTiers []ReasoningTier `json:"reasoning_tiers"`
+	ReasoningTiers []ReasoningTier        `json:"reasoning_tiers"`
+	// Extra request body parameters merged into outbound calls to the provider
+	// (e.g. {"reasoning_effort": "low"}). Valid JSON object or empty/{}
+	RequestOverride string `json:"request_override"`
 
 	Capabilities
 	Weights
@@ -134,6 +135,19 @@ type Model struct {
 	// GroupGrants lists the explicit group grants for this model. Populated in
 	// administrative listings.
 	GroupGrants []ModelGroupGrant `json:"group_grants,omitempty"`
+}
+
+// Extra returns unmarshaled JSON key-values from RequestOverride, or nil if empty.
+func (m Model) Extra() map[string]any {
+	trimmed := strings.TrimSpace(m.RequestOverride)
+	if trimmed == "" || trimmed == "{}" {
+		return nil
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &out); err != nil {
+		return nil
+	}
+	return out
 }
 
 // DefaultMaxOutput is what a turn is assumed capable of costing when a
@@ -195,12 +209,13 @@ var (
 	// Separate from ErrDuplicate: both come back from the same unique-index
 	// failure, and "already configured for this provider" would be the wrong
 	// thing to tell somebody who picked a public name that is taken.
-	ErrDuplicateAPIName = errors.New("model: another model already answers to that API name")
-	ErrInvalidAPIName   = errors.New("model: an API name cannot contain spaces")
-	ErrInvalidModelID   = errors.New("model: model id is required")
-	ErrInvalidName      = errors.New("model: display name must be 1-80 characters")
-	ErrNotPermitted     = errors.New("model: not available to this account")
-	ErrDisabled         = errors.New("model: this model is currently unavailable")
+	ErrDuplicateAPIName       = errors.New("model: another model already answers to that API name")
+	ErrInvalidAPIName         = errors.New("model: an API name cannot contain spaces")
+	ErrInvalidModelID         = errors.New("model: model id is required")
+	ErrInvalidName            = errors.New("model: display name must be 1-80 characters")
+	ErrNotPermitted           = errors.New("model: not available to this account")
+	ErrDisabled               = errors.New("model: this model is currently unavailable")
+	ErrInvalidRequestOverride = errors.New("model: request override must be a valid JSON object")
 )
 
 const (
@@ -223,7 +238,7 @@ const columns = `m.id, m.provider_id, m.model_id, m.display_name, m.description,
 	m.request_weight, m.input_token_weight, m.output_token_weight, m.reasoning_token_weight,
 	m.created_at, m.updated_at, m.route_to_id, m.reasoning_style, m.hidden,
 	m.reasoning_tiers, m.api_name, m.auto_disabled, m.system_prompt, m.supports_image_gen,
-	m.supports_chat_image_gen`
+	m.supports_chat_image_gen, m.request_override`
 
 const withProvider = columns + `, p.name, p.kind`
 
@@ -237,41 +252,43 @@ func NewStore(db *database.DB, providers *provider.Store) *Store {
 }
 
 type CreateInput struct {
-	ProviderID     string
-	ModelID        string
-	APIName        string
-	SystemPrompt   string
-	DisplayName    string
-	Description    string
-	Avatar         string
-	Enabled        bool
-	Hidden         bool
-	SortOrder      int
-	RouteToID      string
-	ReasoningStyle adapter.ReasoningStyle
-	ReasoningTiers []ReasoningTier
+	ProviderID      string
+	ModelID         string
+	APIName         string
+	SystemPrompt    string
+	DisplayName     string
+	Description     string
+	Avatar          string
+	Enabled         bool
+	Hidden          bool
+	SortOrder       int
+	RouteToID       string
+	ReasoningStyle  adapter.ReasoningStyle
+	ReasoningTiers  []ReasoningTier
+	RequestOverride string
 	Capabilities
 	Weights
 }
 
 func (s *Store) Create(ctx context.Context, in CreateInput) (Model, error) {
 	record := Model{
-		ID:             id.New(),
-		ProviderID:     in.ProviderID,
-		ModelID:        in.ModelID,
-		APIName:        in.APIName,
-		SystemPrompt:   in.SystemPrompt,
-		DisplayName:    in.DisplayName,
-		Description:    in.Description,
-		Avatar:         in.Avatar,
-		Enabled:        in.Enabled,
-		Hidden:         in.Hidden,
-		SortOrder:      in.SortOrder,
-		RouteToID:      in.RouteToID,
-		ReasoningStyle: in.ReasoningStyle,
-		ReasoningTiers: in.ReasoningTiers,
-		Capabilities:   in.Capabilities,
-		Weights:        in.Weights,
+		ID:              id.New(),
+		ProviderID:      in.ProviderID,
+		ModelID:         in.ModelID,
+		APIName:         in.APIName,
+		SystemPrompt:    in.SystemPrompt,
+		DisplayName:     in.DisplayName,
+		Description:     in.Description,
+		Avatar:          in.Avatar,
+		Enabled:         in.Enabled,
+		Hidden:          in.Hidden,
+		SortOrder:       in.SortOrder,
+		RouteToID:       in.RouteToID,
+		ReasoningStyle:  in.ReasoningStyle,
+		ReasoningTiers:  in.ReasoningTiers,
+		RequestOverride: in.RequestOverride,
+		Capabilities:    in.Capabilities,
+		Weights:         in.Weights,
 	}
 	normalized, err := validate(record)
 	if err != nil {
@@ -308,8 +325,8 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (Model, error) {
 			 supports_system_prompt, supports_tools, context_window, max_output_tokens,
 			 request_weight, input_token_weight, output_token_weight, reasoning_token_weight,
 			 created_at, updated_at, route_to_id, reasoning_style, reasoning_tiers, api_name, auto_disabled, system_prompt, supports_image_gen,
-			 supports_chat_image_gen)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 supports_chat_image_gen, request_override)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			record.ID, record.ProviderID, record.ModelID, record.DisplayName, record.Description,
 			record.Avatar, record.Enabled, record.Hidden, record.SortOrder,
 			record.SupportsReasoning, record.SupportsImages, record.SupportsVision,
@@ -318,7 +335,16 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (Model, error) {
 			record.Request, record.InputToken, record.OutputToken, record.ReasoningToken,
 			record.CreatedAt, record.UpdatedAt, routeValue(record.RouteToID), record.ReasoningStyle,
 			encodeTiers(record.ReasoningTiers), record.APIName, record.AutoDisabled, record.SystemPrompt, record.SupportsImageGen,
-			record.SupportsChatImageGen)
+			record.SupportsChatImageGen, record.RequestOverride)
+		if err != nil {
+			return err
+		}
+		// Default all existing groups to 'use' if not already present
+		_, err = tx.Exec(ctx, `INSERT INTO group_models (group_id, model_id, access)
+			SELECT g.id, ?, ? FROM user_groups g
+			WHERE NOT EXISTS (
+				SELECT 1 FROM group_models gm WHERE gm.group_id = g.id AND gm.model_id = ?
+			)`, record.ID, AccessUse, record.ID)
 		return err
 	})
 	if err != nil {
@@ -342,9 +368,10 @@ type Update struct {
 	Hidden       *bool
 	SortOrder    *int
 
-	RouteToID      *string
-	ReasoningStyle *adapter.ReasoningStyle
-	ReasoningTiers *[]ReasoningTier
+	RouteToID       *string
+	ReasoningStyle  *adapter.ReasoningStyle
+	ReasoningTiers  *[]ReasoningTier
+	RequestOverride *string
 
 	SupportsReasoning    *bool
 	SupportsImages       *bool
@@ -383,6 +410,7 @@ func (s *Store) Update(ctx context.Context, modelID string, in Update) (Model, e
 	assign(&next.RouteToID, in.RouteToID)
 	assign(&next.ReasoningStyle, in.ReasoningStyle)
 	assign(&next.ReasoningTiers, in.ReasoningTiers)
+	assign(&next.RequestOverride, in.RequestOverride)
 	assign(&next.SupportsReasoning, in.SupportsReasoning)
 	assign(&next.SupportsImages, in.SupportsImages)
 	assign(&next.SupportsVision, in.SupportsVision)
@@ -423,7 +451,7 @@ func (s *Store) Update(ctx context.Context, modelID string, in Update) (Model, e
 			supports_system_prompt = ?, supports_tools = ?, supports_image_gen = ?, supports_chat_image_gen = ?,
 			context_window = ?, max_output_tokens = ?,
 			request_weight = ?, input_token_weight = ?, output_token_weight = ?, reasoning_token_weight = ?,
-			route_to_id = ?, reasoning_style = ?, reasoning_tiers = ?, api_name = ?, auto_disabled = ?, system_prompt = ?, updated_at = ?
+			route_to_id = ?, reasoning_style = ?, reasoning_tiers = ?, api_name = ?, auto_disabled = ?, system_prompt = ?, request_override = ?, updated_at = ?
 			WHERE id = ?`,
 			next.ModelID, next.DisplayName, next.Description, next.Avatar, next.Enabled, next.Hidden, next.SortOrder,
 			next.SupportsReasoning, next.SupportsImages, next.SupportsVision, next.SupportsStreaming,
@@ -431,7 +459,7 @@ func (s *Store) Update(ctx context.Context, modelID string, in Update) (Model, e
 			next.ContextWindow, next.MaxOutputTokens,
 			next.Request, next.InputToken, next.OutputToken, next.ReasoningToken,
 			routeValue(next.RouteToID), next.ReasoningStyle, encodeTiers(next.ReasoningTiers),
-			next.APIName, next.AutoDisabled, next.SystemPrompt, next.UpdatedAt, modelID)
+			next.APIName, next.AutoDisabled, next.SystemPrompt, next.RequestOverride, next.UpdatedAt, modelID)
 		return err
 	})
 	if err != nil {
@@ -605,6 +633,9 @@ func (s *Store) Authorize(ctx context.Context, groupID, modelID string, isAdmin 
 			}
 			return Resolved{}, err
 		}
+		if (target.RequestOverride == "" || target.RequestOverride == "{}") && record.RequestOverride != "" && record.RequestOverride != "{}" {
+			target.RequestOverride = record.RequestOverride
+		}
 	}
 	if !target.Enabled || !upstream.Enabled {
 		return Resolved{}, ErrDisabled
@@ -658,7 +689,7 @@ func (s *Store) readCallable(
 		&record.Request, &record.InputToken, &record.OutputToken, &record.ReasoningToken,
 		&record.CreatedAt, &record.UpdatedAt, &route, &record.ReasoningStyle,
 		&record.Hidden, &tiers, &record.APIName, &record.AutoDisabled, &record.SystemPrompt,
-		&record.SupportsImageGen, &record.SupportsChatImageGen,
+		&record.SupportsImageGen, &record.SupportsChatImageGen, &record.RequestOverride,
 		&record.ProviderName, &record.ProviderKind,
 		&upstream.BaseURL, &sealed, &headerJSON, &upstream.AnthropicVersion, &upstream.ReasoningStyle,
 		&upstream.TimeoutSeconds, &upstream.APIKeyHint, &upstream.SortOrder, &upstream.Enabled,
@@ -913,6 +944,17 @@ func validate(record Model) (Model, error) {
 	record.InputToken = clampWeight(record.InputToken)
 	record.OutputToken = clampWeight(record.OutputToken)
 	record.ReasoningToken = clampWeight(record.ReasoningToken)
+
+	record.RequestOverride = strings.TrimSpace(record.RequestOverride)
+	if record.RequestOverride == "" {
+		record.RequestOverride = "{}"
+	} else {
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(record.RequestOverride), &obj); err != nil {
+			return Model{}, ErrInvalidRequestOverride
+		}
+	}
+
 	return record, nil
 }
 
@@ -1032,7 +1074,7 @@ func scan(row rowScanner, joined bool, withUsable bool) (Model, error) {
 		&record.Request, &record.InputToken, &record.OutputToken, &record.ReasoningToken,
 		&record.CreatedAt, &record.UpdatedAt, &route, &record.ReasoningStyle,
 		&record.Hidden, &tiers, &record.APIName, &record.AutoDisabled, &record.SystemPrompt,
-		&record.SupportsImageGen, &record.SupportsChatImageGen,
+		&record.SupportsImageGen, &record.SupportsChatImageGen, &record.RequestOverride,
 	}
 	if joined {
 		targets = append(targets, &record.ProviderName, &record.ProviderKind)

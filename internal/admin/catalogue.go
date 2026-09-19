@@ -214,9 +214,10 @@ type modelRequest struct {
 
 	// Empty clears the route. Administrative only: the model listing
 	// users see carries neither of these fields.
-	RouteToID      *string                 `json:"route_to_id"`
-	ReasoningStyle *adapter.ReasoningStyle `json:"reasoning_style"`
-	ReasoningTiers *[]model.ReasoningTier  `json:"reasoning_tiers"`
+	RouteToID       *string                 `json:"route_to_id"`
+	ReasoningStyle  *adapter.ReasoningStyle `json:"reasoning_style"`
+	ReasoningTiers  *[]model.ReasoningTier  `json:"reasoning_tiers"`
+	RequestOverride *string                 `json:"request_override"`
 
 	// Group access grants configured from the model editor.
 	GroupGrants *[]model.ModelGroupGrant `json:"group_grants"`
@@ -294,6 +295,7 @@ func (h *Handlers) createModel(w http.ResponseWriter, r *http.Request) error {
 	setIf(&in.RouteToID, body.RouteToID)
 	setIf(&in.ReasoningStyle, body.ReasoningStyle)
 	setIf(&in.ReasoningTiers, body.ReasoningTiers)
+	setIf(&in.RequestOverride, body.RequestOverride)
 
 	record, err := h.models.Create(r.Context(), in)
 	if err != nil {
@@ -349,6 +351,7 @@ func (h *Handlers) updateModel(w http.ResponseWriter, r *http.Request) error {
 		RouteToID:            body.RouteToID,
 		ReasoningStyle:       body.ReasoningStyle,
 		ReasoningTiers:       body.ReasoningTiers,
+		RequestOverride:      body.RequestOverride,
 	})
 	if err != nil {
 		return model.TranslateError(err)

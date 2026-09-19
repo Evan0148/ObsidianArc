@@ -250,6 +250,7 @@ func (h *Handlers) buildResponsesRequest(body responsesRequest, resolved model.R
 		Stream:      stream,
 		Tools:       tools,
 		ToolChoice:  choice,
+		Extra:       resolved.Upstream.Extra(),
 	}, nil
 }
 

@@ -511,6 +511,7 @@ func (s *Service) buildRequest(ctx context.Context, req TurnRequest, resolved mo
 		MaxTokens: maxTokens,
 		Reasoning: reasoning,
 		Stream:    req.Stream,
+		Extra:     resolved.Upstream.Extra(),
 	}, nil
 }
 

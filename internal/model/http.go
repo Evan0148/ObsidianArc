@@ -139,6 +139,8 @@ func TranslateError(err error) error {
 		return httpx.BadRequest("A model id is required.")
 	case errors.Is(err, ErrInvalidName):
 		return httpx.BadRequest("Display name must be 1-80 characters.")
+	case errors.Is(err, ErrInvalidRequestOverride):
+		return httpx.BadRequest("Request override must be a valid JSON object.")
 	default:
 		return httpx.Internal(err)
 	}
