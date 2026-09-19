@@ -403,10 +403,6 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 			if account.CanAdmin("availability") {
 				item.Provider = m.ProviderName
 			}
-			if hourRate := hourRates[m.ID]; hourRate.Total > 0 {
-				share := hourRate.Share()
-				item.UptimeHour = &share
-			}
 			if m.AutoDisabled {
 				item.State = "down"
 			}
@@ -414,12 +410,18 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 				share := rate.Share()
 				item.Uptime = &share
 				item.Total = rate.Total
+			}
+			// The card's status badge ("operational", "degraded", "outage")
+			// evaluates against the recent one-hour window matching the hourly
+			// percentage shown beside it, rather than the 24-hour aggregate.
+			if hourRate, hasHour := hourRates[m.ID]; hasHour && hourRate.Total > 0 {
+				share := hourRate.Share()
+				item.UptimeHour = &share
 				if m.AutoDisabled {
 					item.State = "down"
-				} else if rate.OK == 0 {
-					// With evidence present, zero answers is an outage rather than a
-					// degraded service. The warning threshold only distinguishes
-					// partial reliability from healthy operation.
+				} else if hourRate.OK == 0 {
+					// With recent evidence present, zero answers is an outage rather
+					// than degraded service.
 					item.State = "down"
 				} else if share >= 0.99 {
 					item.State = "up"

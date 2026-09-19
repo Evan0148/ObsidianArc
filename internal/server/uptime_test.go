@@ -17,11 +17,12 @@ func TestUptimeSeparatesHourAndDay(t *testing.T) {
 		reset     bool
 		wantTotal int
 		wantDay   float64
+		wantState string
 	}{
-		{name: "recent failure against earlier successes", recent: true, wantTotal: 3, wantDay: 2.0 / 3},
-		{name: "quiet hour still has day history", wantTotal: 2, wantDay: 1},
-		{name: "reset excludes old evidence from both windows", recent: true, reset: true, wantTotal: 1},
-		{name: "reset without new evidence", reset: true},
+		{name: "recent failure against earlier successes", recent: true, wantTotal: 3, wantDay: 2.0 / 3, wantState: "down"},
+		{name: "quiet hour still has day history", wantTotal: 2, wantDay: 1, wantState: "unknown"},
+		{name: "reset excludes old evidence from both windows", recent: true, reset: true, wantTotal: 1, wantState: "down"},
+		{name: "reset without new evidence", reset: true, wantState: "unknown"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			in := newInstance(t)
@@ -75,6 +76,7 @@ func TestUptimeSeparatesHourAndDay(t *testing.T) {
 				Models []struct {
 					Uptime     *float64           `json:"uptime"`
 					UptimeHour *float64           `json:"uptime_hour"`
+					State      string             `json:"state"`
 					Total      int                `json:"total"`
 					History    []health.TimePoint `json:"history"`
 				}
@@ -100,6 +102,9 @@ func TestUptimeSeparatesHourAndDay(t *testing.T) {
 			} else if got.UptimeHour != nil {
 				t.Error("empty hour must not borrow the daily percentage")
 			}
+			if got.State != tc.wantState {
+				t.Errorf("state = %q, want %q", got.State, tc.wantState)
+			}
 			if len(got.History) != 24 {
 				t.Fatalf("history points = %d", len(got.History))
 			}
@@ -112,6 +117,149 @@ func TestUptimeSeparatesHourAndDay(t *testing.T) {
 			}
 			if total != tc.wantTotal {
 				t.Errorf("chart sample total = %d, want %d", total, tc.wantTotal)
+			}
+		})
+	}
+}
+
+func TestUptimeStateUsesHourlyAvailability(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		setup        func(t *testing.T, add func(age time.Duration, ok bool))
+		wantState    string
+		wantHourNil  bool
+		wantHourVal  float64
+		wantDayAbove float64
+		wantDayBelow float64
+		autoDisabled bool
+	}{
+		{
+			name: "hourly outage marks model down even with high 24h uptime",
+			setup: func(t *testing.T, add func(age time.Duration, ok bool)) {
+				for i := 0; i < 20; i++ {
+					add(2*time.Hour, true)
+				}
+				add(10*time.Minute, false)
+			},
+			wantState:    "down",
+			wantHourVal:  0,
+			wantDayAbove: 0.90,
+		},
+		{
+			name: "hourly degradation marks model degraded even with high 24h uptime",
+			setup: func(t *testing.T, add func(age time.Duration, ok bool)) {
+				for i := 0; i < 20; i++ {
+					add(2*time.Hour, true)
+				}
+				for i := 0; i < 4; i++ {
+					add(10*time.Minute, true)
+				}
+				add(10*time.Minute, false)
+			},
+			wantState:    "degraded",
+			wantHourVal:  0.80,
+			wantDayAbove: 0.90,
+		},
+		{
+			name: "hourly recovery marks model up even with low 24h uptime",
+			setup: func(t *testing.T, add func(age time.Duration, ok bool)) {
+				for i := 0; i < 20; i++ {
+					add(2*time.Hour, false)
+				}
+				for i := 0; i < 5; i++ {
+					add(10*time.Minute, true)
+				}
+			},
+			wantState:    "up",
+			wantHourVal:  1.0,
+			wantDayBelow: 0.30,
+		},
+		{
+			name: "quiet hour leaves state unknown",
+			setup: func(t *testing.T, add func(age time.Duration, ok bool)) {
+				for i := 0; i < 10; i++ {
+					add(2*time.Hour, true)
+				}
+			},
+			wantState:   "unknown",
+			wantHourNil: true,
+		},
+		{
+			name: "auto-disabled model is down regardless of recent success",
+			setup: func(t *testing.T, add func(age time.Duration, ok bool)) {
+				for i := 0; i < 5; i++ {
+					add(10*time.Minute, true)
+				}
+			},
+			autoDisabled: true,
+			wantState:    "down",
+			wantHourVal:  1.0,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			in := newInstance(t)
+			admin := in.register("uptime_state_admin", "password123")
+			provider := decode[struct {
+				Provider struct{ ID string }
+			}](t, in.do(http.MethodPost, "/api/admin/providers", map[string]any{
+				"name": "Uptime provider", "kind": "openai", "base_url": "https://example.com/v1", "api_key": "test",
+			}, admin))
+			model := decode[struct {
+				Model struct{ ID string }
+			}](t, in.do(http.MethodPost, "/api/admin/models", map[string]any{
+				"provider_id": provider.Provider.ID, "model_id": "state-model", "display_name": "State model", "enabled": true,
+			}, admin))
+
+			if tc.autoDisabled {
+				if _, err := in.db.Exec(context.Background(), `UPDATE models SET auto_disabled = ? WHERE id = ?`, 1, model.Model.ID); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			now := time.Now()
+			add := func(age time.Duration, ok bool) {
+				t.Helper()
+				_, err := in.db.Exec(context.Background(),
+					`INSERT INTO model_probes (id, model_id, at, ok, code, message, latency_ms) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+					id.New(), model.Model.ID, now.Add(-age).UnixMilli(), ok, "", "", 1)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			tc.setup(t, add)
+
+			res := in.do(http.MethodGet, "/api/uptime", nil, admin)
+			if res.Code != http.StatusOK {
+				t.Fatalf("uptime: %d %s", res.Code, res.Body.String())
+			}
+			body := decode[struct {
+				Models []struct {
+					Uptime     *float64 `json:"uptime"`
+					UptimeHour *float64 `json:"uptime_hour"`
+					State      string   `json:"state"`
+				}
+			}](t, res)
+			if len(body.Models) != 1 {
+				t.Fatalf("models = %+v", body.Models)
+			}
+			got := body.Models[0]
+			if got.State != tc.wantState {
+				t.Errorf("state = %q, want %q", got.State, tc.wantState)
+			}
+			if tc.wantHourNil {
+				if got.UptimeHour != nil {
+					t.Errorf("uptime_hour = %v, want nil", *got.UptimeHour)
+				}
+			} else {
+				if got.UptimeHour == nil || *got.UptimeHour != tc.wantHourVal {
+					t.Errorf("uptime_hour = %v, want %v", got.UptimeHour, tc.wantHourVal)
+				}
+			}
+			if tc.wantDayAbove > 0 && (got.Uptime == nil || *got.Uptime < tc.wantDayAbove) {
+				t.Errorf("uptime = %v, want > %v", got.Uptime, tc.wantDayAbove)
+			}
+			if tc.wantDayBelow > 0 && (got.Uptime == nil || *got.Uptime > tc.wantDayBelow) {
+				t.Errorf("uptime = %v, want < %v", got.Uptime, tc.wantDayBelow)
 			}
 		})
 	}
