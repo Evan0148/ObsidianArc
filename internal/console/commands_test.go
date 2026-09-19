@@ -84,8 +84,28 @@ func TestEveryAdminRouteIsClaimedByACommand(t *testing.T) {
 // against.
 func TestCommandPermissionMatchesItsEndpoints(t *testing.T) {
 	perms := routePermissions(t)
+	everyones := userRoutesFromSource(t)
+
 	for _, cmd := range allCommands {
 		for _, ep := range cmd.Endpoints {
+			// A command every signed-in account may run is checked against
+			// the other half of the API — the routes an account's own
+			// screens call. The check is not weaker for it, it is the same
+			// check against the right table, and the admin one below stays
+			// exactly as strict as it was.
+			if cmd.Permission == Anyone {
+				if _, isAdmin := perms[ep]; isAdmin {
+					t.Errorf("command %q is open to every account but declares the administrative endpoint %q",
+						cmd.Name, ep)
+					continue
+				}
+				if !everyones[ep] {
+					t.Errorf("command %q declares endpoint %q, which no user-facing package mounts",
+						cmd.Name, ep)
+				}
+				continue
+			}
+
 			want, ok := perms[ep]
 			if !ok {
 				t.Errorf("command %q declares endpoint %q, which is not in admin.go's route table", cmd.Name, ep)
@@ -97,6 +117,47 @@ func TestCommandPermissionMatchesItsEndpoints(t *testing.T) {
 			}
 		}
 	}
+}
+
+// userRoutesFromSource is the other route table: every non-admin API route
+// the packages an account's own screens talk to actually mount.
+//
+// Scanned from source for the same reason the admin one is — a table
+// written out by hand here is a second copy that drifts — and the list of
+// packages is the list server.go mounts on the console's own mux. A command
+// reaching a route no package in that list serves would answer 404 at
+// runtime; this is where that is caught instead.
+func userRoutesFromSource(t *testing.T) map[string]bool {
+	t.Helper()
+	packages := []string{"auth", "apikey", "chat", "quota", "usage", "card", "backup"}
+	pattern := regexp.MustCompile(`mux\.Handle(?:Func)?\("((?:GET|POST|PATCH|PUT|DELETE) /api/[^"]*)"`)
+
+	out := map[string]bool{}
+	for _, name := range packages {
+		matches, err := filepath.Glob(filepath.Join("..", name, "*.go"))
+		if err != nil {
+			t.Fatalf("scan %s: %v", name, err)
+		}
+		for _, file := range matches {
+			if strings.HasSuffix(file, "_test.go") {
+				continue
+			}
+			source, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatalf("read %s: %v", file, err)
+			}
+			for _, match := range pattern.FindAllStringSubmatch(string(source), -1) {
+				if strings.HasPrefix(match[1], "GET /api/admin/") {
+					continue
+				}
+				out[match[1]] = true
+			}
+		}
+	}
+	if len(out) == 0 {
+		t.Fatal("found no user-facing routes; the scanner has drifted from the source")
+	}
+	return out
 }
 
 // TestEveryCommandHasBilingualHelp is §1.8.4: every command needs a

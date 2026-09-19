@@ -269,7 +269,8 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		})
 	}))
 
-	auth.NewHandlers(authService, users, groups, preferences, settingsService, proxyTrust).Routes(mux)
+	authHandlers := auth.NewHandlers(authService, users, groups, preferences, settingsService, proxyTrust)
+	authHandlers.Routes(mux)
 	modelHandlers := model.NewHandlers(models)
 	// What readers are told about liveness, decided here because it is the
 	// operator's policy and neither the model package nor the health one has
@@ -508,8 +509,10 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		}
 	}
 	chatHandlers.Routes(mux)
-	quota.NewHandlers(quotaService).Routes(mux)
-	usage.NewHandlers(usageStore).Routes(mux)
+	quotaHandlers := quota.NewHandlers(quotaService)
+	quotaHandlers.Routes(mux)
+	usageHandlers := usage.NewHandlers(usageStore)
+	usageHandlers.Routes(mux)
 
 	cardHandlers := card.NewHandlers(cards)
 	// What spending a card actually buys. The card package does not know the
@@ -654,7 +657,8 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	// An account's own data, in and out as one document. Separate from the
 	// admin surface because it is the user's copy of their own history, not
 	// the operator's copy of the instance.
-	backup.NewHandlers(backup.NewService(db, conversations, preferences)).Routes(mux)
+	backupHandlers := backup.NewHandlers(backup.NewService(db, conversations, preferences))
+	backupHandlers.Routes(mux)
 
 	compatHandlers := compat.NewHandlers(settingsService, users, groups, models, keys, registry)
 	compatHandlers.Guard = guard
@@ -675,6 +679,23 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	// one above.
 	consoleAPI := http.NewServeMux()
 	adminHandlers.Routes(consoleAPI)
+	// The same arrangement for the commands any signed-in account may run.
+	// They act on the account's own settings, keys, conversations, usage and
+	// export — the endpoints that account's own screens call — so those
+	// handlers are mounted here on the same terms: the dispatched request
+	// passes the real auth.RequireUser and the real owner scoping, and a
+	// command still cannot reach anything its caller could not reach in the
+	// interface. Whole packages rather than hand-picked routes, because a
+	// list of paths here is a second copy of each package's route table,
+	// and the set a command can actually reach is the set of commands
+	// compiled into the binary, not the set of paths mounted on this mux.
+	authHandlers.Routes(consoleAPI)
+	apiKeyHandlers.Routes(consoleAPI)
+	chatHandlers.Routes(consoleAPI)
+	quotaHandlers.Routes(consoleAPI)
+	usageHandlers.Routes(consoleAPI)
+	cardHandlers.Routes(consoleAPI)
+	backupHandlers.Routes(consoleAPI)
 
 	// Read before the SSH server is built rather than from it: `help ssh`
 	// prints the fingerprint, so the engine needs it, and the server needs

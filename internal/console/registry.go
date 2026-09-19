@@ -225,13 +225,28 @@ func (r *registry) visible(actor user.User) []*Command {
 	return out
 }
 
+// Anyone is the Permission of a command every signed-in account may run —
+// the ones that act on the caller's own account and nothing else.
+//
+// Spelled as a word rather than as "" because "" already means "any
+// administrator", and the two are the opposite of each other. A command
+// that forgets to set Permission gets the stricter of the two, which is the
+// right way round for a mistake to fall.
+const Anyone = "anyone"
+
 // hasPermission mirrors internal/admin/permissions.go's hasPermission
-// exactly: any one grant in the comma list is enough, and "" means any
-// administrator. It is copied rather than shared because the admin package
-// does not export it — this copy is only ever the console's own early,
-// friendly refusal; the dispatched request re-checks the real, unexported
-// one from inside the mux, which is the actual control (see dispatch.go).
+// exactly, with one addition this package needs and that one does not: any
+// one grant in the comma list is enough, "" means any administrator, and
+// Anyone means any signed-in account. It is copied rather than shared
+// because the admin package does not export it — this copy is only ever the
+// console's own early, friendly refusal; the dispatched request re-checks
+// the real one from inside the mux, which is the actual control, and for an
+// Anyone command that check is auth.RequireUser on the route it calls
+// rather than auth.RequireAdmin (see dispatch.go).
 func hasPermission(actor user.User, permissions string) bool {
+	if permissions == Anyone {
+		return true
+	}
 	if permissions == "" {
 		return actor.IsAdmin()
 	}

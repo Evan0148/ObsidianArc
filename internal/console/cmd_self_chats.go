@@ -1,0 +1,218 @@
+package console
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strconv"
+)
+
+// The "chat" family is the first Anyone-tier noun in this package: every
+// command here reaches a route mounted under auth.RequireUser, not
+// auth.RequireAdmin, and every one of them is scoped to the caller by the
+// endpoint itself (internal/conversation.Store never takes a conversation
+// id without the owning user id alongside it — see that package's own
+// doc comment). So there is no id-or-username argument to resolve here,
+// unlike cmd_users.go's account-scoped commands: accepting one would be
+// the wrong shape for a command that can only ever mean "mine".
+//
+// GET /api/conversations takes no offset (internal/chat/http.go's
+// listConversations reads only "limit" off the query string), so unlike
+// "user chats" there is no --offset flag to declare — one would silently
+// do nothing, which is worse than not offering it.
+func init() {
+	registerCommand(Command{
+		Name:    "chat list",
+		Group:   "chat",
+		Summary: Text{EN: "List your own conversations", ZH: "列出你自己的对话"},
+		Usage:   "chat list [--limit N]",
+		Help: Text{
+			EN: "Lists your conversations, pinned first and then newest first.",
+			ZH: "列出你的对话，置顶的排在最前，其余按最新排序。",
+		},
+		Flags: []Flag{
+			{Name: "--limit", Hint: Text{EN: "page size, default 60, max 200", ZH: "每页数量，默认 60，最多 200"}, Value: "N", Default: "60"},
+		},
+		Examples:   []string{"chat list", "chat list --limit 20"},
+		SeeAlso:    []string{"chat show"},
+		Permission: Anyone,
+		Endpoints:  []string{"GET /api/conversations"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			q := url.Values{}
+			q.Set("limit", strconv.Itoa(rt.IntOr("limit", 60)))
+			data, _, err := rt.Call(http.MethodGet, "/api/conversations?"+q.Encode(), nil)
+			if err != nil {
+				return err
+			}
+			var rows [][]string
+			for _, raw := range asSlice(asMap(data)["conversations"]) {
+				c := asMap(raw)
+				rows = append(rows, []string{
+					asStr(c["id"]), asStr(c["title"]), asStr(c["model_id"]),
+					yesNo(asBoolVal(c["pinned"])), fmt.Sprint(asNum(c["message_count"])), formatMS(c["created_at"]),
+				})
+			}
+			return rt.Table([]string{"id", "title", "model_id", "pinned", "messages", "created"}, rows)
+		},
+	})
+
+	registerCommand(Command{
+		Name:    "chat show",
+		Group:   "chat",
+		Summary: Text{EN: "Show one of your conversations in full", ZH: "完整显示你的某一段对话"},
+		Usage:   "chat show <conversation-id>",
+		Args: []Arg{
+			{Name: "conversation-id", Hint: Text{EN: "from chat list", ZH: "来自 chat list"}, Required: true},
+		},
+		Examples:   []string{"chat show 01H9Z…", "chat show 01H9Z… --json"},
+		SeeAlso:    []string{"chat list"},
+		Permission: Anyone,
+		Endpoints:  []string{"GET /api/conversations/{id}"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			ref, err := requireRef(rt, "conversation id")
+			if err != nil {
+				return err
+			}
+			data, _, err := rt.Call(http.MethodGet, "/api/conversations/"+url.PathEscape(ref), nil)
+			if err != nil {
+				return err
+			}
+			m := asMap(data)
+			c := asMap(m["conversation"])
+			jsonMode := rt.effectiveJSON()
+			if err := rt.Fields([][2]string{
+				{"id", asStr(c["id"])}, {"title", asStr(c["title"])}, {"model_id", asStr(c["model_id"])},
+				{"pinned", yesNo(asBoolVal(c["pinned"]))}, {"messages", fmt.Sprint(asNum(c["message_count"]))},
+				{"created_at", formatMS(c["created_at"])}, {"updated_at", formatMS(c["updated_at"])},
+			}); err != nil {
+				return err
+			}
+			if jsonMode {
+				return nil
+			}
+			// Same rendering "user transcript" uses for the admin side of
+			// this exact response shape (§ its own comment) — one way to
+			// print a transcript, not two.
+			fmt.Fprintln(rt.Out, "\nmessages:")
+			var rows [][]string
+			for _, raw := range asSlice(m["messages"]) {
+				msg := asMap(raw)
+				stats := asMap(msg["stats"])
+				rows = append(rows, []string{
+					fmt.Sprint(asNum(msg["seq"])), asStr(msg["role"]), asStr(msg["model_name"]),
+					truncateForTable(asStr(msg["content"]), 60),
+					fmt.Sprint(asNum(stats["input_tokens"])), fmt.Sprint(asNum(stats["output_tokens"])),
+					formatMS(msg["created_at"]),
+				})
+			}
+			RenderTable(rt.Out, rt.Session.Width, rt.Session.Colour,
+				[]string{"seq", "role", "model", "content", "in", "out", "created"}, rows)
+			return nil
+		},
+	})
+
+	registerCommand(Command{
+		Name:    "chat rename",
+		Group:   "chat",
+		Summary: Text{EN: "Rename or pin one of your conversations", ZH: "重命名或置顶你的一段对话"},
+		Usage:   "chat rename <conversation-id> [--title TEXT] [--pinned BOOL]",
+		Help: Text{
+			EN: "Only the flags you give are changed — an absent flag leaves that field alone.",
+			ZH: "只会修改你给出的选项，未给出的字段保持不变。",
+		},
+		Args: []Arg{
+			{Name: "conversation-id", Hint: Text{EN: "from chat list", ZH: "来自 chat list"}, Required: true},
+		},
+		Flags: []Flag{
+			{Name: "--title", Hint: Text{EN: "new title, ≤120 chars", ZH: "新标题，≤120 字符"}, Value: "TEXT"},
+			{Name: "--pinned", Hint: Text{EN: "pin or unpin", ZH: "置顶或取消置顶"}, Value: "BOOL"},
+		},
+		Examples:   []string{"chat rename 01H9Z… --title \"trip planning\"", "chat rename 01H9Z… --pinned=false"},
+		SeeAlso:    []string{"chat list", "chat show"},
+		Permission: Anyone,
+		Endpoints:  []string{"PATCH /api/conversations/{id}"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			ref, err := requireRef(rt, "conversation id")
+			if err != nil {
+				return err
+			}
+			body := bodyBuilder{}
+			body.str(rt, "title", "title")
+			body.boolv(rt, "pinned", "pinned")
+			if len(body) == 0 {
+				if rt.Session.Lang == "zh" {
+					return rt.Errorf("没有需要修改的内容：请至少给出一个选项")
+				}
+				return rt.Errorf("nothing to change: give at least one flag")
+			}
+			data, _, err := rt.Call(http.MethodPatch, "/api/conversations/"+url.PathEscape(ref), map[string]any(body))
+			if err != nil {
+				return err
+			}
+			c := asMap(asMap(data)["conversation"])
+			return rt.Fields([][2]string{
+				{"id", asStr(c["id"])}, {"title", asStr(c["title"])}, {"model_id", asStr(c["model_id"])},
+				{"pinned", yesNo(asBoolVal(c["pinned"]))}, {"updated_at", formatMS(c["updated_at"])},
+			})
+		},
+	})
+
+	registerCommand(Command{
+		Name:    "chat delete",
+		Group:   "chat",
+		Summary: Text{EN: "Delete one of your conversations", ZH: "删除你的一段对话"},
+		Usage:   "chat delete <conversation-id> --yes",
+		Help: Text{
+			EN: "Deletes the conversation, its messages and its attachments. This cannot be undone.",
+			ZH: "会删除该对话及其消息和附件，且无法撤销。",
+		},
+		Args: []Arg{
+			{Name: "conversation-id", Hint: Text{EN: "from chat list", ZH: "来自 chat list"}, Required: true},
+		},
+		Examples:    []string{"chat delete 01H9Z… --yes", "chat delete 01H9Z… -y"},
+		SeeAlso:     []string{"chat list", "chat delete-all"},
+		Permission:  Anyone,
+		Destructive: true,
+		Endpoints:   []string{"DELETE /api/conversations/{id}"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			ref, err := requireRef(rt, "conversation id")
+			if err != nil {
+				return err
+			}
+			if _, _, err := rt.Call(http.MethodDelete, "/api/conversations/"+url.PathEscape(ref), nil); err != nil {
+				return err
+			}
+			if rt.Session.Lang == "zh" {
+				rt.Printf("已删除。\n")
+			} else {
+				rt.Printf("deleted.\n")
+			}
+			return nil
+		},
+	})
+
+	registerCommand(Command{
+		Name:    "chat delete-all",
+		Group:   "chat",
+		Summary: Text{EN: "Delete every conversation you own", ZH: "删除你拥有的全部对话"},
+		Usage:   "chat delete-all --yes",
+		Help: Text{
+			EN: "Deletes every conversation on your account, with their messages and attachments. " +
+				"This cannot be undone.",
+			ZH: "会删除你账户下的全部对话及其消息和附件，且无法撤销。",
+		},
+		Examples:    []string{"chat delete-all --yes", "chat delete-all -y"},
+		SeeAlso:     []string{"chat delete", "chat list"},
+		Permission:  Anyone,
+		Destructive: true,
+		Endpoints:   []string{"DELETE /api/conversations"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			data, _, err := rt.Call(http.MethodDelete, "/api/conversations", nil)
+			if err != nil {
+				return err
+			}
+			return rt.Fields([][2]string{{"deleted", fmt.Sprint(asNum(asMap(data)["deleted"]))}})
+		},
+	})
+}
