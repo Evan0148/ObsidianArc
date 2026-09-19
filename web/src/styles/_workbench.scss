@@ -43,7 +43,8 @@
 .oa-control-save-state { display: inline-flex; gap: 6px; align-items: center; color: var(--ai-text-secondary); font-size: 11px; white-space: nowrap; }
 .oa-control-save-state.dirty { color: var(--ai-text); }
 .oa-control-save-state:not(.dirty) .oa-dashboard-dot { opacity: .45; }
-.oa-control-flash { position: sticky; bottom: 0; z-index: 2; margin: 14px auto 0; max-width: 1432px; padding: 14px 20px; border-radius: 11px; background: var(--ai-surface-container-high); box-shadow: var(--ai-shadow-md); }
+/* Clean status strip below the workbench: pure text without the card background or shadow outline. */
+.oa-control-flash { margin: 16px auto 0; max-width: 1432px; padding: 4px 2px; font-size: 13px; line-height: 1.6; background: transparent; box-shadow: none; border: none; }
 .oa-health-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .oa-health-summary > div { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; min-width: 0; padding: 21px; border-radius: 18px; background: var(--ai-surface-container-high); }
 .oa-health-summary > div:first-child { background: var(--ai-primary); color: var(--ai-primary-text); }
