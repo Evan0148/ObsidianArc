@@ -450,3 +450,44 @@ func TestWeightsAreClamped(t *testing.T) {
 		t.Errorf("an absurd weight was not capped: %v", record.OutputToken)
 	}
 }
+
+func TestWorstCaseCapsAtDefaultMaxOutput(t *testing.T) {
+	// Zero/unset max output tokens falls back to DefaultMaxOutput (4096).
+	mZero := Model{
+		Capabilities: Capabilities{MaxOutputTokens: 0},
+		Weights:      Weights{Request: 1, OutputToken: 2},
+	}
+	tokens, credits := mZero.WorstCase()
+	if tokens != DefaultMaxOutput {
+		t.Errorf("got tokens %d, want %d", tokens, DefaultMaxOutput)
+	}
+	if wantCredits := 1.0 + float64(DefaultMaxOutput)/1000*2.0; credits != wantCredits {
+		t.Errorf("got credits %v, want %v", credits, wantCredits)
+	}
+
+	// Smaller limits below DefaultMaxOutput are honored.
+	mSmall := Model{
+		Capabilities: Capabilities{MaxOutputTokens: 1000},
+		Weights:      Weights{Request: 0, OutputToken: 1.5},
+	}
+	tokens, credits = mSmall.WorstCase()
+	if tokens != 1000 {
+		t.Errorf("got tokens %d, want 1000", tokens)
+	}
+	if credits != 1.5 {
+		t.Errorf("got credits %v, want 1.5", credits)
+	}
+
+	// Large limits (e.g. 256k) are capped at DefaultMaxOutput (4096) for reservation.
+	mLarge := Model{
+		Capabilities: Capabilities{MaxOutputTokens: 256004},
+		Weights:      Weights{Request: 1, OutputToken: 1},
+	}
+	tokens, credits = mLarge.WorstCase()
+	if tokens != DefaultMaxOutput {
+		t.Errorf("got tokens %d, want %d", tokens, DefaultMaxOutput)
+	}
+	if wantCredits := 1.0 + float64(DefaultMaxOutput)/1000*1.0; credits != wantCredits {
+		t.Errorf("got credits %v, want %v", credits, wantCredits)
+	}
+}

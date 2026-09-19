@@ -29,7 +29,9 @@ export function pricedModels(): Promise<AdminModel[]> {
  * being told before saving rather than after a user complains.
  */
 export function worstCase(entry: AdminModel): number {
-  const ceiling = entry.max_output_tokens > 0 ? entry.max_output_tokens : 4096;
+  const ceiling = entry.max_output_tokens > 0 && entry.max_output_tokens < 4096
+    ? entry.max_output_tokens
+    : 4096;
   return entry.request_weight + (ceiling / 1000) * entry.output_token_weight;
 }
 

@@ -164,10 +164,14 @@ const DefaultMaxOutput = 4096
 // reserve against an allowance before the answer exists. Output only:
 // what the prompt costs is not known until it has been assembled, and
 // output is the term that runs away.
+//
+// Capped at DefaultMaxOutput: models declaring large output ceilings (such as
+// 64k, 128k or 256k) should not compute an enormous upfront deposit that locks
+// out ordinary users from sending a single message.
 func (m Model) WorstCase() (tokens int64, credits float64) {
-	ceiling := m.MaxOutputTokens
-	if ceiling <= 0 {
-		ceiling = DefaultMaxOutput
+	ceiling := DefaultMaxOutput
+	if m.MaxOutputTokens > 0 && m.MaxOutputTokens < DefaultMaxOutput {
+		ceiling = m.MaxOutputTokens
 	}
 	return int64(ceiling), m.Request + float64(ceiling)/1000*m.OutputToken
 }

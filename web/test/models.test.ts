@@ -82,3 +82,37 @@ describe('which models a conversation may use', () => {
     expect(currentModel.value).toBeNull();
   });
 });
+
+describe('worstCase and priciest calculations', () => {
+  function adminModel(id: string, req: number, out: number, maxOut: number): any {
+    return {
+      id,
+      provider_id: 'p1',
+      provider_name: 'P1',
+      model_id: id,
+      display_name: id,
+      enabled: true,
+      max_output_tokens: maxOut,
+      request_weight: req,
+      output_token_weight: out,
+    };
+  }
+
+  it('caps reservation ceiling at 4096 so large output limits do not inflate worst case', async () => {
+    const { worstCase, priciest } = await import('../src/views/admin/shared');
+
+    const deepseek = adminModel('deepseek', 1, 1, 256004);
+    // 1 + (4096 / 1000) * 1 = 5.096
+    expect(worstCase(deepseek)).toBeCloseTo(5.096, 3);
+
+    const claude = adminModel('claude', 0, 15, 0);
+    // 0 + (4096 / 1000) * 15 = 61.44
+    expect(worstCase(claude)).toBeCloseTo(61.44, 2);
+
+    const small = adminModel('small', 0, 2, 1000);
+    // 0 + (1000 / 1000) * 2 = 2
+    expect(worstCase(small)).toBe(2);
+
+    expect(priciest([deepseek, claude, small])?.id).toBe('claude');
+  });
+});
