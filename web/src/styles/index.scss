@@ -23,3 +23,5 @@
 // screen with four hundred lines of rules that nothing else consumes, where
 // `_surfaces` is the vocabulary every non-chat screen shares.
 @use 'terminal';
+// The overview has its own layout; its rules stay out of the shared surfaces.
+@use 'dashboard';

@@ -1,192 +1,206 @@
 <script setup lang="ts">
-// The dashboard.
-//
-// Six numbers, one chart and two short lists. There is no attempt to fill the
-// screen: an operator opens this to find out whether the server is working
-// and what it is costing, and every panel that does not answer one of those
-// is a panel they have to look past to find the ones that do.
-
 import { computed, onMounted, ref } from 'vue';
-import { adminApi, type Dashboard, type UsageBreakdown, type UsageRecord, type UsageTotals } from '@/admin/api';
-import OaAdminSection from '@/components/OaAdminSection.vue';
-import OaCellStack from '@/components/OaCellStack.vue';
+import { ArrowUpRight, ArrowDownLeft, ArrowUpLeft, ChartNoAxesCombined, CircleAlert, Coins, RefreshCw, CalendarDays } from 'lucide-vue-next';
+import { adminApi, type Dashboard, type UsageBreakdown } from '@/admin/api';
 import OaChart from '@/components/OaChart.vue';
-import OaSelectField from '@/components/OaSelectField.vue';
-import OaSpark from '@/components/OaSpark.vue';
-import OaStatGrid from '@/components/OaStatGrid.vue';
-import OaTable from '@/components/OaTable.vue';
-import type { Column } from '@/components/table-types';
-import type { Stat } from '@/components/stat';
-import { t } from '@/composables/useI18n';
-import type { ChartShape } from '@/lib/chart';
+import OaCellStack from '@/components/OaCellStack.vue';
+import OaIconButton from '@/components/OaIconButton.vue';
+import { currentLanguage, t } from '@/composables/useI18n';
+import { IconSpark, IconUsers, IconServer } from '@/icons';
 import { compactNumber, relativeTime } from '@/lib/format';
+import { fold, type ChartShape } from '@/lib/chart';
+import { canAdmin } from '@/stores/session';
+import AdminDashboardTrend from './AdminDashboardTrend.vue';
 import AdminFailure from './AdminFailure.vue';
 import StatusBadge from './StatusBadge.vue';
 import { useAdminView } from './adminView';
 
 const view = useAdminView();
 view.setTitle(t('navDashboard'));
-
 const data = ref<Dashboard | null>(null);
 const error = ref('');
-
-// Remembered across visits, so an operator who prefers a pie gets one.
+const busy = ref(false);
+const updatedAt = ref(0);
+const ranking = ref<'models' | 'users'>('models');
 const shape = ref<ChartShape>(dashboardShape);
-
-function usageStats(totals: UsageTotals): Stat[] {
-  return [
-    {
-      label: t('statRequests'),
-      value: compactNumber(totals.requests),
-      note: totals.errors ? t('nFailed', { count: totals.errors }) : t('allFine'),
-    },
-    {
-      label: t('statTokens'),
-      value: compactNumber(totals.total_tokens),
-      note: t('tokensInOut', {
-        input: compactNumber(totals.input_tokens),
-        output: compactNumber(totals.output_tokens),
-      }),
-    },
-    { label: t('statCredits'), value: compactNumber(totals.credits) },
-  ];
-}
-
-const instanceStats = computed<Stat[]>(() => {
+const locale = computed(() => currentLanguage() === 'zh' ? 'zh-CN' : 'en-US');
+const dateLabel = computed(() => new Date(updatedAt.value || Date.now()).toLocaleDateString(locale.value, {
+  month: 'long', day: 'numeric', weekday: 'long',
+}));
+const updatedLabel = computed(() => updatedAt.value ? t('dashboardUpdated', {
+  time: new Date(updatedAt.value).toLocaleTimeString(locale.value, { hour: '2-digit', minute: '2-digit' }),
+}) : '');
+const failureRate = computed(() => {
+  const totals = data.value?.last_24h;
+  return totals?.requests ? `${(totals.errors / totals.requests * 100).toFixed(1)}%` : '—';
+});
+const resources = computed(() => {
   const counts = data.value?.counts;
   if (!counts) return [];
   return [
-    { label: t('statUsers'), value: String(counts.users), note: t('nActive', { count: counts.active_users }) },
-    { label: t('statProviders'), value: String(counts.providers), note: t('nEnabled', { count: counts.enabled_providers }) },
-    { label: t('statModels'), value: String(counts.models), note: t('nEnabled', { count: counts.enabled_models }) },
+    { key: 'users', icon: IconUsers, label: t('statUsers'), value: counts.users, note: t('nActive', { count: counts.active_users }) },
+    { key: 'providers', icon: IconServer, label: t('statProviders'), value: counts.providers, note: t('nEnabled', { count: counts.enabled_providers }) },
+    { key: 'models', icon: IconSpark, label: t('statModels'), value: counts.models, note: t('nEnabled', { count: counts.enabled_models }) },
   ];
 });
-
-// The dashboard ranks by credits: it is the figure an operator is watching
-// when they open this page at all.
-function slices(rows: UsageBreakdown[]): Array<{ key: string; label: string; value: number }> {
-  return rows.map((row) => ({ key: row.key, label: row.label || row.key || '—', value: row.credits }));
+const rankedRows = computed(() => ranking.value === 'models' ? data.value?.top_models ?? [] : data.value?.top_users ?? []);
+const rankedSlices = computed(() => fold(rankedRows.value.map((row) => ({
+  key: row.key, label: row.label || row.key || '—', value: row.credits,
+})), 5, t('chartOther')));
+const rankedTotal = computed(() => rankedSlices.value.reduce((sum, row) => sum + row.value, 0));
+function share(value: number): string {
+  return rankedTotal.value ? `${(value / rankedTotal.value * 100).toFixed(1)}%` : '0%';
 }
-
-const busiestColumns = computed<Array<Column<UsageBreakdown>>>(() => [
-  { key: 'model', header: t('colModel'), text: (row) => row.label || row.key },
-  { key: 'requests', header: t('colRequests'), text: (row) => compactNumber(row.requests), numeric: true },
-  { key: 'tokens', header: t('colTokens'), text: (row) => compactNumber(row.total_tokens), numeric: true, secondary: true },
-  { key: 'credits', header: t('colCredits'), text: (row) => compactNumber(row.credits), numeric: true },
-]);
-
-const recentColumns = computed<Array<Column<UsageRecord>>>(() => [
-  { key: 'when', header: t('colWhen'), text: (row) => relativeTime(row.started_at) },
-  { key: 'user', header: t('colUser'), text: (row) => row.username || row.user_id },
-  { key: 'model', header: t('colModel'), secondary: true },
-  { key: 'tokens', header: t('colTokens'), text: (row) => compactNumber(row.total_tokens), numeric: true },
-  { key: 'status', header: t('colStatus') },
-]);
-
-function onShape(next: ChartShape): void {
-  shape.value = next;
-  dashboardShape = next;
+function rowNote(key: string): string {
+  const row = rankedRows.value.find((entry) => entry.key === key);
+  return row ? t('dashboardRankNote', { requests: compactNumber(row.requests), tokens: compactNumber(row.total_tokens) }) : '';
 }
+function exactCredits(row: UsageBreakdown): string { return row.credits.toLocaleString(locale.value, { maximumFractionDigits: 2 }); }
+function onShape(next: ChartShape): void { shape.value = next; dashboardShape = next; }
 
 async function load(): Promise<void> {
+  if (busy.value) return;
+  busy.value = true;
   error.value = '';
   try {
     data.value = await adminApi.dashboard();
+    updatedAt.value = Date.now();
   } catch (failure) {
     error.value = failure instanceof Error ? failure.message : String(failure);
+  } finally {
+    busy.value = false;
   }
 }
-
 onMounted(load);
 </script>
 
 <script lang="ts">
+// Preserve the existing chart preference when the administrator returns.
 let dashboardShape: ChartShape = 'bar';
 </script>
 
 <template>
   <AdminFailure v-if="error" :message="error" @retry="load" />
-  <p v-else-if="!data" class="oa-table-empty">{{ t('loading') }}</p>
+  <div v-if="!data && busy" class="oa-dashboard-loading" role="status" :aria-label="t('loading')">
+    <span>{{ t('loading') }}</span><div /><div /><div />
+  </div>
 
-  <template v-else>
-    <OaAdminSection id="secInstance" :title="t('secInstance')">
-      <OaStatGrid :stats="instanceStats" />
-    </OaAdminSection>
-
-    <OaAdminSection :title="t('secLast24h')">
-      <OaStatGrid :stats="usageStats(data.last_24h)" />
-    </OaAdminSection>
-
-    <OaAdminSection :title="t('secLast7d')">
-      <OaSpark :series="data.series" :bucket-ms="data.bucket_ms" :empty-text="t('noRequestsWeek')" />
-    </OaAdminSection>
-
-    <!-- Which models are popular and which accounts are heavy, side by side
-         and in whichever shape reads better. Both charts share one shape
-         control rather than having one each: they are two views of the same
-         question, and letting them disagree about how to draw it would be a
-         choice with no meaning behind it. -->
-    <OaAdminSection
-      v-if="data.top_models.length || data.top_users.length"
-      :title="t('secRanking')"
-    >
-      <div class="oa-ranking">
-        <div class="oa-ranking-controls">
-          <OaSelectField
-            :model-value="shape"
-            :label="t('chartShape')"
-            :options="[
-              { value: 'bar', label: t('chartBar') },
-              { value: 'pie', label: t('chartPie') },
-            ]"
-            @update:model-value="onShape"
-          />
-        </div>
-        <div class="oa-ranking-pair">
-          <div class="oa-ranking-column">
-            <h4 class="oa-panel-section-title">{{ t('secBusiestModels') }}</h4>
-            <OaChart
-              :shape="shape"
-              :data="slices(data.top_models)"
-              :format="(value) => value.toFixed(2)"
-              :empty-text="t('nothingYet')"
-              :max="6"
-              :other-label="t('chartOther')"
-            />
-          </div>
-          <div class="oa-ranking-column">
-            <h4 class="oa-panel-section-title">{{ t('secTopUsers') }}</h4>
-            <OaChart
-              :shape="shape"
-              :data="slices(data.top_users)"
-              :format="(value) => value.toFixed(2)"
-              :empty-text="t('nothingYet')"
-              :max="6"
-              :other-label="t('chartOther')"
-            />
-          </div>
+  <div v-if="data" class="oa-dashboard" :aria-busy="busy">
+    <header class="oa-dashboard-intro">
+      <div>
+        <span class="oa-dashboard-kicker"><IconSpark :size="14" />{{ t('dashboardKicker') }}</span>
+        <h1>{{ t('dashboardHeading') }}</h1>
+        <p>{{ t('dashboardIntro') }}</p>
+      </div>
+      <div class="oa-dashboard-intro-meta">
+        <span class="oa-dashboard-date"><CalendarDays :size="14" aria-hidden="true" />{{ dateLabel }}</span>
+        <div><span class="oa-dashboard-updated" role="status">{{ updatedLabel }}</span>
+          <OaIconButton class="oa-icon-btn oa-dashboard-refresh" :label="t('refresh')" :disabled="busy" @click="load">
+            <RefreshCw :size="14" :class="{ 'is-refreshing': busy }" aria-hidden="true" />
+          </OaIconButton>
         </div>
       </div>
-    </OaAdminSection>
+    </header>
 
-    <OaAdminSection v-if="data.top_models.length" id="secBusiestModels" :title="t('secBusiestModels')">
-      <OaTable :columns="busiestColumns" :rows="data.top_models" :empty="t('nothingYet')" />
-    </OaAdminSection>
+    <section class="oa-dashboard-metrics" :aria-label="t('secLast24h')">
+      <article class="oa-dashboard-metric oa-dashboard-metric-featured">
+        <div class="oa-dashboard-metric-top"><span>{{ t('statRequests') }}</span><ChartNoAxesCombined :size="19" aria-hidden="true" /></div>
+        <strong :title="data.last_24h.requests.toLocaleString(locale)">{{ compactNumber(data.last_24h.requests) }}</strong>
+        <div class="oa-dashboard-metric-note"><span class="oa-dashboard-dot" />{{ t('secLast24h') }}</div>
+        <svg class="oa-dashboard-metric-orbit" viewBox="0 0 160 160" aria-hidden="true"><circle cx="132" cy="132" r="38" /><circle cx="132" cy="132" r="66" /><circle cx="132" cy="132" r="94" /></svg>
+      </article>
+      <article class="oa-dashboard-metric">
+        <div class="oa-dashboard-metric-top"><span>{{ t('statTokens') }}</span><IconSpark :size="19" /></div>
+        <strong :title="data.last_24h.total_tokens.toLocaleString(locale)">{{ compactNumber(data.last_24h.total_tokens) }}</strong>
+        <div class="oa-dashboard-metric-note oa-dashboard-token-split">
+          <span><ArrowDownLeft :size="12" aria-hidden="true" />{{ t('dashboardInput') }} {{ compactNumber(data.last_24h.input_tokens) }}</span>
+          <span><ArrowUpLeft :size="12" aria-hidden="true" />{{ t('dashboardOutput') }} {{ compactNumber(data.last_24h.output_tokens) }}</span>
+        </div>
+      </article>
+      <article class="oa-dashboard-metric">
+        <div class="oa-dashboard-metric-top"><span>{{ t('statCredits') }}</span><Coins :size="19" aria-hidden="true" /></div>
+        <strong :title="data.last_24h.credits.toLocaleString(locale)">{{ compactNumber(data.last_24h.credits) }}</strong>
+        <div class="oa-dashboard-metric-note">{{ t('dashboardWeeklyCredits', { value: compactNumber(data.last_7d.credits) }) }}</div>
+      </article>
+      <article class="oa-dashboard-metric" :class="{ 'has-errors': data.last_24h.errors > 0 }">
+        <div class="oa-dashboard-metric-top"><span>{{ t('dashboardFailedRequests') }}</span><CircleAlert :size="19" aria-hidden="true" /></div>
+        <strong :title="data.last_24h.errors.toLocaleString(locale)">{{ compactNumber(data.last_24h.errors) }}</strong>
+        <div class="oa-dashboard-metric-note">{{ data.last_24h.requests ? t('dashboardFailureRate', { rate: failureRate }) : t('noRequestsYet') }}</div>
+      </article>
+    </section>
 
-    <OaAdminSection id="secRecentRequests" :title="t('secRecentRequests')">
-      <OaTable
-        :columns="recentColumns"
-        :rows="data.recent"
-        :empty="t('noRequestsYet')"
-        :muted="(row) => row.status !== 'ok'"
-      >
-        <template #cell-model="{ row }">
-          <OaCellStack :title="row.model_name || '—'" :sub="row.provider_name" />
-        </template>
-        <template #cell-status="{ row }">
-          <StatusBadge :status="row.status" :error-code="row.error_code" />
-        </template>
-      </OaTable>
-    </OaAdminSection>
-  </template>
+    <section id="secInstance" class="oa-dashboard-resources" :aria-label="t('secInstance')">
+      <div class="oa-dashboard-resources-label"><span class="oa-dashboard-dot" />{{ t('dashboardWorkspace') }}</div>
+      <component :is="canAdmin(resource.key) ? 'RouterLink' : 'div'" v-for="resource in resources" :key="resource.key"
+        :to="canAdmin(resource.key) ? `/admin/${resource.key}` : undefined" class="oa-dashboard-resource">
+        <span class="oa-dashboard-resource-icon"><component :is="resource.icon" :size="17" /></span>
+        <span class="oa-dashboard-resource-copy"><span>{{ resource.label }} <strong>{{ resource.value.toLocaleString(locale) }}</strong></span><small>{{ resource.note }}</small></span>
+        <ArrowUpRight v-if="canAdmin(resource.key)" :size="14" aria-hidden="true" />
+      </component>
+    </section>
+
+    <div class="oa-dashboard-middle">
+      <AdminDashboardTrend :series="data.series" :totals="data.last_7d" :bucket-ms="data.bucket_ms" />
+
+      <section id="secBusiestModels" class="oa-dashboard-card oa-dashboard-ranking">
+        <div class="oa-dashboard-section-head">
+          <div><span class="oa-dashboard-kicker">{{ t('secLast7d') }}</span><h2>{{ t('dashboardRanking') }}</h2></div>
+          <div class="oa-dashboard-segment" :aria-label="t('secRanking')" role="group">
+            <button type="button" :aria-pressed="ranking === 'models'" @click="ranking = 'models'">{{ t('statModels') }}</button>
+            <button type="button" :aria-pressed="ranking === 'users'" @click="ranking = 'users'">{{ t('statUsers') }}</button>
+          </div>
+        </div>
+        <div class="oa-dashboard-rank-caption">
+          <span>{{ t('dashboardRankHint') }}</span>
+          <div class="oa-dashboard-shapes" :aria-label="t('chartShape')" role="group">
+            <button type="button" :aria-pressed="shape === 'bar'" @click="onShape('bar')">{{ t('chartBar') }}</button>
+            <button type="button" :aria-pressed="shape === 'pie'" @click="onShape('pie')">{{ t('chartPie') }}</button>
+          </div>
+        </div>
+        <p v-if="!rankedSlices.length" class="oa-dashboard-empty"><IconSpark :size="26" />{{ t('nothingYet') }}</p>
+        <ol v-else-if="shape === 'bar'" class="oa-dashboard-rank-list">
+          <li v-for="(row, index) in rankedSlices" :key="row.key || 'other'" :title="`${row.label} · ${rowNote(row.key)}`">
+            <span class="oa-dashboard-rank-number">{{ String(index + 1).padStart(2, '0') }}</span>
+            <div class="oa-dashboard-rank-main">
+              <div class="oa-dashboard-rank-label"><span>{{ row.label }}</span><strong :title="row.value.toLocaleString(locale)">{{ compactNumber(row.value) }}</strong></div>
+              <div class="oa-dashboard-rank-bottom"><span class="oa-dashboard-rank-track"><span :style="{ width: share(row.value) }" /></span><small>{{ share(row.value) }}</small></div>
+            </div>
+          </li>
+        </ol>
+        <OaChart v-else class="oa-dashboard-pie" shape="pie" :data="rankedSlices" :format="compactNumber" :empty-text="t('nothingYet')" />
+        <details v-if="rankedRows.length" class="oa-dashboard-ranking-details">
+          <summary>{{ t('dashboardRankDetails') }}</summary>
+          <div class="oa-dashboard-table-wrap" tabindex="0" :aria-label="t('dashboardRankDetails')">
+            <table class="oa-dashboard-table">
+              <thead><tr><th>{{ ranking === 'models' ? t('colModel') : t('colUser') }}</th><th>{{ t('colRequests') }}</th><th>{{ t('colTokens') }}</th><th>{{ t('colCredits') }}</th></tr></thead>
+              <tbody><tr v-for="row in rankedRows" :key="row.key"><td>{{ row.label || row.key || '—' }}</td><td>{{ compactNumber(row.requests) }}</td><td>{{ compactNumber(row.total_tokens) }}</td><td>{{ exactCredits(row) }}</td></tr></tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+    </div>
+
+    <section id="secRecentRequests" class="oa-dashboard-card oa-dashboard-recent">
+      <div class="oa-dashboard-section-head">
+        <div><h2>{{ t('secRecentRequests') }}</h2><p>{{ t('dashboardRecentHint') }}</p></div>
+        <RouterLink v-if="canAdmin('usage')" to="/admin/usage" class="oa-dashboard-link">{{ t('dashboardViewUsage') }}<ArrowUpRight :size="14" aria-hidden="true" /></RouterLink>
+      </div>
+      <p v-if="!data.recent.length" class="oa-dashboard-empty"><ChartNoAxesCombined :size="26" aria-hidden="true" />{{ t('noRequestsYet') }}</p>
+      <div v-else class="oa-dashboard-table-wrap" tabindex="0" :aria-label="t('secRecentRequests')">
+        <table class="oa-dashboard-table oa-dashboard-recent-table">
+          <thead><tr><th>{{ t('colUser') }}</th><th>{{ t('colModel') }}</th><th>{{ t('colTokens') }}</th><th>{{ t('colStatus') }}</th><th>{{ t('colWhen') }}</th></tr></thead>
+          <tbody>
+            <tr v-for="row in data.recent" :key="row.id">
+              <td><span class="oa-dashboard-user"><span class="oa-dashboard-avatar" aria-hidden="true">{{ (row.username || row.user_id).slice(0, 1).toLocaleUpperCase() }}</span><span>{{ row.username || row.user_id }}</span></span></td>
+              <td><OaCellStack :title="row.model_name || '—'" :sub="row.provider_name" /></td>
+              <td class="oa-dashboard-numeric" :title="row.total_tokens.toLocaleString(locale)">{{ compactNumber(row.total_tokens) }}</td>
+              <td><StatusBadge :status="row.status" :error-code="row.error_code" /></td>
+              <td class="oa-dashboard-when" :title="new Date(row.started_at).toLocaleString(locale)">{{ relativeTime(row.started_at) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <footer class="oa-dashboard-foot"><span class="oa-dashboard-dot" />{{ t('dashboardFootnote') }}</footer>
+  </div>
 </template>

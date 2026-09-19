@@ -329,8 +329,9 @@ onMounted(() => {
 
     <!-- The whole section arrives together, including its heading and actions.
          Keying only navigation keeps saves from replaying the entrance. -->
-    <div :key="current.slug" class="oa-admin-main" :class="`enter-${direction}`">
-      <div class="oa-admin-head" :ref="attachActions">
+    <div :key="current.slug" class="oa-admin-main" :class="[`enter-${direction}`, { 'oa-admin-main-dashboard': !current.slug && allowed }]">
+      <!-- The overview owns its editorial heading; other pages keep the shared toolbar. -->
+      <div v-if="current.slug || !allowed" class="oa-admin-head" :ref="attachActions">
         <div>
           <h1 class="oa-admin-title">{{ title }}</h1>
           <p class="oa-admin-subtitle" :hidden="!subtitle">{{ subtitle }}</p>
