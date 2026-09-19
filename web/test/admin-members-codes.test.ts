@@ -91,6 +91,13 @@ describe('administrator roles on the user detail panel', () => {
     await settle();
   }
 
+  function switchNamed(label: string): HTMLInputElement {
+    const field = [...panels.querySelectorAll<HTMLLabelElement>('.oa-checkbox-field')].find((node) =>
+      node.querySelector('span')?.textContent === label);
+    if (!field) throw new Error(`Switch not found: ${label}`);
+    return field.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  }
+
   function roleField(): HTMLElement | undefined {
     return [...panels.querySelectorAll<HTMLElement>('.oa-field')].find((field) =>
       field.querySelector('.oa-field-label')?.textContent === t('role'));
@@ -106,6 +113,58 @@ describe('administrator roles on the user detail panel', () => {
     expect(update).toHaveBeenCalledOnce();
     expect(update.mock.calls[0]![1]).not.toHaveProperty('role');
     expect(update.mock.calls[0]![1]).not.toHaveProperty('admin_permissions');
+  });
+
+  // The switch is a shortcut over fields the policy model already has, so
+  // what matters is the policy it actually saves: a rate limit of 0 is "no
+  // rate limit", and a window disabled at the user level is an exemption that
+  // beats whatever the group says.
+  it('exempts one account from every limit with a single switch', async () => {
+    await openMember(['users', 'usage']);
+    const save = vi.spyOn(adminApi, 'savePolicy').mockResolvedValue({ policy: emptyPolicy('user', member.id) });
+    vi.spyOn(adminApi, 'updateUser').mockResolvedValue({ user: member });
+
+    switchNamed(t('unlimitedQuota')).click();
+    await settle();
+    button(panels, t('save')).click();
+    await settle();
+
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      scope: 'user', scope_id: member.id, rpm: 0, tpm: 0,
+      windows: {
+        '5h': { enabled: false, requests: null, tokens: null, credits: null },
+        '1w': { enabled: false, requests: null, tokens: null, credits: null },
+        '1m': { enabled: false, requests: null, tokens: null, credits: null },
+      },
+    }));
+  });
+
+  // Off is not "remember what it was before": the account goes back to being
+  // an ordinary member of its group, which is the only other answer that
+  // means anything.
+  it('returns every limit to the group when the switch goes off again', async () => {
+    await openMember(['users', 'usage']);
+    const save = vi.spyOn(adminApi, 'savePolicy').mockResolvedValue({ policy: emptyPolicy('user', member.id) });
+    vi.spyOn(adminApi, 'updateUser').mockResolvedValue({ user: member });
+
+    const toggle = switchNamed(t('unlimitedQuota'));
+    toggle.click();
+    await settle();
+    expect(toggle.checked).toBe(true);
+    toggle.click();
+    await settle();
+    expect(toggle.checked).toBe(false);
+
+    button(panels, t('save')).click();
+    await settle();
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      rpm: null, tpm: null,
+      windows: {
+        '5h': { enabled: null, requests: null, tokens: null, credits: null },
+        '1w': { enabled: null, requests: null, tokens: null, credits: null },
+        '1m': { enabled: null, requests: null, tokens: null, credits: null },
+      },
+    }));
   });
 
   it('appoints an administrator and selects permissions in the same user detail panel', async () => {

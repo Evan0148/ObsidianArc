@@ -101,8 +101,8 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     id: 'secAllowanceOverride',
     pageSlug: 'users',
     titleKey: 'secAllowanceOverride',
-    searchKeys: ['allowanceOverrideHint', 'requestsPerMinute', 'tokensPerMinute'],
-    keywords: ['额度重写', '个人配额', '速率限制', '单用户额度', 'quota override', 'rate limit'],
+    searchKeys: ['allowanceOverrideHint', 'requestsPerMinute', 'tokensPerMinute', 'unlimitedQuota', 'unlimitedQuotaHint'],
+    keywords: ['额度重写', '个人配额', '速率限制', '单用户额度', '无限额度', '不限量', '免额度', '取消限制', 'quota override', 'rate limit', 'unlimited'],
   },
   {
     id: 'secHeldCards',

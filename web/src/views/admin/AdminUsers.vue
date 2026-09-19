@@ -180,10 +180,41 @@ const form = ref({
   apiRestrictionHours: 24 as number | null,
   newPassword: '',
   rpm: null as number | null,
+  tpm: null as number | null,
   windows: {} as Record<QuotaWindowKind, {
     override: boolean; enabled: boolean;
     requests: number | null; tokens: number | null; credits: number | null;
   }>,
+});
+
+/**
+ * "No limits at all", as one switch over the fields that already say it.
+ *
+ * Not a new flag on the account: the policy model can already express this —
+ * a rate limit of 0 means no rate limit, and a window set to `enabled: false`
+ * at the user level is an exemption that overrides whatever the group says,
+ * without clearing the numbers underneath it. What was missing was a way to
+ * say all of that at once, which is the thing an operator actually wants:
+ * exempt this one person, leave everybody else's group alone.
+ *
+ * Turning it off returns every one of those fields to inheriting the group,
+ * rather than to some remembered state — the account goes back to being an
+ * ordinary member of whatever group it is in, which is the only other answer
+ * that means anything.
+ */
+const unlimitedQuota = computed({
+  get: (): boolean => form.value.rpm === 0 && form.value.tpm === 0 &&
+    WINDOWS.every((kind) => form.value.windows[kind]?.override && !form.value.windows[kind]?.enabled),
+  set: (on: boolean): void => {
+    form.value.rpm = on ? 0 : null;
+    form.value.tpm = on ? 0 : null;
+    for (const kind of WINDOWS) {
+      const window = form.value.windows[kind];
+      if (!window) continue;
+      window.override = on;
+      if (on) window.enabled = false;
+    }
+  },
 });
 
 const self = computed(() => currentUser.value?.id === account.value?.id);
@@ -297,6 +328,7 @@ async function open(id: string): Promise<void> {
     apiRestrictionHours: restrictionActive ? restrictionHours : 24,
     newPassword: '',
     rpm: policy.rpm,
+    tpm: policy.tpm,
     windows,
   };
   panelOpen.value = true;
@@ -355,7 +387,7 @@ async function save(): Promise<void> {
       scope: 'user',
       scope_id: row.id,
       rpm: form.value.rpm,
-      tpm: null,
+      tpm: form.value.tpm,
       windows: Object.fromEntries(WINDOWS.map((kind) => [kind, form.value.windows[kind].override
         ? {
             enabled: form.value.windows[kind].enabled,
@@ -743,9 +775,20 @@ const state = { q: '', role: '', status: '', group: '' };
       />
 
       <OaFormSection :title="t('secAllowanceOverride')" :hint="t('allowanceOverrideHint')" />
+      <OaSwitchField
+        v-model="unlimitedQuota"
+        :label="t('unlimitedQuota')"
+        :hint="t('unlimitedQuotaHint')"
+      />
       <OaNumberField
         v-model="form.rpm"
         :label="t('requestsPerMinute')"
+        :placeholder="t('inherit')"
+        :min="0"
+      />
+      <OaNumberField
+        v-model="form.tpm"
+        :label="t('tokensPerMinute')"
         :placeholder="t('inherit')"
         :min="0"
       />

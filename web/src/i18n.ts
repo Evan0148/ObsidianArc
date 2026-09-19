@@ -1409,6 +1409,8 @@ const en = {
   feedbackMineEmpty: 'You have not sent anything yet.',
   feedbackNeedTitle: 'A title is needed.',
   feedbackNeedBody: 'Please describe it.',
+  unlimitedQuota: 'No limits at all',
+  unlimitedQuotaHint: 'Exempts this account from every rate limit and allowance window, whatever its group says. Turning it off returns each of them to inheriting the group.',
   feedbackChallengeTitle: 'Verify this report',
   feedbackChallengeBody: 'Complete this quick check and what you wrote is sent.',
   feedbackStatusOpen: 'Open',

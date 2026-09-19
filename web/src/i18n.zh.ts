@@ -1379,6 +1379,8 @@ export const zh: Record<StringKey, string> = {
   feedbackMineEmpty: '你还没有提交过反馈。',
   feedbackNeedTitle: '请先写个标题。',
   feedbackNeedBody: '请描述一下具体情况。',
+  unlimitedQuota: '无限额度',
+  unlimitedQuotaHint: '不管所在用户组怎么设置，这个账户都不受任何速率限制和周期额度约束。关掉后，这些限制逐项恢复为跟随用户组。',
   feedbackChallengeTitle: '验证这条反馈',
   feedbackChallengeBody: '完成这次快速验证，你写的内容就会提交。',
   feedbackStatusOpen: '待处理',
