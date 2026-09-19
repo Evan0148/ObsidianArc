@@ -746,6 +746,8 @@ const en = {
   aboutBody: 'A self-hosted AI chat server: multi-user, multi-provider, with an admin backoffice, saved conversations and usage accounting. One binary, one database, nothing else to run.',
   aboutSource: 'Source code',
   aboutLicense: 'License',
+  aboutContributors: 'Contributors',
+  aboutContributorsThanks: 'Thank you to everyone whose work is in this build.',
   aboutRuntime: 'Running for',
   // The instance can be renamed; the software underneath cannot. This label
   // carries the product name so a rebranded deployment still says what it is.

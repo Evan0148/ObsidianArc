@@ -726,6 +726,8 @@ export const zh: Record<StringKey, string> = {
   aboutBody: '一个自托管的 AI 聊天服务器：多用户、多服务商，带管理后台、对话存档和用量统计。一个二进制文件，一个数据库，没有别的要跑。',
   aboutSource: '源代码',
   aboutLicense: '许可证',
+  aboutContributors: '贡献者',
+  aboutContributorsThanks: '感谢每一位让这个版本成型的人。',
   aboutRuntime: '已运行',
   aboutVersionOf: '{product} 版本',
   aboutHeading: '关于页标题',

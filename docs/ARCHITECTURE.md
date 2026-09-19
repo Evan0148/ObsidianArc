@@ -257,10 +257,10 @@ What each reader actually downloads:
 
 | | gzipped |
 | --- | --- |
-| English, not an administrator | 137.44 kB |
-| Chinese, not an administrator | 158.79 kB |
-| …and a conversation containing a formula | 162.44 kB |
-| Chinese administrator, backoffice open | 214.56 kB |
+| English, not an administrator | 138.01 kB |
+| Chinese, not an administrator | 159.76 kB |
+| …and a conversation containing a formula | 163.41 kB |
+| Chinese administrator, backoffice open | 216.07 kB |
 
 Route-level splitting would shave the first paint further and is deliberately
 switched off for everything but the backoffice: /settings, /keys, /usage and

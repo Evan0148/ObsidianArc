@@ -1708,6 +1708,32 @@
   font-variant-numeric: tabular-nums;
 }
 
+.oa-about-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A pill, like every other thing here that can be pressed: this is the one
+   list on the page whose rows are worth reaching for. */
+.oa-about-person {
+  display: inline-block;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--ai-surface-container-low);
+  color: var(--ai-text-secondary);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.oa-about-person:hover {
+  background: var(--ai-field-bg-hover);
+  color: var(--ai-text);
+}
+
 /* --- API keys ------------------------------------------------------------- */
 
 .oa-keys-intro,

@@ -17,6 +17,27 @@ import { siteInfo } from '@/stores/session';
 const PRODUCT = 'Obsidian Arc';
 const SOURCE_URL = 'https://github.com/OnyxAxisOwO/ObsidianArc';
 
+// Everyone whose work is in the binary, most commits first.
+//
+// Written down rather than fetched. The page's own CSP is
+// `connect-src 'self'`, so a call to the GitHub API from here is refused
+// before it leaves, and widening the policy so that an About screen can
+// decorate itself would be a poor trade. A list that has to be edited when
+// somebody joins is the cost, and it is a small one — it changes a few times
+// a year, and it is one line.
+//
+// dian-ZD is here for prompt-based tool calling, which arrived as a pull
+// request rather than as commits of their own: adopting somebody's code and
+// leaving them off the list is not something this page should help with.
+const CONTRIBUTORS = [
+  'OnyxAxisOwO',
+  'momo-mnsjtxy',
+  'abloom25',
+  'dian-ZD',
+  'amnssb',
+  'mnsjtxy',
+];
+
 const router = useRouter();
 
 const version = ref('—');
@@ -46,6 +67,17 @@ onMounted(() => {
       <!-- Both fall back rather than render empty: an operator who has never
            opened the settings screen still gets a finished page. -->
       <h2 class="oa-about-name">{{ siteInfo.about?.title?.trim() || siteInfo.name }}</h2>
+
+      <section class="oa-about-details">
+        <h3 class="oa-drawer-subhead">{{ t('aboutText') }}</h3>
+        <!-- The transcript renderer builds DOM nodes from an allowlist rather
+             than accepting HTML, so operator Markdown gets the same XSS
+             boundary as model output. -->
+        <OaMarkdown
+          class="ai-answer oa-about-lede"
+          :text="siteInfo.about?.body?.trim() || t('aboutBody')"
+        />
+      </section>
 
       <div class="oa-about-facts">
         <div class="oa-about-fact">
@@ -77,14 +109,18 @@ onMounted(() => {
       </div>
 
       <section class="oa-about-details">
-        <h3 class="oa-drawer-subhead">{{ t('aboutText') }}</h3>
-        <!-- The transcript renderer builds DOM nodes from an allowlist rather
-             than accepting HTML, so operator Markdown gets the same XSS
-             boundary as model output. -->
-        <OaMarkdown
-          class="ai-answer oa-about-lede"
-          :text="siteInfo.about?.body?.trim() || t('aboutBody')"
-        />
+        <h3 class="oa-drawer-subhead">{{ t('aboutContributors') }}</h3>
+        <p class="oa-about-lede">{{ t('aboutContributorsThanks') }}</p>
+        <ul class="oa-about-people">
+          <li v-for="handle in CONTRIBUTORS" :key="handle">
+            <a
+              class="oa-about-person"
+              :href="`https://github.com/${handle}`"
+              target="_blank"
+              rel="noopener noreferrer"
+            >{{ handle }}</a>
+          </li>
+        </ul>
       </section>
     </div>
   </OaPanel>
