@@ -21,10 +21,11 @@ import (
 // which is also all the query knows.
 type Handlers struct {
 	store *Store
-	// The human check, where the operator has switched it on. The daily cap
-	// is what stops one account flooding the list; this is what stops a
-	// script holding somebody's cookie from spending that allowance ten
-	// times a day without a person ever being present.
+	// The human check, where the operator has switched it on. It guards both
+	// writes an account can make here — filing a report and answering one —
+	// because the cap on reports is ten a day while a thread holds fifty
+	// turns, so replies are the cheaper door of the two and gating only the
+	// expensive one would have secured the wrong half.
 	Challenge turnstile.Gate
 	// Resolves the caller's address for the challenge, set by the wiring the
 	// way apikey.Handlers.ClientIP is. A nil ClientIP simply means Turnstile
@@ -67,6 +68,11 @@ type listResponse struct {
 
 type replyRequest struct {
 	Body string `json:"body"`
+	// The same challenge the report itself passes, for the same reason: a
+	// thread holds fifty turns, so replying is a write an automated caller
+	// can repeat far more often than it can file new reports. Gating the
+	// report and not the replies would have left the cheaper door open.
+	Turnstile string `json:"turnstile"`
 }
 
 func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
@@ -104,11 +110,7 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 
 	// Before the write, so a refused challenge costs nothing and spends none
 	// of the sender's daily allowance.
-	address := ""
-	if h.ClientIP != nil {
-		address = h.ClientIP(r)
-	}
-	if err := h.Challenge.Check(r.Context(), body.Turnstile, address); err != nil {
+	if err := h.Challenge.Check(r.Context(), body.Turnstile, h.addressOf(r)); err != nil {
 		return challengeError(err)
 	}
 
@@ -155,6 +157,13 @@ func (h *Handlers) reply(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.DecodeJSON(w, r, &body, maxBody); err != nil {
 		return err
 	}
+
+	// Before the write, so a refused challenge costs nothing and leaves the
+	// thread as it was.
+	if err := h.Challenge.Check(r.Context(), body.Turnstile, h.addressOf(r)); err != nil {
+		return challengeError(err)
+	}
+
 	record, err := h.store.AddReply(r.Context(), ReplyInput{
 		FeedbackID: r.PathValue("id"),
 		UserID:     account.ID,
@@ -180,6 +189,13 @@ func (h *Handlers) unread(w http.ResponseWriter, r *http.Request) error {
 		return httpx.Internal(err)
 	}
 	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"unread": count})
+}
+
+func (h *Handlers) addressOf(r *http.Request) string {
+	if h.ClientIP == nil {
+		return ""
+	}
+	return h.ClientIP(r)
 }
 
 // challengeError says what the sign-up page and the key panel say, in the

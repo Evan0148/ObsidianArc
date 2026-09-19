@@ -87,8 +87,20 @@ export function fetchThread(id: string): Promise<FeedbackThread> {
   return api.get<FeedbackThread>(`/api/feedback/${id}`);
 }
 
-export function replyToFeedback(id: string, body: string): Promise<FeedbackReply> {
-  return api.post<FeedbackReply>(`/api/feedback/${id}/replies`, { body });
+/**
+ * The author's own turn on their own thread.
+ *
+ * Carries a challenge token where the operator has switched the check on for
+ * feedback: a thread holds fifty turns against ten reports a day, so this is
+ * the cheaper of the two writes to automate and is gated the same way.
+ */
+export function replyToFeedback(
+  id: string, body: string, turnstile = '',
+): Promise<FeedbackReply> {
+  return api.post<FeedbackReply>(`/api/feedback/${id}/replies`, {
+    body,
+    ...(turnstile ? { turnstile } : {}),
+  });
 }
 
 /** How many of this account's reports have an answer it has not opened. */

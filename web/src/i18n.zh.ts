@@ -1397,6 +1397,8 @@ export const zh: Record<StringKey, string> = {
   feedbackReplyDeleteConfirm: '确认删除这条回复？',
   feedbackChallengeTitle: '验证这条反馈',
   feedbackChallengeBody: '完成这次快速验证，你写的内容就会提交。',
+  feedbackReplyChallengeTitle: '验证这条回复',
+  feedbackReplyChallengeBody: '完成这次快速验证，你的回复就会发出。',
   feedbackStatusOpen: '待处理',
   feedbackStatusResolved: '已处理',
   navFeedback: '用户反馈',

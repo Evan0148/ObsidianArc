@@ -1428,6 +1428,8 @@ const en = {
   feedbackReplyDeleteConfirm: 'Delete this reply?',
   feedbackChallengeTitle: 'Verify this report',
   feedbackChallengeBody: 'Complete this quick check and what you wrote is sent.',
+  feedbackReplyChallengeTitle: 'Verify this reply',
+  feedbackReplyChallengeBody: 'Complete this quick check and your reply is sent.',
   feedbackStatusOpen: 'Open',
   feedbackStatusResolved: 'Resolved',
   navFeedback: 'Feedback',

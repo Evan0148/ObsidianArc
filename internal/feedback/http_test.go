@@ -249,3 +249,69 @@ func TestAnAuthorsOwnReplyIsNeverMarkedAsStaff(t *testing.T) {
 		t.Errorf("reply = %s, want from_staff false", body)
 	}
 }
+
+// The report is not the only write an account can make here, and it is not
+// the cheap one: ten reports a day against fifty turns a thread. A gate on
+// the report alone would have left the wider door open, which is the shape of
+// this test.
+func TestRepliesPassTheSameChallengeReportsDo(t *testing.T) {
+	store, author, _ := fixture(t)
+	handlers := NewHandlers(store)
+	ctx := auth.WithUser(context.Background(), author)
+
+	record, err := store.Create(context.Background(), author.ID, report(KindBug, PriorityLow, "Mine"))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	const address = "203.0.113.12"
+	verified := 0
+	handlers.ClientIP = func(*http.Request) string { return address }
+	handlers.Challenge = turnstile.Gate{
+		Enabled: func() bool { return true },
+		Verify: func(_ context.Context, token, ip string) error {
+			verified++
+			if ip != address {
+				t.Errorf("challenge IP = %q, want %q", ip, address)
+			}
+			if token != "solved" {
+				return turnstile.ErrFailed
+			}
+			return nil
+		},
+	}
+
+	mux := http.NewServeMux()
+	handlers.Routes(mux)
+	reply := func(body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/api/feedback/"+record.ID+"/replies",
+			strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		request = request.WithContext(ctx)
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, request)
+		return recorder
+	}
+
+	refused := reply(`{"body":"no proof"}`)
+	if refused.Code != http.StatusForbidden ||
+		!strings.Contains(refused.Body.String(), `"code":"challenge_failed"`) {
+		t.Fatalf("reply without proof = %d %s", refused.Code, refused.Body.String())
+	}
+	// Refused before the write: the thread is as it was.
+	if replies, _ := store.Replies(context.Background(), nil, record.ID); len(replies) != 0 {
+		t.Fatalf("%d replies were written past a refused challenge", len(replies))
+	}
+
+	if accepted := reply(`{"body":"with proof","turnstile":"solved"}`); accepted.Code != http.StatusCreated {
+		t.Fatalf("reply with proof = %d %s", accepted.Code, accepted.Body.String())
+	}
+	// A token is good for one submission, so a second reply is checked again
+	// rather than riding on the first one's answer.
+	if second := reply(`{"body":"again, no proof"}`); second.Code != http.StatusForbidden {
+		t.Errorf("a second reply reused the first check: %d", second.Code)
+	}
+	if verified != 3 {
+		t.Errorf("challenge checks = %d, want one per attempt", verified)
+	}
+}

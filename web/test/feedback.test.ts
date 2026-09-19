@@ -150,7 +150,8 @@ describe('the feedback panel somebody writes in', () => {
     await settle();
     button(panels, t('feedbackReplySend')).click();
     await settle();
-    expect(answer).toHaveBeenCalledWith('f1', 'still happening');
+    // No challenge switched on here, so it goes straight out with no token.
+    expect(answer).toHaveBeenCalledWith('f1', 'still happening', '');
     expect(panels.querySelectorAll('.oa-thread-turn')).toHaveLength(3);
   });
 
@@ -205,6 +206,40 @@ describe('the feedback panel somebody writes in', () => {
     expect(sheet!.textContent).toContain(t('feedbackChallengeTitle'));
     expect(sheet!.querySelector('.oa-challenge')).not.toBeNull();
     expect(panels.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe('Some detail.');
+  });
+
+  // The gate the operator switched on covers both writes. A thread holds
+  // fifty turns against ten reports a day, so replying is the cheaper thing
+  // to automate — and the one a check on the form alone would have missed.
+  it('holds a reply behind the same sheet the report goes through', async () => {
+    site.value = { ...siteInfo.value, turnstile_on_feedback: true, turnstile_site_key: '1x000' };
+    const mine = record({ replies: 1 });
+    vi.spyOn(feedbackApi, 'listFeedback').mockResolvedValue({
+      feedback: [mine], remaining: 9, max_per_day: 10,
+    });
+    vi.spyOn(feedbackApi, 'fetchThread').mockResolvedValue(thread({ feedback: mine }));
+    vi.spyOn(feedbackApi, 'fetchFeedbackUnread').mockResolvedValue({ unread: 0 });
+    const answer = vi.spyOn(feedbackApi, 'replyToFeedback')
+      .mockResolvedValue(reply({ id: 'r2', from_staff: false, body: 'still happening' }));
+    await mount(FeedbackPanel);
+
+    panels.querySelector<HTMLButtonElement>('.oa-feedback-item')!.click();
+    await settle();
+    type(panels.querySelector<HTMLTextAreaElement>('.oa-feedback-answer textarea')!, 'still happening');
+    await settle();
+    button(panels, t('feedbackReplySend')).click();
+    await settle();
+
+    // Nothing is sent until the check is passed, and the sheet says which of
+    // the two writes it is holding.
+    expect(answer).not.toHaveBeenCalled();
+    const sheet = document.querySelector('.oa-modal-overlay');
+    expect(sheet).not.toBeNull();
+    expect(sheet!.textContent).toContain(t('feedbackReplyChallengeTitle'));
+    expect(sheet!.querySelector('.oa-challenge')).not.toBeNull();
+    // And what was written is still in the box, waiting for it.
+    expect(panels.querySelector<HTMLTextAreaElement>('.oa-feedback-answer textarea')!.value)
+      .toBe('still happening');
   });
 
   // The server refuses past the cap either way; the point of asking first is

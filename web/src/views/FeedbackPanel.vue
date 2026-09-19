@@ -79,9 +79,19 @@ const guard = ref<InstanceType<typeof OaTurnstile> | null>(null);
  * this narrow — resizable down to 320px — squeezed it against the sides. The
  * redemption dialog had already answered this: the check gets a surface of
  * its own, and solving it sends what the reader had already written.
+ *
+ * It guards both writes, not just the first one. A token is good for one
+ * submission, so every report and every reply asks again — which is the point:
+ * the cap is ten reports a day but fifty turns a thread, so replying is the
+ * cheaper thing to automate and the one a gate on reports alone would miss.
  */
 const challengeOpen = ref(false);
 const challengeError = ref('');
+/** Which write the open sheet is holding. */
+const challengeFor = ref<'report' | 'reply'>('report');
+
+/** Whether this instance asks for a check at all. */
+const challenged = computed(() => !!siteInfo.value.turnstile_on_feedback);
 
 const full = computed(() => loaded.value && remaining.value <= 0);
 
@@ -111,12 +121,18 @@ function send(): void {
   }
 
   error.value = '';
-  if (siteInfo.value.turnstile_on_feedback) {
-    challengeError.value = '';
-    challengeOpen.value = true;
+  if (challenged.value) {
+    ask('report');
     return;
   }
   void submit('');
+}
+
+/** Raises the sheet for one of the two writes. */
+function ask(what: 'report' | 'reply'): void {
+  challengeFor.value = what;
+  challengeError.value = '';
+  challengeOpen.value = true;
 }
 
 async function submit(token: string): Promise<void> {
@@ -158,8 +174,12 @@ async function submit(token: string): Promise<void> {
 
 async function solved(): Promise<void> {
   const token = guard.value?.token() ?? '';
-  if (!token || busy.value) return;
+  if (!token || busy.value || threadBusy.value) return;
   challengeError.value = '';
+  if (challengeFor.value === 'reply') {
+    await submitReply(token);
+    return;
+  }
   await submit(token);
 }
 
@@ -200,21 +220,42 @@ function back(): void {
   error.value = '';
 }
 
-async function reply(): Promise<void> {
+function reply(): void {
+  const text = answer.value.trim();
+  if (!thread.value || !text || threadBusy.value) return;
+  error.value = '';
+  if (challenged.value) {
+    ask('reply');
+    return;
+  }
+  void submitReply('');
+}
+
+async function submitReply(token: string): Promise<void> {
   const current = thread.value;
   const text = answer.value.trim();
-  if (!current || !text || threadBusy.value) return;
+  if (!current || !text) return;
   threadBusy.value = true;
-  error.value = '';
   try {
-    const record = await replyToFeedback(current.feedback.id, text);
+    const record = await replyToFeedback(current.feedback.id, text, token);
     current.replies.push(record);
     current.feedback.replies = current.replies.length;
     answer.value = '';
+    challengeOpen.value = false;
     // The list behind the thread carries the count and the status badge.
     await refresh();
   } catch (failure) {
-    error.value = failure instanceof ApiError ? failure.message : t('failed');
+    const code = failure instanceof ApiError ? failure.code : '';
+    // Answered inside the sheet, with the widget reset, so the reader can try
+    // again without losing what they wrote — the same bargain the form makes.
+    if (token && (code === 'challenge_failed' || code === 'challenge_unavailable')) {
+      challengeError.value = code === 'challenge_failed'
+        ? t('challengeFailed') : t('challengeUnavailable');
+      guard.value?.reset();
+    } else {
+      challengeOpen.value = false;
+      error.value = failure instanceof ApiError ? failure.message : t('failed');
+    }
   } finally {
     threadBusy.value = false;
   }
@@ -398,7 +439,7 @@ onMounted(() => void refresh());
     v-if="challengeOpen"
     v-slot="{ close }"
     overlay-class="oa-modal-overlay"
-    :dismissible="!busy"
+    :dismissible="!busy && !threadBusy"
     @close="cancelChallenge"
   >
     <div class="oa-auth-card oa-modal-card">
@@ -410,8 +451,12 @@ onMounted(() => void refresh());
         <span class="oa-auth-mark"><IconLock :size="15" /></span>
         <span>{{ siteInfo.name }}</span>
       </div>
-      <h1 class="oa-auth-title">{{ t('feedbackChallengeTitle') }}</h1>
-      <p class="oa-auth-sub">{{ t('feedbackChallengeBody') }}</p>
+      <h1 class="oa-auth-title">
+        {{ challengeFor === 'reply' ? t('feedbackReplyChallengeTitle') : t('feedbackChallengeTitle') }}
+      </h1>
+      <p class="oa-auth-sub">
+        {{ challengeFor === 'reply' ? t('feedbackReplyChallengeBody') : t('feedbackChallengeBody') }}
+      </p>
 
       <div class="oa-auth-form">
         <OaTurnstile
