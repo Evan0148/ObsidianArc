@@ -217,13 +217,13 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
 | Binary (SQLite + embedded SPA) | < 30 MB | 20.0 MB (16.3 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 135 kB | 151.54 kB to open the chat (127.61 JS + 23.93 CSS) |
+| Frontend, on the wire | < 135 kB | 151.96 kB to open the chat (128.03 JS + 23.93 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
 
 The bundle and binaries were remeasured on 2026-09-19 (UTC), after the user
-feedback screens. The chat payload is 16.54 kB above the existing target; that
-target is unchanged. The first paint is 2.65 kB above the 148.89 kB recorded
+feedback screens. The chat payload is 16.96 kB above the existing target; that
+target is unchanged. The first paint is 3.07 kB above the 148.89 kB recorded
 earlier the same day, which is the panel somebody writes a report in, its
 share of the stylesheet, and the English strings both screens use. The
 operator's page stayed in the backoffice chunk, which grew by 2.03 kB. No

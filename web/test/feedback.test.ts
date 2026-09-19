@@ -89,7 +89,6 @@ describe('the feedback panel somebody writes in', () => {
     expect(send).toHaveBeenCalledWith({
       kind: 'idea', priority: 'high',
       title: 'A darker terminal', body: 'It would help at night.',
-      turnstile: '',
     });
     // The confirmation stays up, and the form is empty and ready for another.
     expect(panels.textContent).toContain(t('feedbackSent'));
@@ -127,17 +126,43 @@ describe('the feedback panel somebody writes in', () => {
 
   // Off unless the operator switched it on: an account that is already
   // signed in and already capped does not meet a challenge by default.
-  it('draws the challenge only in the scene the operator switched it on for', async () => {
+  it('sends straight away when no challenge is switched on', async () => {
     vi.spyOn(feedbackApi, 'listFeedback').mockResolvedValue({ feedback: [], remaining: 10, max_per_day: 10 });
+    const send = vi.spyOn(feedbackApi, 'sendFeedback').mockResolvedValue(record());
     await mount(FeedbackPanel);
-    expect(panels.querySelector('.oa-challenge')).toBeNull();
-    app?.unmount();
-    app = undefined;
-    panels.textContent = '';
 
+    type(panels.querySelector<HTMLInputElement>('input[type="text"]')!, 'A title');
+    type(panels.querySelector<HTMLTextAreaElement>('textarea')!, 'Some detail.');
+    button(panels, t('feedbackSend')).click();
+    await settle();
+
+    expect(document.querySelector('.oa-challenge')).toBeNull();
+    expect(send).toHaveBeenCalledOnce();
+  });
+
+  // The widget is a fixed-width box with its own chrome, so it gets a sheet
+  // of its own rather than a row in a panel that resizes down to 320px — the
+  // same answer the redemption dialog already gives.
+  it('holds the report behind a sheet when the challenge is switched on', async () => {
     site.value = { ...siteInfo.value, turnstile_on_feedback: true, turnstile_site_key: '1x000' };
+    vi.spyOn(feedbackApi, 'listFeedback').mockResolvedValue({ feedback: [], remaining: 10, max_per_day: 10 });
+    const send = vi.spyOn(feedbackApi, 'sendFeedback').mockResolvedValue(record());
     await mount(FeedbackPanel);
-    expect(panels.querySelector('.oa-challenge')).not.toBeNull();
+
+    expect(document.querySelector('.oa-challenge')).toBeNull();
+    type(panels.querySelector<HTMLInputElement>('input[type="text"]')!, 'A title');
+    type(panels.querySelector<HTMLTextAreaElement>('textarea')!, 'Some detail.');
+    button(panels, t('feedbackSend')).click();
+    await settle();
+
+    // Nothing is sent until the check is passed, and what was written is
+    // still there waiting for it.
+    expect(send).not.toHaveBeenCalled();
+    const sheet = document.querySelector('.oa-modal-overlay');
+    expect(sheet).not.toBeNull();
+    expect(sheet!.textContent).toContain(t('feedbackChallengeTitle'));
+    expect(sheet!.querySelector('.oa-challenge')).not.toBeNull();
+    expect(panels.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe('Some detail.');
   });
 
   // The server refuses past the cap either way; the point of asking first is

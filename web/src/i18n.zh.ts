@@ -1379,6 +1379,8 @@ export const zh: Record<StringKey, string> = {
   feedbackMineEmpty: '你还没有提交过反馈。',
   feedbackNeedTitle: '请先写个标题。',
   feedbackNeedBody: '请描述一下具体情况。',
+  feedbackChallengeTitle: '验证这条反馈',
+  feedbackChallengeBody: '完成这次快速验证，你写的内容就会提交。',
   feedbackStatusOpen: '待处理',
   feedbackStatusResolved: '已处理',
   navFeedback: '用户反馈',

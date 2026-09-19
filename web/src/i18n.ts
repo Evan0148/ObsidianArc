@@ -1409,6 +1409,8 @@ const en = {
   feedbackMineEmpty: 'You have not sent anything yet.',
   feedbackNeedTitle: 'A title is needed.',
   feedbackNeedBody: 'Please describe it.',
+  feedbackChallengeTitle: 'Verify this report',
+  feedbackChallengeBody: 'Complete this quick check and what you wrote is sent.',
   feedbackStatusOpen: 'Open',
   feedbackStatusResolved: 'Resolved',
   navFeedback: 'Feedback',
