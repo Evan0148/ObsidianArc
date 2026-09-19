@@ -16,7 +16,7 @@ func TestConcurrentAppendsTakeDistinctPositions(t *testing.T) {
 	store, _, account := attachmentFixture(t)
 	ctx := context.Background()
 
-	thread, err := store.Create(ctx, nil, account.ID, "One conversation", "")
+	thread, err := store.Create(ctx, nil, account.ID, NewConversation{Title: "One conversation"})
 	if err != nil {
 		t.Fatal(err)
 	}

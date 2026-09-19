@@ -74,19 +74,23 @@ const (
 	AdminsBypassQuota         = "quota.admins_bypass"
 	UsageDisplay              = "quota.usage_display"
 	QuotaMaxConcurrent        = "quota.max_concurrent"
-	LandingMode               = "landing.mode"
-	LandingIntro              = "landing.intro"
-	TrialEnabled              = "landing.trial_enabled"
-	TrialTurns                = "landing.trial_turns"
-	TrialModel                = "landing.trial_model"
-	DefaultSystemPrompt       = "chat.default_system_prompt"
-	ConversationMaxTurns      = "chat.max_turns"
-	APIEnabled                = "api.enabled"
-	AttachmentMaxMB           = "attachments.max_mb"
-	AttachmentRetain          = "attachments.retain"
-	AttachmentPurgeDays       = "attachments.purge_after_days"
-	AttachmentPurgeDaily      = "attachments.purge_daily_at"
-	AttachmentOrphanMins      = "attachments.orphan_minutes"
+	// How many times one work-surface turn may call the model. Each round
+	// is a real provider request that a tool result made necessary, so this
+	// is the ceiling on what a single question can cost.
+	ChatAgentMaxRounds   = "chat.agent_max_rounds"
+	LandingMode          = "landing.mode"
+	LandingIntro         = "landing.intro"
+	TrialEnabled         = "landing.trial_enabled"
+	TrialTurns           = "landing.trial_turns"
+	TrialModel           = "landing.trial_model"
+	DefaultSystemPrompt  = "chat.default_system_prompt"
+	ConversationMaxTurns = "chat.max_turns"
+	APIEnabled           = "api.enabled"
+	AttachmentMaxMB      = "attachments.max_mb"
+	AttachmentRetain     = "attachments.retain"
+	AttachmentPurgeDays  = "attachments.purge_after_days"
+	AttachmentPurgeDaily = "attachments.purge_daily_at"
+	AttachmentOrphanMins = "attachments.orphan_minutes"
 
 	// Liveness. The window is both "how far back counts as evidence" and
 	// "how quiet a model has to be before the system asks it directly",
@@ -242,6 +246,7 @@ var Defaults = map[string]string{
 	AdminsBypassQuota:       "true",
 	UsageDisplay:            UsageAbsolute,
 	QuotaMaxConcurrent:      "4",
+	ChatAgentMaxRounds:      "8",
 	LandingMode:             LandingLogin,
 	LandingIntro:            "",
 	TrialEnabled:            "false",

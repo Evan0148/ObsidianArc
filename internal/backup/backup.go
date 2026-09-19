@@ -310,7 +310,8 @@ func (s *Service) importThread(ctx context.Context, account user.User, thread Th
 		// No model id: the export names the model as text, and an id from
 		// another instance would point at a row that is not the same model or
 		// does not exist. The name is kept on each message instead.
-		created, err := s.conversations.Create(ctx, tx, account.ID, title, "")
+		created, err := s.conversations.Create(ctx, tx, account.ID,
+			conversation.NewConversation{Title: title})
 		if err != nil {
 			return err
 		}

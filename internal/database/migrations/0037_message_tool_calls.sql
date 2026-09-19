@@ -1,0 +1,13 @@
+-- What the work surface actually did, kept with the answer it did it for.
+--
+-- A work transcript is a record of what was done to the instance, and that
+-- is the whole reason it does not share a rail with the chat. Held only in
+-- the browser it survives until the reader reloads, which makes the record
+-- the shorter half of the feature: the answer stays and the six commands
+-- that produced it do not.
+--
+-- JSON in a text column, the way stats_json beside it already works: the
+-- shape belongs to the transcript renderer, nothing queries inside it, and
+-- a column per field would be four columns that are null on every message
+-- that is not a work turn.
+ALTER TABLE messages ADD COLUMN tool_calls_json TEXT NOT NULL DEFAULT '';

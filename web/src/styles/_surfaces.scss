@@ -3508,3 +3508,124 @@
   .oa-admin-head { flex-wrap: wrap; }
   .oa-admin-actions { flex-wrap: wrap; }
 }
+
+/* --- chat sidebar: work-surface tabs and the projects list ----------------
+ * This is rail material, not backoffice material — it belongs beside
+ * .ai-chat-sidebar in _chat.scss, and reuses that file's .ai-chat-list-item,
+ * .ai-chat-list-open, .ai-chat-list-empty and .ai-chat-new outright. It
+ * lands here anyway because this file was the one free of a concurrent
+ * editor this round, and _chat.scss was not. Move it back if that stops
+ * being the reason.
+ */
+
+.ai-sidebar-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.ai-sidebar-tab {
+  flex: 1;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 999px;
+  background: var(--ai-field-bg);
+  color: var(--ai-text-secondary);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.ai-sidebar-tab:hover {
+  background: var(--ai-field-bg-hover);
+}
+
+/* Same fill language as .oa-theme-choice.active: a set of pill choices marks
+ * the active one by filling solid, so a second "a few pills, one active"
+ * control reads as the same kind of control rather than a new one.
+ */
+.ai-sidebar-tab.active {
+  background: var(--ai-primary);
+  color: var(--ai-primary-text);
+}
+
+.ai-sidebar-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ai-focus-shadow);
+}
+
+.ai-project-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.ai-project-meta {
+  font-size: 10.5px;
+  color: var(--ai-text-secondary);
+}
+
+/* Deliberately its own class rather than a second use of .ai-chat-list-delete:
+ * that class turns red on its own :hover, which is right for a delete button
+ * and wrong for the edit button sitting next to it.
+ */
+.ai-project-action-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-right: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ai-text-secondary);
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* Revealed by the row itself, the same way .ai-chat-list-delete is: one hover
+ * rule on .ai-chat-list-item covers every action button in it.
+ */
+.ai-chat-list-item:hover .ai-project-action-btn,
+.ai-project-action-btn:focus-visible {
+  opacity: 1;
+}
+
+.ai-project-action-btn:hover {
+  background: var(--ai-state-hover);
+  color: var(--ai-text);
+}
+
+.ai-project-action-btn.danger:hover {
+  background: transparent;
+  color: var(--ai-danger);
+}
+
+/* Without this, moving the pointer off the row between the arming click and
+ * the confirming one would fade the button out from under an answer the
+ * reader is mid-way through giving — the same reason .ai-chat-list-delete
+ * has its own .armed rule in _chat.scss.
+ */
+.ai-project-action-btn.armed {
+  opacity: 1;
+}
+
+.ai-project-action-btn.danger.armed {
+  background: color-mix(in srgb, var(--ai-danger) 18%, transparent);
+  color: var(--ai-danger);
+}
+
+.ai-project-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 14px;
+  background: var(--ai-surface-container-high);
+}

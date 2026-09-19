@@ -9,6 +9,7 @@ import { nextTick, ref, watch } from 'vue';
 import OaIconButton from '@/components/OaIconButton.vue';
 import OaScrollArea from '@/components/OaScrollArea.vue';
 import { t } from '@/composables/useI18n';
+import { isWork, pendingMode, setMode, type Mode } from '@/stores/workspace';
 import { IconMenu, IconPlus } from '@/icons';
 import ChatComposer from './ChatComposer.vue';
 import ChatChallenge from './ChatChallenge.vue';
@@ -20,6 +21,11 @@ import {
   scrollTick, showPending, startNewConversation, status, submit, suggestions, switchTick,
 } from './useChat';
 import { isAdmin } from '@/stores/session';
+
+// The two surfaces, in the order they are offered. A list rather than two
+// hand-written buttons so the strip cannot drift out of step with the store
+// that holds which one is chosen.
+const MODES: Mode[] = ['chat', 'work'];
 
 const emit = defineEmits<{ (event: 'open-setup'): void }>();
 
@@ -126,9 +132,26 @@ defineExpose({ focus: () => composer.value?.focus() });
       <ChatMessage v-for="message in messages" :key="message.id" :message="message" />
 
       <div v-if="!messages.length && status.configured" class="ai-chat-empty">
-        <h3 class="ai-chat-empty-title">{{ t('emptyTitle') }}</h3>
-        <p class="ai-chat-empty-body">{{ t('emptyBody') }}</p>
-        <div class="ai-chat-suggestions">
+        <!-- Only on the empty state, because that is the only moment the
+             choice is still open: once a conversation exists it carries its
+             own mode, and a toggle over a running thread would offer to
+             change something it cannot. -->
+        <div class="ai-mode-switch" role="tablist" :aria-label="t('modeChat')">
+          <button
+            v-for="option in MODES"
+            :key="option"
+            type="button"
+            role="tab"
+            class="ai-mode-choice"
+            :class="{ active: pendingMode === option }"
+            :aria-selected="pendingMode === option"
+            @click="setMode(option)"
+          >{{ t(option === 'work' ? 'modeWork' : 'modeChat') }}</button>
+        </div>
+
+        <h3 class="ai-chat-empty-title">{{ isWork ? t('workGreeting') : t('emptyTitle') }}</h3>
+        <p class="ai-chat-empty-body">{{ isWork ? t('workBlurb') : t('emptyBody') }}</p>
+        <div v-if="!isWork" class="ai-chat-suggestions">
           <button
             v-for="key in suggestions"
             :key="key"

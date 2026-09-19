@@ -37,6 +37,12 @@ type Handlers struct {
 	// is the server's business, and this package does not know what a group
 	// is.
 	Deletable func(context.Context, user.User) error
+	// Consulted before a turn opens a conversation inside a project.
+	// Without it a well-formed id for a project that does not exist, or
+	// belongs to somebody else, reaches the insert and comes back as a
+	// foreign-key violation — a 500 for what is a plainly bad request.
+	// Optional; nil accepts any id.
+	ProjectAllowed func(context.Context, user.User, string) error
 	// The operator's per-file ceiling, read per request so a change takes
 	// effect without a restart. Optional; nil means the package default.
 	MaxUploadBytes func() int64
@@ -102,6 +108,10 @@ type chatRequest struct {
 	TruncateFromMessageID string `json:"truncate_from_message_id"`
 	Stream                *bool  `json:"stream"`
 	Turnstile             string `json:"turnstile"`
+	// Read only when this turn opens a new conversation; an existing one
+	// keeps the mode and the project it was opened with.
+	Mode      string `json:"mode"`
+	ProjectID string `json:"project_id"`
 }
 
 // chat answers one turn over Server-Sent Events.
@@ -148,9 +158,26 @@ func (h *Handlers) chat(w http.ResponseWriter, r *http.Request) error {
 		stream = *body.Stream
 	}
 
+	mode := conversation.Mode(body.Mode)
+	if body.Mode != "" && !mode.Valid() {
+		return httpx.BadRequest("Unknown conversation mode.")
+	}
+	if body.ProjectID != "" {
+		if !id.Valid(body.ProjectID) {
+			return httpx.BadRequest("Malformed project id.")
+		}
+		if h.ProjectAllowed != nil {
+			if err := h.ProjectAllowed(r.Context(), account, body.ProjectID); err != nil {
+				return err
+			}
+		}
+	}
+
 	request := TurnRequest{
 		User:                  account,
 		ConversationID:        body.ConversationID,
+		Mode:                  mode,
+		ProjectID:             body.ProjectID,
 		ModelID:               body.ModelID,
 		Content:               body.Content,
 		AttachmentIDs:         body.AttachmentIDs,

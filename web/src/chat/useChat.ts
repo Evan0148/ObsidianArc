@@ -26,6 +26,7 @@ import {
 } from '@/api/chat';
 import { ApiError } from '@/api/client';
 import { t, type StringKey } from '@/composables/useI18n';
+import { pendingMode, pendingProjectID } from '@/stores/workspace';
 import { currentPreferences, currentUser } from '@/stores/session';
 import { ImageError, prepareImage, type PreparedImage } from './image';
 import { currentModel, reasoning } from './useModels';
@@ -374,6 +375,13 @@ export async function runTurn(turn: TurnOptions, turnstile = ''): Promise<'done'
         ...(turn.content ? { content: turn.content } : {}),
         ...(turn.attachmentIDs?.length ? { attachment_ids: turn.attachmentIDs } : {}),
         ...(turn.truncateFrom ? { truncate_from_message_id: turn.truncateFrom } : {}),
+        // Only on the turn that opens the conversation. On a later one the
+        // server ignores them anyway, and sending a stale toggle would read
+        // as an attempt to change a thread's character after the fact.
+        ...(conversationID ? {} : {
+          mode: pendingMode.value,
+          ...(pendingProjectID.value ? { project_id: pendingProjectID.value } : {}),
+        }),
         reasoning: {
           enabled: status.value.reasoningAvailable && status.value.reasoningEnabled,
           effort: status.value.reasoningEffort,
@@ -392,6 +400,36 @@ export async function runTurn(turn: TurnOptions, turnstile = ''): Promise<'done'
         },
         onDelta: (text) => bufferDelta(text),
         onReasoning: (text) => bufferDelta('', text),
+        // A work turn's calls become rows of their own rather than living on
+        // `pending`, which is keyed to whatever conversation is on screen —
+        // messages.value is the specific transcript this turn belongs to, so
+        // that is where each call has to land for a reader who switched away
+        // and back to still find it in place. `watching()` is still the
+        // guard: a reader on a *different* conversation must not see another
+        // turn's calls spliced into what they are reading.
+        onToolCall: (payload) => {
+          if (!watching()) return;
+          messages.value = messages.value.concat([{
+            id: payload.id,
+            seq: messages.value.length + 1,
+            role: 'assistant',
+            content: '',
+            created_at: Date.now(),
+            toolCall: { id: payload.id, name: payload.name, arguments: payload.arguments, done: false },
+          }]);
+          scrollToEnd();
+        },
+        onToolResult: (payload) => {
+          if (!watching()) return;
+          // Reassigned rather than patched in place: mutating a streamed
+          // block through its existing array reference has silently
+          // truncated a transcript here before (c434c2a).
+          messages.value = messages.value.map((entry) => (
+            entry.id === payload.id && entry.toolCall
+              ? { ...entry, toolCall: { ...entry.toolCall, output: payload.output, failed: payload.failed, done: true } }
+              : entry
+          ));
+        },
         onDone: (payload) => {
           // A notice about this turn is only readable where the turn is. Said
           // over a conversation the reader switched to, it would be about

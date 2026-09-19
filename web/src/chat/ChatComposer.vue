@@ -5,10 +5,29 @@ import { t } from '@/composables/useI18n';
 import { IconClose, IconSend, IconStop } from '@/icons';
 import ComposerMenu from './ComposerMenu.vue';
 import ModelControl from './ModelControl.vue';
+import { currentUser, isAdmin, isSuperAdmin } from '@/stores/session';
+import { isWork } from '@/stores/workspace';
 import {
   MAX_MESSAGE_CHARS, TEXT_FILE_ACCEPT, addImages, addTextFiles, attachments, busy,
   draft, messages, removeAttachment, status, stoppable, submit, stop,
 } from './useChat';
+
+// What the work surface can reach on this account's behalf, said before
+// it is used rather than discovered afterwards.
+//
+// This is the most useful thing on the row and it is cheap to be exact
+// about: the tools are the console commands this account may run, and the
+// account already knows which grants it holds. A super-administrator is
+// told plainly that this is everything; anybody else is given the count
+// they actually have, because "full access" on a reader who holds two
+// grants would be a worse lie than saying nothing.
+const accessLabel = computed(() => {
+  if (!isWork.value) return '';
+  if (isSuperAdmin.value) return t('accessFull');
+  const grants = currentUser.value?.admin_permissions?.length ?? 0;
+  if (isAdmin.value && grants > 0) return t('accessCount', { count: String(grants) });
+  return t('accessReadOnly');
+});
 
 const input = ref<HTMLTextAreaElement | null>(null);
 const imagePicker = ref<HTMLInputElement | null>(null);
@@ -106,6 +125,16 @@ defineExpose({ focus: () => input.value?.focus({ preventScroll: true }) });
         @keydown="onKeyDown"
         @paste="onPaste"
       />
+      <!-- Beside the model rather than above the box: what will answer and
+           what it may touch are one decision, and a reader deciding whether
+           to send this is deciding both. -->
+      <span
+        v-if="isWork"
+        class="ai-access-chip"
+        :class="{ warn: isSuperAdmin }"
+        :title="t('accessExplain')"
+      >{{ t('accessScope') }} · {{ accessLabel }}</span>
+
       <!-- What answers and how hard it thinks, beside the button that sends
            it — the decision and the act in the same place. -->
       <ModelControl />

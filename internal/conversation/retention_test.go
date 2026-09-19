@@ -232,7 +232,7 @@ func (f *retentionFixture) attach(t *testing.T, createdAt int64) string {
 		t.Fatalf("upload: %v", err)
 	}
 
-	thread, err := f.store.Create(ctx, nil, f.userID, "thread", "")
+	thread, err := f.store.Create(ctx, nil, f.userID, NewConversation{Title: "thread"})
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}

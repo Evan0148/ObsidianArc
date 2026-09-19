@@ -59,6 +59,10 @@ type stubUpstream struct {
 	// decoded map.
 	calls []upstreamCall
 	hold  chan struct{}
+	// One script per request, consumed in order, for the work surface: a
+	// loop that calls the model twice needs the second answer to differ
+	// from the first or it never ends.
+	rounds [][]string
 }
 
 type upstreamCall struct {
@@ -83,6 +87,10 @@ func newStubUpstream(t *testing.T) *stubUpstream {
 			body:        raw,
 		})
 		frames := append([]string(nil), stub.frames...)
+		if len(stub.rounds) > 0 {
+			frames = stub.rounds[0]
+			stub.rounds = stub.rounds[1:]
+		}
 		status := stub.status
 		body := stub.body
 		hold := stub.hold
@@ -916,7 +924,8 @@ func TestRejectedTurnWritesNothing(t *testing.T) {
 func TestUpdateMessage(t *testing.T) {
 	f := newFixture(t)
 
-	conv, err := f.conversations.Create(context.Background(), nil, f.account.ID, "Test", f.model.ID)
+	conv, err := f.conversations.Create(context.Background(), nil, f.account.ID,
+		conversation.NewConversation{Title: "Test", ModelID: f.model.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -953,7 +962,8 @@ func TestUpdateMessageHandler(t *testing.T) {
 	mux := http.NewServeMux()
 	handlers.Routes(mux)
 
-	conv, err := f.conversations.Create(context.Background(), nil, f.account.ID, "Test", f.model.ID)
+	conv, err := f.conversations.Create(context.Background(), nil, f.account.ID,
+		conversation.NewConversation{Title: "Test", ModelID: f.model.ID})
 	if err != nil {
 		t.Fatal(err)
 	}

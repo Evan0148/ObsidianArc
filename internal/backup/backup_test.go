@@ -76,7 +76,7 @@ func (f *fixture) write(t *testing.T, owner user.User, title string, texts ...st
 	t.Helper()
 	ctx := context.Background()
 
-	created, err := f.conversations.Create(ctx, nil, owner.ID, title, "")
+	created, err := f.conversations.Create(ctx, nil, owner.ID, conversation.NewConversation{Title: title})
 	if err != nil {
 		t.Fatal(err)
 	}

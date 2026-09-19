@@ -17,6 +17,7 @@ import (
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/adapter"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/admin"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/agent"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/announcement"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/apikey"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/auth"
@@ -34,6 +35,7 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/httpx"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/mail"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/model"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/project"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/provider"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/quota"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/reqlog"
@@ -116,7 +118,18 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	keys := apikey.NewStore(db)
 	cards := card.NewStore(db)
 	quotaService := quota.NewService(db, quota.NewStore(db), settingsService)
+	projects := project.NewStore(db)
+
 	chatService := chat.NewService(db, conversations, models, registry, settingsService)
+	// Scoped by owner inside the store, so a conversation carrying somebody
+	// else's project id reads back nothing rather than their brief.
+	chatService.ProjectInstructions = func(ctx context.Context, actor user.User, projectID string) string {
+		record, err := projects.Get(ctx, nil, actor.ID, projectID)
+		if err != nil {
+			return ""
+		}
+		return record.Instructions
+	}
 
 	// The one check that decides whether an account may spend anything, and
 	// the release that undoes what it claimed. Shared with the API surface
@@ -473,6 +486,14 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	// a burst challenge reuse connections to Cloudflare.
 	challengeClient := &http.Client{}
 	chatHandlers := chat.NewHandlers(chatService, conversations)
+	// Scoped by owner, so somebody else'''s project is reported as absent
+	// rather than as forbidden — which is also all the query knows.
+	chatHandlers.ProjectAllowed = func(ctx context.Context, actor user.User, projectID string) error {
+		if _, err := projects.Get(ctx, nil, actor.ID, projectID); err != nil {
+			return httpx.NotFound("No such project.")
+		}
+		return nil
+	}
 	// The one condition that must hold for an account to spend anything,
 	// shared by the turn and by the upload that precedes it.
 	chatHandlers.Uploadable = func(_ context.Context, account user.User) error {
@@ -660,6 +681,9 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	backupHandlers := backup.NewHandlers(backup.NewService(db, conversations, preferences))
 	backupHandlers.Routes(mux)
 
+	projectHandlers := project.NewHandlers(projects)
+	projectHandlers.Routes(mux)
+
 	compatHandlers := compat.NewHandlers(settingsService, users, groups, models, keys, registry)
 	compatHandlers.Guard = guard
 	compatHandlers.OnTurn = recordTurn
@@ -696,6 +720,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	usageHandlers.Routes(consoleAPI)
 	cardHandlers.Routes(consoleAPI)
 	backupHandlers.Routes(consoleAPI)
+	projectHandlers.Routes(consoleAPI)
 
 	// Read before the SSH server is built rather than from it: `help ssh`
 	// prints the fingerprint, so the engine needs it, and the server needs
@@ -734,6 +759,12 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 			}
 		},
 	})
+	// The work surface's tools are the console's own commands, filtered to
+	// what the account may run. Set here rather than at construction
+	// because the engine is built from the mux the handlers above are
+	// mounted on, and the chat service is older than both.
+	chatService.Tools = agent.New(consoleEngine)
+
 	consoleHandlers := console.NewHandlers(consoleEngine)
 	consoleHandlers.ClientIP = func(r *http.Request) string { return httpx.ClientIP(r, proxyTrust) }
 	consoleHandlers.Routes(mux)

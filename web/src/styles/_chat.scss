@@ -662,6 +662,118 @@
   word-break: break-word;
 }
 
+/* One call the model made on the work surface. Same collapsed-box shape as
+   .ai-thinking above it, for the same reason: worth watching happen, rarely
+   worth re-reading once the answer that used it is on screen. */
+.ai-tool-call {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: var(--ai-surface-container-low);
+}
+
+.ai-tool-call-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  padding: 2px 0;
+}
+
+.ai-tool-call-head::-webkit-details-marker {
+  display: none;
+}
+
+.ai-tool-call-head::before {
+  content: '▸';
+  flex: none;
+  transition: transform 0.15s ease;
+}
+
+.ai-tool-call[open] > .ai-tool-call-head::before {
+  transform: rotate(90deg);
+}
+
+/* The command name, not prose, so it reads as code even collapsed. */
+.ai-tool-call-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+/* Same shape as .ai-pop-model-tag: quiet until there is something to flag,
+   then --ai-danger says so the same way an unstable model does. */
+.ai-tool-call-tag {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--ai-surface-container-high);
+  color: var(--ai-text-secondary);
+  font-size: 10px;
+}
+
+.ai-tool-call-tag.warn {
+  background: color-mix(in srgb, var(--ai-danger) 18%, transparent);
+  color: var(--ai-danger);
+}
+
+/* Smaller than the answer's own spinner: it sits inside an 18px-tall pill,
+   not on its own line. */
+.ai-tool-call-tag .ai-chat-spinner {
+  width: 9px;
+  height: 9px;
+  border-width: 1.5px;
+}
+
+.ai-tool-call-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ai-tool-call-label {
+  margin-bottom: 2px;
+  color: var(--ai-text-secondary);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+/* Arguments and output are the model's and the console's words, not this
+   interface's — a scroll box rather than a height that grows with them, so
+   an 8000-character command result cannot push the composer off screen. */
+.ai-tool-call-pre {
+  margin: 0;
+  max-height: 220px;
+  padding: 8px 10px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--ai-surface-container-high);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* A tool call is a progress line, not a turn of its own; the 16px rhythm
+   .ai-msg keeps between messages would space out a run of these calls as if
+   each were a separate answer. */
+.ai-msg-tool {
+  margin-bottom: 6px;
+}
+
 /* Measured cost of the turn. Deliberately the quietest thing in the message:
    it is diagnostic, wanted only when the answer felt slow or expensive. */
 .ai-msg-stats {
@@ -745,6 +857,59 @@
 
 .ai-chat-empty {
   padding: 8px 4px 0;
+}
+
+/* The two surfaces, over the greeting on an empty conversation.
+   A segmented pill, like every other choice here: no outline, and the fill
+   is what says which one is on. */
+.ai-mode-switch {
+  display: inline-flex;
+  gap: 2px;
+  margin: 0 0 18px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--ai-surface-container-low);
+}
+
+.ai-mode-choice {
+  padding: 6px 20px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ai-text-secondary);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+.ai-mode-choice:hover {
+  color: var(--ai-text);
+}
+
+.ai-mode-choice.active {
+  background: var(--ai-surface-container-high);
+  color: var(--ai-text);
+}
+
+/* What the work surface may reach, on the composer row beside the model.
+   Toned with --ai-danger for a super-administrator and left quiet for
+   everybody else: the warning is for the account that can change anything,
+   not for the one that can read its own usage. */
+.ai-access-chip {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--ai-surface-container-low);
+  color: var(--ai-text-secondary);
+  font-size: 11.5px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.ai-access-chip.warn {
+  background: color-mix(in srgb, var(--ai-danger) 18%, transparent);
+  color: var(--ai-danger);
 }
 
 .ai-chat-empty-title {
