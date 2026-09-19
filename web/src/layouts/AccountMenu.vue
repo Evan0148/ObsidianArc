@@ -71,6 +71,9 @@ async function signOut(close: () => void): Promise<void> {
       <OaMenuItem :title="t('settings')" @click="go(close, '/settings')">
         <template #leading><IconGear :size="14" /></template>
       </OaMenuItem>
+      <OaMenuItem :title="t('navUsage')" @click="go(close, '/usage')">
+        <template #leading><IconChart :size="14" /></template>
+      </OaMenuItem>
       <OaMenuItem :title="t('archivedConversations')" @click="go(close, '/archive')">
         <template #leading><IconArchive :size="14" /></template>
       </OaMenuItem>
@@ -83,9 +86,6 @@ async function signOut(close: () => void): Promise<void> {
         @click="go(close, '/uptime')"
       >
         <template #leading><IconPulse :size="14" /></template>
-      </OaMenuItem>
-      <OaMenuItem :title="t('navUsage')" @click="go(close, '/usage')">
-        <template #leading><IconChart :size="14" /></template>
       </OaMenuItem>
       <OaMenuItem :title="t('apiKeys')" @click="go(close, '/keys')">
         <template #leading><IconKey :size="14" /></template>

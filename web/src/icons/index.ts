@@ -26,6 +26,7 @@ import { h, render, type FunctionalComponent } from 'vue';
 import {
   Archive as LucideArchive, Check as LucideCheck, ChevronDown as LucideChevronDown,
   Download as LucideDownload, MoreVertical as LucideMoreVertical, Pencil as LucidePencil,
+  RefreshCw as LucideRefreshCw,
   Terminal as LucideTerminal, createLucideIcon,
 } from 'lucide-vue-next';
 
@@ -91,6 +92,7 @@ export const IconEdit = wrap(LucidePencil as unknown as AnyComponent);
 // And this one has no drawing to be faithful to — the console is new here, so
 // there is no earlier glyph for it to match.
 export const IconTerminal = wrap(LucideTerminal as unknown as AnyComponent);
+export const IconRefresh = wrap(LucideRefreshCw as unknown as AnyComponent);
 export const IconChevronRight = draw('ChevronRight', ['m9 6 6 6-6 6']);
 export const IconTrash = draw('Trash', ['M3 6h18', 'M8 6V4h8v2', 'M19 6l-1 14H6L5 6', 'M10 11v6', 'M14 11v6']);
 export const IconKey = draw('Key', [

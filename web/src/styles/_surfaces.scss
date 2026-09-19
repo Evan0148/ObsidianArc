@@ -638,10 +638,17 @@
 
 /* The same rows, drawn for a screen somebody opened on purpose rather than a
    menu they are passing through. */
-.oa-card-head {
+.oa-card-head,
+.oa-usage-head {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .oa-icon-btn .is-refreshing {
+    animation: ai-chat-spin 1s linear infinite;
+  }
 }
 
 /* Layout only. The look comes from .oa-input-row, which is where every other

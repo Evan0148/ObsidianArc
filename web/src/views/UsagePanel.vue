@@ -25,7 +25,7 @@ import type { Column } from '@/components/table-types';
 import type { Stat } from '@/components/stat';
 import { celebrate } from '@/composables/useConfetti';
 import { t } from '@/composables/useI18n';
-import { IconClose, IconLock, IconPlus } from '@/icons';
+import { IconClose, IconLock, IconPlus, IconRefresh } from '@/icons';
 import { absoluteTime, compactNumber, relativeTime } from '@/lib/format';
 import { currentPreferences, currentUser, siteInfo, syncPreferences } from '@/stores/session';
 
@@ -151,8 +151,21 @@ function expiry(at: number): string {
 async function loadAllowance(): Promise<void> {
   try {
     summary.value = await fetchUsage();
+    allowanceError.value = '';
   } catch {
     allowanceError.value = t('usageUnavailable');
+  }
+}
+
+const refreshingAllowance = ref(false);
+
+async function refreshAllowance(): Promise<void> {
+  if (refreshingAllowance.value) return;
+  refreshingAllowance.value = true;
+  try {
+    await loadAllowance();
+  } finally {
+    refreshingAllowance.value = false;
   }
 }
 
@@ -283,7 +296,18 @@ onMounted(() => {
       </p>
     </section>
 
-    <OaFormSection :title="t('secAllowance')" />
+    <div class="oa-usage-head">
+      <h3 class="oa-drawer-subhead">{{ t('secAllowance') }}</h3>
+      <span class="oa-header-spacer" />
+      <OaIconButton
+        class="oa-icon-btn"
+        :label="t('refresh')"
+        :disabled="refreshingAllowance"
+        @click="refreshAllowance"
+      >
+        <IconRefresh :size="14" :class="{ 'is-refreshing': refreshingAllowance }" />
+      </OaIconButton>
+    </div>
     <div class="oa-usage-list">
       <p v-if="allowanceError" class="oa-field-hint">{{ allowanceError }}</p>
       <span v-else-if="unlimited" class="oa-usage-reset">{{ t('quotaUnlimited') }}</span>

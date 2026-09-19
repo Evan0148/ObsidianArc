@@ -74,9 +74,14 @@
   display: none;
 }
 
-.oa-icon-btn:hover {
+.oa-icon-btn:hover:not(:disabled) {
   background: var(--ai-state-hover);
   color: var(--ai-text);
+}
+
+.oa-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* Pills, filled, no outline. A border and a fill are two ways of saying the
