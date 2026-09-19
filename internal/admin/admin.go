@@ -22,6 +22,7 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/card"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/conversation"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/database"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/feedback"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/group"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/health"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/httpx"
@@ -54,6 +55,7 @@ type Handlers struct {
 	security      *securityevents.Store
 	cards         *card.Store
 	health        *health.Store
+	feedback      *feedback.Store
 	// Runs the sign-up reviewer on a hypothetical account. Set by the wiring;
 	// nil where no reviewer exists.
 	TryReview func(ctx context.Context, in ReviewTrial) (string, string, error)
@@ -81,6 +83,7 @@ func NewHandlers(
 	securityLog *securityevents.Store,
 	cards *card.Store,
 	healthStore *health.Store,
+	feedbackStore *feedback.Store,
 ) *Handlers {
 	return &Handlers{
 		db:            db,
@@ -100,6 +103,7 @@ func NewHandlers(
 		security:      securityLog,
 		cards:         cards,
 		health:        healthStore,
+		feedback:      feedbackStore,
 	}
 }
 
@@ -180,6 +184,10 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /api/admin/announcements", protected("announcements", h.createAnnouncement))
 	mux.Handle("PATCH /api/admin/announcements/{id}", protected("announcements", h.updateAnnouncement))
 	mux.Handle("DELETE /api/admin/announcements/{id}", protected("announcements", h.deleteAnnouncement))
+
+	mux.Handle("GET /api/admin/feedback", protected("feedback", h.listFeedback))
+	mux.Handle("PATCH /api/admin/feedback/{id}", protected("feedback", h.updateFeedback))
+	mux.Handle("DELETE /api/admin/feedback/{id}", protected("feedback", h.deleteFeedback))
 
 	mux.Handle("GET /api/admin/references", protected("", h.references))
 	mux.Handle("GET /api/admin/member-options", protected("groups", h.listMemberOptions))

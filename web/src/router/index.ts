@@ -1,12 +1,12 @@
 // The routing table.
 //
-// Nine screens and one nested layout, so the table below is the whole of it.
+// Ten screens and one nested layout, so the table below is the whole of it.
 // The two things worth reading are the nesting and the guards.
 //
-// The nesting: /settings, /keys, /usage and /about are children of `/`, not
-// pages of their own, because that is what they are on screen — a column that
-// opens beside the conversation, with the chat still behind it. The
-// hand-written router had each of those screens call `renderChatPage` first
+// The nesting: /settings, /keys, /usage, /feedback and /about are children of
+// `/`, not pages of their own, because that is what they are on screen — a
+// column that opens beside the conversation, with the chat still behind it.
+// The hand-written router had each of those screens call `renderChatPage` first
 // and open a panel over the row it returned; expressing it as nesting is the
 // same result with the chat mounted once instead of rebuilt four times.
 //
@@ -27,6 +27,7 @@ import { currentUser, isAdmin, canAdmin, siteInfo } from '@/stores/session';
 import AboutPanel from '@/views/AboutPanel.vue';
 import ArchivePanel from '@/views/ArchivePanel.vue';
 import AuthView from '@/views/AuthView.vue';
+import FeedbackPanel from '@/views/FeedbackPanel.vue';
 import ImageLabPanel from '@/views/ImageLabPanel.vue';
 import KeysPanel from '@/views/KeysPanel.vue';
 import NotFoundView from '@/views/NotFoundView.vue';
@@ -52,6 +53,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'archive', component: ArchivePanel, meta: { auth: true } },
       { path: 'keys', component: KeysPanel, meta: { auth: true } },
       { path: 'usage', component: UsagePanel, meta: { auth: true } },
+      { path: 'feedback', component: FeedbackPanel, meta: { auth: true } },
       { path: 'about', component: AboutPanel, meta: { auth: true } },
       { path: 'image-lab', component: ImageLabPanel, meta: { auth: true } },
       { path: 'uptime', component: UptimePanel, meta: { auth: true } },

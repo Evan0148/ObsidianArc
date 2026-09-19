@@ -30,6 +30,7 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/consolessh"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/conversation"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/database"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/feedback"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/group"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/health"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/httpx"
@@ -112,6 +113,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	healthStore := health.NewStore(db)
 	conversations := conversation.NewStore(db)
 	announcements := announcement.NewStore(db)
+	feedbackStore := feedback.NewStore(db)
 	usageStore := usage.NewStore(db)
 	requestLog := reqlog.NewStore(db)
 	securityLog := securityevents.NewStore(db)
@@ -692,8 +694,18 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	compatHandlers.OnTurn = recordTurn
 	compatHandlers.Routes(mux)
 	announcement.NewHandlers(announcements).Routes(mux)
+	feedbackHandlers := feedback.NewHandlers(feedbackStore)
+	// Signed in and spending nothing, so this is the one challenge an
+	// operator switches on after being spammed rather than before.
+	feedbackHandlers.ClientIP = func(r *http.Request) string { return httpx.ClientIP(r, proxyTrust) }
+	feedbackHandlers.Challenge = turnstile.Gate{
+		Client:  challengeClient,
+		Enabled: func() bool { return settingsService.Bool(settings.TurnstileOnFeedback) },
+		Secret:  func() string { return settingsService.Get(settings.TurnstileSecretKey) },
+	}
+	feedbackHandlers.Routes(mux)
 	trial.NewHandlers(settingsService, models, registry, proxyTrust, cfg.SecretKey).Routes(mux)
-	adminHandlers := admin.NewHandlers(db, users, groups, providers, models, settingsService, registry, authService, usageStore, quotaService, conversations, announcements, keys, requestLog, securityLog, cards, healthStore)
+	adminHandlers := admin.NewHandlers(db, users, groups, providers, models, settingsService, registry, authService, usageStore, quotaService, conversations, announcements, keys, requestLog, securityLog, cards, healthStore, feedbackStore)
 	adminHandlers.TryReview = adminTryReview
 	adminHandlers.Routes(mux)
 
@@ -724,6 +736,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	cardHandlers.Routes(consoleAPI)
 	backupHandlers.Routes(consoleAPI)
 	projectHandlers.Routes(consoleAPI)
+	feedbackHandlers.Routes(consoleAPI)
 
 	// Read before the SSH server is built rather than from it: `help ssh`
 	// prints the fingerprint, so the engine needs it, and the server needs
@@ -840,6 +853,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 					settingsService.Bool(settings.TurnstileOnLogin) ||
 					settingsService.Bool(settings.TurnstileOnAPIKey) ||
 					settingsService.Bool(settings.TurnstileOnRedeem) ||
+					settingsService.Bool(settings.TurnstileOnFeedback) ||
 					settingsService.Int(settings.ChatChallengeRequests, 0) > 0)
 		}),
 		httpx.SameOrigin(cfg.AllowedOrigins),

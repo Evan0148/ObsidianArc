@@ -49,7 +49,7 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
   { id: 'secAbout', pageSlug: 'settings', titleKey: 'controlAbout', searchKeys: ['aboutHeading', 'aboutHeadingHint', 'aboutText', 'aboutTextHint'] },
   { id: 'secHomeNotice', pageSlug: 'settings', titleKey: 'homeNotice', searchKeys: ['homeNoticeHint', 'homeNoticeDismissible', 'homeNoticeDismissibleHint'] },
   { id: 'secRegistrationLimits', pageSlug: 'security', titleKey: 'controlRegistrationLimits', searchKeys: ['signupsPerMinute', 'signupsPerHour', 'signupsPerIP', 'signupsIPWindow'] },
-  { id: 'secVerificationScenes', pageSlug: 'security', titleKey: 'controlVerificationScenes', searchKeys: ['turnstileOnLogin', 'turnstileOnSignup', 'turnstileOnAPIKey', 'turnstileOnRedeem'] },
+  { id: 'secVerificationScenes', pageSlug: 'security', titleKey: 'controlVerificationScenes', searchKeys: ['turnstileOnLogin', 'turnstileOnSignup', 'turnstileOnAPIKey', 'turnstileOnRedeem', 'turnstileOnFeedback'] },
   { id: 'secChatChallenge', pageSlug: 'security', titleKey: 'controlChatChallenge', searchKeys: ['chatChallengeRequests', 'chatChallengeWindow', 'chatChallengeClearance'] },
   { id: 'secReviewTrial', pageSlug: 'security', titleKey: 'reviewTry', searchKeys: ['reviewTryHint', 'reviewTryRun', 'username', 'email', 'qq'] },
 
@@ -518,6 +518,29 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     pageSlug: 'announcements',
     titleKey: 'addAnnouncement',
     keywords: ['发布新公告', '新建公告', '弹窗公告', '顶部条公告', 'new announcement', 'publish announcement'],
+  },
+
+  // --- Feedback
+  {
+    id: 'feedbackSummary',
+    pageSlug: 'feedback',
+    titleKey: 'navFeedback',
+    searchKeys: ['feedbackStatTotal', 'feedbackStatOpen', 'feedbackStatHigh', 'feedbackStatBugs', 'feedbackStatIdeas'],
+    keywords: ['用户反馈', '反馈列表', '意见反馈', '建议', 'bug 提交', '报错反馈', 'feedback', 'bug reports', 'suggestions'],
+  },
+  {
+    id: 'feedbackFilters',
+    pageSlug: 'feedback',
+    titleKey: 'feedbackSearch',
+    searchKeys: ['feedbackAnyStatus', 'feedbackAnyKind', 'feedbackAnyPriority', 'feedbackStatusOpen', 'feedbackStatusResolved'],
+    keywords: ['筛选反馈', '搜索反馈', '未处理', '已处理', '优先级', 'filter feedback', 'priority', 'resolved'],
+  },
+  {
+    id: 'feedbackList',
+    pageSlug: 'feedback',
+    titleKey: 'feedbackMine',
+    searchKeys: ['feedbackResolve', 'feedbackReopen', 'feedbackEmpty'],
+    keywords: ['处理反馈', '标记已处理', '删除反馈', 'mark resolved', 'reopen feedback'],
   },
 
   // --- Terminal

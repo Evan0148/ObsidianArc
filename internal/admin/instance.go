@@ -156,6 +156,7 @@ var writableSettings = map[string]bool{
 	settings.TurnstileOnSignup:         true,
 	settings.TurnstileOnAPIKey:         true,
 	settings.TurnstileOnRedeem:         true,
+	settings.TurnstileOnFeedback:       true,
 	settings.SignupReview:              true,
 	settings.SignupReviewModel:         true,
 	settings.SignupReviewMode:          true,

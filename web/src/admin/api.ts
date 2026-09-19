@@ -221,8 +221,25 @@ export interface Meta {
 // The reader's client already describes this shape, and one row of JSON
 // should not have two declarations that can drift apart.
 import type { Announcement, DisplayMode } from '../api/announcements';
+import type { Feedback, FeedbackKind, FeedbackPriority, FeedbackStatus } from '../api/feedback';
 
 export type { Announcement, DisplayMode };
+export type { Feedback, FeedbackKind, FeedbackPriority, FeedbackStatus };
+
+/**
+ * The count block above the operator's feedback list.
+ *
+ * Answered alongside the page rather than by a second endpoint: it is four
+ * numbers over the same table the list has just been read from, and a
+ * summary that can disagree with the list under it is worse than no summary.
+ */
+export interface FeedbackSummary {
+  total: number;
+  open: number;
+  bugs: number;
+  ideas: number;
+  high_open: number;
+}
 
 // --- reads ---------------------------------------------------------------------
 
@@ -532,6 +549,19 @@ export const adminApi = {
   updateAnnouncement: (id: string, body: Record<string, unknown>) =>
     api.patch<{ announcement: Announcement }>(`/api/admin/announcements/${id}`, body),
   deleteAnnouncement: (id: string) => api.delete<void>(`/api/admin/announcements/${id}`),
+
+  feedback: (query = '') =>
+    api.get<{
+      feedback: Feedback[];
+      total: number;
+      offset: number;
+      summary: FeedbackSummary;
+    }>(`/api/admin/feedback${query}`),
+  // Status is the only thing an operator may change: the report itself is
+  // what somebody wrote.
+  setFeedbackStatus: (id: string, status: FeedbackStatus) =>
+    api.patch<Feedback>(`/api/admin/feedback/${id}`, { status }),
+  deleteFeedback: (id: string) => api.delete<void>(`/api/admin/feedback/${id}`),
 };
 
 async function streamProbeAllModels(

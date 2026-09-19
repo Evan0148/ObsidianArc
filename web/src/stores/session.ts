@@ -49,6 +49,7 @@ const FALLBACK_SITE: SiteInfo = {
   turnstile_on_login: false,
   turnstile_on_signup: false,
   turnstile_on_api_key: false,
+  turnstile_on_feedback: false,
   turnstile_on_redeem: false,
   turnstile_on_chat_speed: false,
   landing: { mode: 'login', intro: '', trial: false, trial_turns: 0 },

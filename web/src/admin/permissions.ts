@@ -14,5 +14,6 @@ export const ADMIN_PERMISSIONS: Array<{ value: string; label: StringKey }> = [
   { value: 'security', label: 'navSecurity' },
   { value: 'settings', label: 'navSettings' },
   { value: 'announcements', label: 'announcements' },
+  { value: 'feedback', label: 'navFeedback' },
   { value: 'administrators', label: 'manageAdministrators' },
 ];

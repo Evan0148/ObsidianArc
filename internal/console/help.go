@@ -19,6 +19,7 @@ var groupTitles = map[string]Text{
 	"catalogue":   {EN: "Providers & Models", ZH: "服务商与模型"},
 	"operations":  {EN: "Operations", ZH: "运维"},
 	"instance":    {EN: "Instance", ZH: "实例设置"},
+	"feedback":    {EN: "Feedback", ZH: "用户反馈"},
 	"chat":        {EN: "Chat", ZH: "对话"},
 	"projects":    {EN: "Projects", ZH: "项目"},
 	"credit":      {EN: "Credit & Quota", ZH: "额度与用量"},

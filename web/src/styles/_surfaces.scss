@@ -3676,3 +3676,225 @@
   border-radius: 14px;
   background: var(--ai-surface-container-high);
 }
+
+/* --- feedback ---------------------------------------------------------------
+ *
+ * Two screens, one block: the panel somebody writes in, and the operator's
+ * page where what they wrote is read. They share the card shape because they
+ * are the same record seen from two sides.
+ */
+
+.oa-feedback-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.oa-feedback-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.oa-feedback-results {
+  display: flex;
+  flex-direction: column;
+}
+
+.oa-feedback-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* A card is a button because every one of them opens the whole report, the
+ * same way a log row does. */
+.oa-feedback-card {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 1px solid var(--ai-border);
+  border-radius: 14px;
+  background: var(--ai-surface-container-low);
+  color: var(--ai-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: oaKeyRowFadeIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: calc(var(--item-idx, 0) * 40ms);
+}
+
+.oa-feedback-card:hover {
+  background: var(--ai-surface-container);
+  border-color: var(--ai-outline-variant);
+}
+
+.oa-feedback-card.selected {
+  border-color: var(--ai-primary);
+}
+
+/* Resolved is still worth reading, just not worth reading first. */
+.oa-feedback-card.resolved {
+  opacity: 0.62;
+}
+
+.oa-feedback-card.resolved:hover {
+  opacity: 0.9;
+}
+
+/* The one place the two kinds are told apart at a glance, and the only thing
+ * on this screen carrying a hue: a defect and a suggestion are read in
+ * different moods, and a badge alone makes that a word to scan for rather
+ * than a shape to see. */
+.oa-feedback-card-rail {
+  flex: 0 0 3px;
+  border-radius: 999px;
+  background: var(--ai-text-secondary);
+}
+
+.oa-feedback-card-rail.bug {
+  background: var(--ai-danger);
+}
+
+.oa-feedback-card-rail.idea {
+  background: var(--ai-primary);
+}
+
+.oa-feedback-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.oa-feedback-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.oa-feedback-card-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oa-feedback-card-body {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ai-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oa-feedback-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 11px;
+  color: var(--ai-text-secondary);
+}
+
+.oa-feedback-detail-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* The report as it was typed: newlines kept, because the blank line between
+ * "what I expected" and "what happened" is half of what was said. */
+.oa-feedback-detail-body {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--ai-surface-container-low);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* --- the panel somebody writes in --- */
+
+/* Tall by default. The box is the invitation, and a short one asks for a
+ * sentence when what helps is a paragraph. */
+.oa-feedback-body textarea {
+  min-height: 190px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.oa-feedback-sent {
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: var(--ai-surface-container-high);
+  font-size: 12px;
+  color: var(--ai-text);
+}
+
+.oa-feedback-full {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ai-danger);
+}
+
+.oa-feedback-mine {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.oa-feedback-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.oa-feedback-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: var(--ai-surface-container-low);
+}
+
+.oa-feedback-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.oa-feedback-item-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oa-feedback-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  font-size: 11px;
+  color: var(--ai-text-secondary);
+}

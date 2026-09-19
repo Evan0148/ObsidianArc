@@ -19,7 +19,7 @@ func TestAdministratorPageGrants(t *testing.T) {
 		"providers": "/providers", "models": "/models", "availability": "/health",
 		"usage": "/usage", "resources": "/resources", "codes": "/codes",
 		"logs": "/logs", "security": "/security/events", "settings": "/settings",
-		"announcements": "/announcements",
+		"announcements": "/announcements", "feedback": "/feedback",
 	}
 	for _, grant := range user.AdminPermissions {
 		t.Run(grant, func(t *testing.T) {

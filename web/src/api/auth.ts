@@ -79,6 +79,7 @@ export interface SiteInfo {
   turnstile_on_login?: boolean;
   turnstile_on_signup?: boolean;
   turnstile_on_api_key?: boolean;
+  turnstile_on_feedback?: boolean;
   turnstile_on_redeem?: boolean;
   turnstile_on_chat_speed?: boolean;
   /** Whether a model reads each sign-up, so the button can say it is happening. */

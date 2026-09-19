@@ -17,7 +17,8 @@ import OaSearchField from '@/components/OaSearchField.vue';
 import { t } from '@/composables/useI18n';
 import {
   IconChart, IconChevron, IconCpu, IconFile, IconHome, IconKey, IconLayers, IconLock,
-  IconMenu, IconPulse, IconServer, IconSliders, IconSpark, IconTerminal, IconUsers,
+  IconMenu, IconMessage, IconPulse, IconServer, IconSliders, IconSpark, IconTerminal,
+  IconUsers,
 } from '@/icons';
 import AppShell from '@/layouts/AppShell.vue';
 import { useRailCollapse } from '@/composables/useRailCollapse';
@@ -41,6 +42,7 @@ import AdminLogs from './AdminLogs.vue';
 import AdminSecurity from './AdminSecurity.vue';
 import AdminSettings from './AdminSettings.vue';
 import AdminAnnouncements from './AdminAnnouncements.vue';
+import AdminFeedback from './AdminFeedback.vue';
 import AdminTerminal from './AdminTerminal.vue';
 
 // Labels are looked up at render rather than stored, because this table is
@@ -59,6 +61,7 @@ const PAGES: AdminPageSpec[] = [
   { slug: 'security', label: 'navSecurity', icon: IconLock, component: markRaw(AdminSecurity) },
   { slug: 'settings', label: 'navSettings', icon: IconSliders, component: markRaw(AdminSettings) },
   { slug: 'announcements', label: 'announcements', icon: IconFile, component: markRaw(AdminAnnouncements) },
+  { slug: 'feedback', label: 'navFeedback', icon: IconMessage, component: markRaw(AdminFeedback) },
   { slug: 'terminal', label: 'navTerminal', icon: IconTerminal, component: markRaw(AdminTerminal), permission: '*' },
 ];
 

@@ -216,17 +216,19 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | --- | --- | --- |
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
-| Binary (SQLite + embedded SPA) | < 30 MB | 19.9 MB (16.1 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 135 kB | 148.89 kB to open the chat (125.42 JS + 23.47 CSS) |
+| Binary (SQLite + embedded SPA) | < 30 MB | 20.0 MB (16.3 MB `-tags nosqlite`, Linux amd64) |
+| Frontend, on the wire | < 135 kB | 151.54 kB to open the chat (127.61 JS + 23.93 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
 
-The bundle and binaries were remeasured on 2026-09-19 (UTC), including the
-grouped administration pages and the current conversation workspace changes.
-The chat payload is 13.89 kB above the existing target; that target is unchanged.
-The first paint is 5.37 kB above the previously recorded 143.52 kB. The new
-administration components remain in the backoffice chunk; their English
-strings and stylesheet join the main payload. No dependency was added.
+The bundle and binaries were remeasured on 2026-09-19 (UTC), after the user
+feedback screens. The chat payload is 16.54 kB above the existing target; that
+target is unchanged. The first paint is 2.65 kB above the 148.89 kB recorded
+earlier the same day, which is the panel somebody writes a report in, its
+share of the stylesheet, and the English strings both screens use. The
+operator's page stayed in the backoffice chunk, which grew by 2.03 kB. No
+dependency was added: the one new icon is lucide's own drawing, from the
+package the other icons already come from.
 
 The earlier administrative console — the terminal section and its SSH
 transport — is also admin-only code, and all 8.35 kB of its frontend landed in the backoffice
@@ -244,7 +246,7 @@ dependency — but it is a megabyte of code that only runs when
 Binary sizes use Go 1.27.0,
 Linux amd64, `-trimpath -ldflags "-s -w"`; transfer sizes are gzip-compressed
 JS and CSS in decimal kB, with totals rounded after summing. Binary sizes
-are decimal MB (19,853,472 bytes with SQLite; 16,138,400 bytes without it).
+are decimal MB (19,972,256 bytes with SQLite; 16,257,184 bytes without it).
 
 The target moved with the interface. It was < 80 kB while the frontend was
 hand-written DOM calls, and 71.6 kB against it; adopting Vue put roughly 45 kB

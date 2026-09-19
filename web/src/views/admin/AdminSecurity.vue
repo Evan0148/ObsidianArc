@@ -66,6 +66,7 @@ const form = ref({
   turnstileOnSignup: false,
   turnstileOnAPIKey: false,
   turnstileOnRedeem: false,
+  turnstileOnFeedback: false,
   chatChallengeRequests: 0 as number | null,
   chatChallengeWindowSecs: 60 as number | null,
   chatChallengeClearMins: 30 as number | null,
@@ -106,6 +107,7 @@ function collect(): Record<string, string> {
     'turnstile.on_signup': String(form.value.turnstileOnSignup),
     'turnstile.on_api_key': String(form.value.turnstileOnAPIKey),
     'turnstile.on_redeem': String(form.value.turnstileOnRedeem),
+    'turnstile.on_feedback': String(form.value.turnstileOnFeedback),
     'security.chat_challenge_requests': String(form.value.chatChallengeRequests ?? 0),
     'security.chat_challenge_window_seconds': String(form.value.chatChallengeWindowSecs ?? 60),
     'security.chat_challenge_clear_minutes': String(form.value.chatChallengeClearMins ?? 30),
@@ -241,6 +243,7 @@ async function load(): Promise<void> {
       turnstileOnSignup: values['turnstile.on_signup'] === 'true',
       turnstileOnAPIKey: values['turnstile.on_api_key'] === 'true',
       turnstileOnRedeem: values['turnstile.on_redeem'] === 'true',
+      turnstileOnFeedback: values['turnstile.on_feedback'] === 'true',
       chatChallengeRequests: Number(values['security.chat_challenge_requests'] ?? 0),
       chatChallengeWindowSecs: Number(values['security.chat_challenge_window_seconds'] ?? 60),
       chatChallengeClearMins: Number(values['security.chat_challenge_clear_minutes'] ?? 30),
@@ -445,6 +448,11 @@ onMounted(load);
           v-model="form.turnstileOnRedeem"
           :label="t('turnstileOnRedeem')"
           :hint="t('turnstileOnRedeemHint')"
+        />
+        <OaSwitchField
+          v-model="form.turnstileOnFeedback"
+          :label="t('turnstileOnFeedback')"
+          :hint="t('turnstileOnFeedbackHint')"
         />
       </AdminControlCard>
       <AdminControlCard id="secReviewTrial" v-show="visible('secReviewTrial')" :title="t('reviewTry')" :icon="IconSliders" :hint="t('reviewTryHint')">

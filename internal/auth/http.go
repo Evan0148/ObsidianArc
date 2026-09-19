@@ -161,6 +161,7 @@ func (h *Handlers) site(w http.ResponseWriter, r *http.Request) error {
 		"turnstile_on_signup":     populated && h.settings.Bool(settings.TurnstileOnSignup),
 		"turnstile_on_api_key":    h.settings.Bool(settings.TurnstileOnAPIKey),
 		"turnstile_on_redeem":     h.settings.Bool(settings.TurnstileOnRedeem),
+		"turnstile_on_feedback":   h.settings.Bool(settings.TurnstileOnFeedback),
 		"turnstile_on_chat_speed": h.settings.Int(settings.ChatChallengeRequests, 0) > 0,
 		// So the sign-up button can say what it is waiting for. A review
 		// takes seconds, and a button that only says "creating account" for
@@ -665,6 +666,7 @@ func (h *Handlers) turnstileSiteKey(firstAccount bool) string {
 		!h.settings.Bool(settings.TurnstileOnLogin) &&
 		!h.settings.Bool(settings.TurnstileOnAPIKey) &&
 		!h.settings.Bool(settings.TurnstileOnRedeem) &&
+		!h.settings.Bool(settings.TurnstileOnFeedback) &&
 		h.settings.Int(settings.ChatChallengeRequests, 0) <= 0 {
 		return ""
 	}
