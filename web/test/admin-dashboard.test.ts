@@ -47,7 +47,7 @@ describe('dashboard overview', () => {
     expect(ranking.querySelector('.oa-dashboard-rank-list')?.textContent).toContain('onyx');
     expect(ranking.textContent).not.toContain('Claude Sonnet 4.5');
     await changeLanguage('zh');
-    expect(host.textContent).toContain('所有动态，一目了然。');
+    expect(host.textContent).toContain('概览');
     expect(button(ranking, t('statUsers')).getAttribute('aria-pressed')).toBe('true');
   });
 

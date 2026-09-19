@@ -318,9 +318,8 @@ const en = {
   resizePanel: 'Resize the panel',
 
   // --- admin: dashboard
-  dashboardKicker: 'YOUR WORKSPACE, AT A GLANCE',
-  dashboardHeading: 'A clearer view of everything.',
-  dashboardIntro: 'The last 24 hours, and the activity behind every number.',
+  dashboardHeading: 'Overview',
+  dashboardIntro: 'Usage statistics and system status for the last 24 hours.',
   dashboardUpdated: 'Updated at {time}',
   dashboardInput: 'In',
   dashboardOutput: 'Out',
@@ -339,7 +338,7 @@ const en = {
   dashboardRankHint: 'By credits · share of this ranking',
   dashboardRankNote: '{requests} requests · {tokens} tokens',
   dashboardRankDetails: 'View breakdown',
-  dashboardRecentHint: 'The latest calls, in one place.',
+  dashboardRecentHint: 'Recent requests and execution status.',
   dashboardViewUsage: 'Explore usage',
   dashboardFootnote: 'Usage is counted across conversations and API calls.',
   secInstance: 'Instance',

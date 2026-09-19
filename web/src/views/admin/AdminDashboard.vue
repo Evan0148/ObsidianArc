@@ -88,9 +88,8 @@ let dashboardShape: ChartShape = 'bar';
   <div v-if="data" class="oa-dashboard" :aria-busy="busy">
     <header class="oa-dashboard-intro">
       <div>
-        <span class="oa-dashboard-kicker"><IconSpark :size="14" />{{ t('dashboardKicker') }}</span>
         <h1>{{ t('dashboardHeading') }}</h1>
-        <p>{{ t('dashboardIntro') }}</p>
+        <p v-if="t('dashboardIntro')">{{ t('dashboardIntro') }}</p>
       </div>
       <div class="oa-dashboard-intro-meta">
         <span class="oa-dashboard-date"><CalendarDays :size="14" aria-hidden="true" />{{ dateLabel }}</span>
