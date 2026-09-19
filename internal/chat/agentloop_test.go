@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -393,5 +394,170 @@ func TestWhatTheTurnRanIsSavedWithTheAnswer(t *testing.T) {
 		if len(message.ToolCalls) != 0 {
 			t.Errorf("a chat turn saved tool calls: %+v", message.ToolCalls)
 		}
+	}
+}
+
+// --- stopping -------------------------------------------------------------
+
+// stoppableBroker cancels the turn from inside a tool, which is what pressing
+// Stop while a command is running looks like from here.
+type stoppableBroker struct {
+	tools  []adapter.Tool
+	cancel context.CancelFunc
+	ran    []string
+}
+
+func (b *stoppableBroker) Offer(context.Context, user.User) []adapter.Tool { return b.tools }
+
+func (b *stoppableBroker) Run(_ context.Context, _ user.User, call adapter.ToolCall) (string, bool) {
+	b.ran = append(b.ran, call.Name)
+	if b.cancel != nil {
+		b.cancel()
+	}
+	return "ran " + call.Name, false
+}
+
+// A work turn stopped after a command ran but before any prose had been
+// written used to save nothing at all: the empty-answer test did not know
+// about tool calls, and because the client discards what streamed and
+// re-reads the transcript from the server, "saved nothing" is what a reader
+// sees as the answer vanishing.
+func TestStoppingAWorkTurnKeepsWhatItAlreadyDid(t *testing.T) {
+	f := newFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	broker := &stoppableBroker{tools: oneTool(), cancel: cancel}
+	f.service.Tools = broker
+
+	// The first round asks for a tool and writes no prose. Cancelling inside
+	// the tool means the second round never gets an answer.
+	f.upstream.rounds = [][]string{
+		{callFrame("c1", "user_list", `{}`)},
+		{textFrame("never arrives")},
+	}
+
+	req := TurnRequest{
+		User: f.account, ModelID: f.model.ID, Stream: true,
+		Mode: conversation.ModeWork, Content: "look something up",
+	}
+	resolved, release, err := f.service.Prepare(ctx, &req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+
+	var conversationID string
+	_ = f.service.Run(ctx, req, resolved, func(event string, payload any) error {
+		if event == EventStart {
+			conversationID = payload.(StartPayload).ConversationID
+		}
+		return nil
+	})
+
+	if len(broker.ran) != 1 {
+		t.Fatalf("commands run = %v, want the one before the stop", broker.ran)
+	}
+
+	messages := f.messages(t, conversationID)
+	last := messages[len(messages)-1]
+	if last.Role != conversation.RoleAssistant {
+		t.Fatalf("nothing was saved for the stopped turn; last message is a %s", last.Role)
+	}
+	if len(last.ToolCalls) != 1 || last.ToolCalls[0].Name != "user_list" {
+		t.Errorf("the command it ran was not kept: %+v", last.ToolCalls)
+	}
+	// The row is what says the model produced this, and a stopped answer was
+	// the one kind that could not say it.
+	if last.ModelName == "" {
+		t.Error("the stopped answer lost its model attribution")
+	}
+}
+
+// A turn with prose as well keeps both halves, and the prose is not replaced
+// by the record of the commands.
+func TestStoppingKeepsProseAndCommandsTogether(t *testing.T) {
+	f := newFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	f.service.Tools = &stoppableBroker{tools: oneTool(), cancel: cancel}
+	f.upstream.rounds = [][]string{
+		{textFrame("Let me check. "), callFrame("c1", "user_list", `{}`)},
+		{textFrame("never arrives")},
+	}
+
+	req := TurnRequest{
+		User: f.account, ModelID: f.model.ID, Stream: true,
+		Mode: conversation.ModeWork, Content: "look something up",
+	}
+	resolved, release, err := f.service.Prepare(ctx, &req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+
+	var conversationID string
+	_ = f.service.Run(ctx, req, resolved, func(event string, payload any) error {
+		if event == EventStart {
+			conversationID = payload.(StartPayload).ConversationID
+		}
+		return nil
+	})
+
+	messages := f.messages(t, conversationID)
+	last := messages[len(messages)-1]
+	if !strings.Contains(last.Content, "Let me check") {
+		t.Errorf("the prose that streamed was lost: %q", last.Content)
+	}
+	if len(last.ToolCalls) != 1 {
+		t.Errorf("the command was lost: %+v", last.ToolCalls)
+	}
+}
+
+// The command has already run against the instance. Whether the reader was
+// still connected to be told about it does not change that, so it is written
+// down before it is announced rather than after.
+func TestACommandThatRanIsRecordedEvenIfNobodyIsListening(t *testing.T) {
+	f := newFixture(t)
+	broker := &stubBroker{tools: oneTool()}
+	f.service.Tools = broker
+
+	f.upstream.rounds = [][]string{
+		{callFrame("c1", "user_list", `{}`)},
+		{textFrame("never arrives")},
+	}
+
+	req := TurnRequest{
+		User: f.account, ModelID: f.model.ID, Stream: true,
+		Mode: conversation.ModeWork, Content: "look something up",
+	}
+	ctx := context.Background()
+	resolved, release, err := f.service.Prepare(ctx, &req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+
+	// The connection drops exactly when the result is announced, which is
+	// the moment the old order lost the record.
+	var conversationID string
+	_ = f.service.Run(ctx, req, resolved, func(event string, payload any) error {
+		switch event {
+		case EventStart:
+			conversationID = payload.(StartPayload).ConversationID
+		case EventToolResult:
+			return errors.New("client gone")
+		}
+		return nil
+	})
+
+	if len(broker.ran) != 1 {
+		t.Fatalf("the command did not run: %v", broker.ran)
+	}
+	messages := f.messages(t, conversationID)
+	last := messages[len(messages)-1]
+	if len(last.ToolCalls) != 1 || last.ToolCalls[0].Name != "user_list" {
+		t.Errorf("a command that ran was not written down: %+v", last.ToolCalls)
 	}
 }

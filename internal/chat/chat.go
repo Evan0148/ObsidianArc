@@ -180,8 +180,6 @@ type ErrorPayload struct {
 	MessageID string `json:"message_id,omitempty"`
 }
 
-// Emit is how the gateway talks to the transport. Returning an error stops
-// the turn, which is how a disconnected client cancels the provider call.
 // ToolCallPayload is one call the model asked for, announced before it
 // runs so the transcript can show what is happening rather than a pause.
 type ToolCallPayload struct {
@@ -217,6 +215,8 @@ type ToolBroker interface {
 	Run(ctx context.Context, actor user.User, call adapter.ToolCall) (output string, failed bool)
 }
 
+// Emit is how the gateway talks to the transport. Returning an error stops
+// the turn, which is how a disconnected client cancels the provider call.
 type Emit func(event string, payload any) error
 
 var (
@@ -458,18 +458,27 @@ func (s *Service) runRounds(
 			}
 
 			output, failed := s.Tools.Run(ctx, req.User, call)
+
+			// Recorded before it is announced, and deliberately in that
+			// order. The command has already run against the instance;
+			// whether the reader is still connected to be told about it
+			// does not change that, and announcing first means a reader who
+			// closed the tab mid-turn leaves a command that happened and
+			// was never written down.
+			//
+			// Collected as it goes rather than rebuilt at the end, for the
+			// same reason: the loop may stop early, and what it did before
+			// it stopped is exactly the part worth keeping.
+			*ran = append(*ran, conversation.ToolCall{
+				ID: call.ID, Name: call.Name, Arguments: call.Arguments,
+				Output: output, Failed: failed,
+			})
+
 			if err := emit(EventToolResult, ToolResultPayload{
 				ID: call.ID, Name: call.Name, Output: output, Failed: failed,
 			}); err != nil {
 				return result, err
 			}
-			// Collected as it goes rather than rebuilt at the end: the loop
-			// may stop early, and what it did before it stopped is exactly
-			// the part worth keeping.
-			*ran = append(*ran, conversation.ToolCall{
-				ID: call.ID, Name: call.Name, Arguments: call.Arguments,
-				Output: output, Failed: failed,
-			})
 			results = append(results, adapter.Part{
 				Kind: adapter.PartToolResult, ToolCallID: call.ID, Text: output,
 			})
@@ -798,9 +807,17 @@ func (s *Service) finishFailed(ctx, requestCtx context.Context, f finished, chat
 	stopped := requestCtx.Err() != nil || isCancelled(chatErr)
 
 	if stopped {
-		// Whatever streamed before the stop is kept: it is what the user read
+		// Whatever happened before the stop is kept: it is what the user read
 		// while deciding to stop, and it was paid for.
-		if strings.TrimSpace(f.answer) == "" && strings.TrimSpace(f.reasoning) == "" {
+		//
+		// The commands count as much as the prose, and on the work surface
+		// they may be all there is — a turn stopped while a tool was running
+		// has no answer yet and has still changed the instance. Leaving on
+		// the empty test below threw the whole turn away, and because the
+		// client discards what streamed and re-reads the transcript from
+		// here, "nothing was saved" is what a reader sees as "it vanished".
+		if strings.TrimSpace(f.answer) == "" && strings.TrimSpace(f.reasoning) == "" &&
+			len(f.toolCalls) == 0 {
 			s.record(ctx, f, "", StatusAborted, "cancelled")
 			return nil
 		}
@@ -812,8 +829,13 @@ func (s *Service) finishFailed(ctx, requestCtx context.Context, f finished, chat
 			Content:        f.answer,
 			Reasoning:      f.reasoning,
 			ModelID:        f.resolved.Model.ID,
-			ProviderID:     f.resolved.Provider.ID,
-			Stats:          stats,
+			// Named here as it is on every other path. Without it a stopped
+			// answer is the one row in a transcript that cannot say what
+			// wrote it.
+			ModelName:  f.resolved.Model.DisplayName,
+			ProviderID: f.resolved.Provider.ID,
+			Stats:      stats,
+			ToolCalls:  f.toolCalls,
 		})
 		if err != nil {
 			return err
@@ -836,10 +858,19 @@ func (s *Service) finishFailed(ctx, requestCtx context.Context, f finished, chat
 		ConversationID: f.prepared.conversationID,
 		UserID:         f.request.User.ID,
 		Role:           conversation.RoleAssistant,
-		Error:          friendly,
-		ModelID:        f.resolved.Model.ID,
-		ModelName:      f.resolved.Model.DisplayName,
-		ProviderID:     f.resolved.Provider.ID,
+		// No Content or Reasoning: an error row renders instead of the
+		// answer rather than beside it, so a half-written reply stored here
+		// would be text the interface never shows.
+		Error:     friendly,
+		ModelID:   f.resolved.Model.ID,
+		ModelName: f.resolved.Model.DisplayName,
+		// The commands most of all. A turn that failed after changing the
+		// instance has changed it, and the transcript is where that is
+		// written down — a provider that timed out, or a reader whose
+		// connection dropped between a command and its announcement, must
+		// not be able to erase what already ran.
+		ToolCalls:  f.toolCalls,
+		ProviderID: f.resolved.Provider.ID,
 	})
 	if err != nil {
 		return err
