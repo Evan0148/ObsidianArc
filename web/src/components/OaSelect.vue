@@ -165,7 +165,16 @@ async function openList(): Promise<void> {
   // arrives on the trigger. Without this the arrows, Enter and Escape are all
   // inert for a list opened with the mouse — and Escape falls through to the
   // panel, which closes underneath the open list.
-  (searchInput.value ?? trigger.value)?.focus({ preventScroll: true });
+  //
+  // On touch/mobile devices, focusing the search input forces the on-screen
+  // keyboard up, which shrinks the viewport and dismisses the menu. Focus the
+  // trigger instead so the keyboard stays down until the user taps the field.
+  const isCoarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+  if (isCoarse || !searchInput.value) {
+    trigger.value?.focus({ preventScroll: true });
+  } else {
+    searchInput.value.focus({ preventScroll: true });
+  }
   // One frame closed, so the transition has a state to move from.
   requestAnimationFrame(() => {
     if (open.value) shown.value = true;

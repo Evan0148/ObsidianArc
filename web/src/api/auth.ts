@@ -30,6 +30,7 @@ export interface Account {
   // endpoints that act; these decide only what is worth drawing.
   allow_stats: boolean;
   allow_delete_conversations: boolean;
+  allow_archive_conversations?: boolean;
   /** A user-level brake over the group's API permission. A zero expiry means
    *  the restriction remains until an administrator lifts it. */
   api_restricted: boolean;
@@ -60,6 +61,7 @@ export interface SiteInfo {
   description: string;
   registration_enabled: boolean;
   health_show_users?: boolean;
+  allow_archive_conversations?: boolean;
   // True while the instance has no accounts at all: the first person to
   // register becomes the administrator.
   setup_required: boolean;

@@ -37,6 +37,8 @@ type Handlers struct {
 	// is the server's business, and this package does not know what a group
 	// is.
 	Deletable func(context.Context, user.User) error
+	// Consulted before a conversation is archived. Optional; nil means permitted.
+	Archivable func(context.Context, user.User) error
 	// Consulted before a turn opens a conversation inside a project.
 	// Without it a well-formed id for a project that does not exist, or
 	// belongs to somebody else, reaches the insert and comes back as a
@@ -325,7 +327,25 @@ func (h *Handlers) listConversations(w http.ResponseWriter, r *http.Request) err
 	account := auth.MustUser(r.Context())
 
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	records, err := h.conversations.List(r.Context(), account.ID, limit)
+	filter := conversation.ListFilter{Limit: limit}
+
+	q := r.URL.Query()
+	if q.Has("archived") {
+		archived, err := strconv.ParseBool(q.Get("archived"))
+		if err == nil {
+			filter.Archived = &archived
+		}
+	} else {
+		f := false
+		filter.Archived = &f
+	}
+
+	if q.Has("project_id") {
+		pid := q.Get("project_id")
+		filter.ProjectID = &pid
+	}
+
+	records, err := h.conversations.ListWithFilter(r.Context(), account.ID, filter)
 	if err != nil {
 		return httpx.Internal(err)
 	}
@@ -361,15 +381,22 @@ func (h *Handlers) updateConversation(w http.ResponseWriter, r *http.Request) er
 	}
 
 	var body struct {
-		Title  *string `json:"title"`
-		Pinned *bool   `json:"pinned"`
+		Title    *string `json:"title"`
+		Pinned   *bool   `json:"pinned"`
+		Archived *bool   `json:"archived"`
 	}
 	if err := httpx.DecodeJSON(w, r, &body, 8*1024); err != nil {
 		return err
 	}
 
+	if body.Archived != nil && *body.Archived {
+		if err := h.mayArchive(r.Context(), account); err != nil {
+			return err
+		}
+	}
+
 	record, err := h.conversations.Update(r.Context(), account.ID, conversationID,
-		conversation.Update{Title: body.Title, Pinned: body.Pinned})
+		conversation.Update{Title: body.Title, Pinned: body.Pinned, Archived: body.Archived})
 	if err != nil {
 		return translateConversationError(err)
 	}
@@ -411,6 +438,13 @@ func (h *Handlers) mayDelete(ctx context.Context, account user.User) error {
 		return nil
 	}
 	return h.Deletable(ctx, account)
+}
+
+func (h *Handlers) mayArchive(ctx context.Context, account user.User) error {
+	if h.Archivable == nil {
+		return nil
+	}
+	return h.Archivable(ctx, account)
 }
 
 func (h *Handlers) updateMessage(w http.ResponseWriter, r *http.Request) error {

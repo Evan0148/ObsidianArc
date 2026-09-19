@@ -5,7 +5,7 @@ import OaAvatar from '@/components/OaAvatar.vue';
 import OaMenu from '@/components/OaMenu.vue';
 import OaMenuItem from '@/components/OaMenuItem.vue';
 import { t } from '@/composables/useI18n';
-import { IconChart, IconGear, IconImage, IconInfo, IconKey, IconLogout, IconPulse, IconSliders } from '@/icons';
+import { IconArchive, IconChart, IconGear, IconImage, IconInfo, IconKey, IconLogout, IconPulse, IconSliders } from '@/icons';
 import { displayName } from '@/lib/account';
 import { forget, siteInfo, isAdmin, canAdmin } from '@/stores/session';
 
@@ -70,6 +70,9 @@ async function signOut(close: () => void): Promise<void> {
 
       <OaMenuItem :title="t('settings')" @click="go(close, '/settings')">
         <template #leading><IconGear :size="14" /></template>
+      </OaMenuItem>
+      <OaMenuItem :title="t('archivedConversations')" @click="go(close, '/archive')">
+        <template #leading><IconArchive :size="14" /></template>
       </OaMenuItem>
       <OaMenuItem :title="t('imageLab')" @click="go(close, '/image-lab')">
         <template #leading><IconImage :size="14" /></template>

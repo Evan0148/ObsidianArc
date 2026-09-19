@@ -25,6 +25,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import { currentUser, isAdmin, canAdmin, siteInfo } from '@/stores/session';
 import AboutPanel from '@/views/AboutPanel.vue';
+import ArchivePanel from '@/views/ArchivePanel.vue';
 import AuthView from '@/views/AuthView.vue';
 import ImageLabPanel from '@/views/ImageLabPanel.vue';
 import KeysPanel from '@/views/KeysPanel.vue';
@@ -48,6 +49,7 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: '', name: 'chat', component: { render: () => null } },
       { path: 'settings', component: SettingsPanel, meta: { auth: true } },
+      { path: 'archive', component: ArchivePanel, meta: { auth: true } },
       { path: 'keys', component: KeysPanel, meta: { auth: true } },
       { path: 'usage', component: UsagePanel, meta: { auth: true } },
       { path: 'about', component: AboutPanel, meta: { auth: true } },

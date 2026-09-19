@@ -23,7 +23,11 @@
 // never the accessible name of anything — the control around it carries that.
 
 import { h, render, type FunctionalComponent } from 'vue';
-import { Check as LucideCheck, ChevronDown as LucideChevronDown, Download as LucideDownload, Terminal as LucideTerminal, createLucideIcon } from 'lucide-vue-next';
+import {
+  Archive as LucideArchive, Check as LucideCheck, ChevronDown as LucideChevronDown,
+  Download as LucideDownload, MoreVertical as LucideMoreVertical, Pencil as LucidePencil,
+  Terminal as LucideTerminal, createLucideIcon,
+} from 'lucide-vue-next';
 
 /** One [tag, attributes] pair, as lucide's factory takes them. */
 type IconNode = Array<[string, Record<string, string>]>;
@@ -81,6 +85,9 @@ export const IconCollapse = draw('Minimize', [
 export const IconCheck = wrap(LucideCheck as unknown as AnyComponent);
 export const IconChevron = wrap(LucideChevronDown as unknown as AnyComponent);
 export const IconDownload = wrap(LucideDownload as unknown as AnyComponent);
+export const IconArchive = wrap(LucideArchive as unknown as AnyComponent);
+export const IconMoreVertical = wrap(LucideMoreVertical as unknown as AnyComponent);
+export const IconEdit = wrap(LucidePencil as unknown as AnyComponent);
 // And this one has no drawing to be faithful to — the console is new here, so
 // there is no earlier glyph for it to match.
 export const IconTerminal = wrap(LucideTerminal as unknown as AnyComponent);

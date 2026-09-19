@@ -442,7 +442,74 @@ describe('what moves, and what does not', () => {
     expect(shown('.oa-admin-body section')).toHaveLength(0);
     expect(host.querySelector('.oa-admin-body .oa-search-empty')?.textContent).toBe(t('noSearchResults'));
     await search('.oa-admin-body .oa-search input', '');
-    expect(shown('.oa-admin-body section')).toHaveLength(7);
+    expect(shown('.oa-admin-body section')).toHaveLength(4);
+  });
+
+  it('saves drafts across categories and keeps edits made during an in-flight save', async () => {
+    adopt({ ...ACCOUNT, role: 'super_admin' });
+    await mountAt('/admin/settings');
+    await search('#secIdentity input', 'First draft');
+    const category = Array.from(host.querySelectorAll<HTMLButtonElement>('.oa-workbench-tab'))
+      .find((button) => button.textContent?.includes(t('controlFiles')))!;
+    category.click();
+    await nextTick();
+    expect(shown('.oa-control-card').map((card) => card.id)).toEqual(['secAttachments', 'secCleanup']);
+    await search('#secAttachments input[type="number"]', '12');
+    const server = fetch;
+    let finish!: (response: Response) => void;
+    let submitted: Record<string, string> = {};
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/api/admin/settings') && init?.method === 'PUT') {
+        submitted = JSON.parse(String(init.body));
+        return new Promise<Response>((resolve) => { finish = resolve; });
+      }
+      return server(input, init);
+    }));
+    host.querySelector<HTMLButtonElement>('.oa-admin-actions .primary')!.click();
+    await nextTick();
+    expect(submitted['site.name']).toBe('First draft');
+    expect(submitted['attachments.max_mb']).toBe('12');
+    expect(submitted).not.toHaveProperty('registration.enabled');
+    await search('#secAttachments input[type="number"]', '18');
+    finish(new Response(JSON.stringify({ settings: submitted }), { status: 200 }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(host.querySelector('.oa-control-save-state')?.textContent).toContain(t('controlUnsaved'));
+    expect(host.querySelector<HTMLInputElement>('#secAttachments input')?.value).toBe('18');
+    await search('#secAttachments input[type="number"]', '12');
+    expect(host.querySelector('.oa-control-save-state')?.textContent).toContain(t('controlSaved'));
+  });
+
+  it('opens hidden categories for deep links and keeps local search from hiding the target', async () => {
+    // jsdom has no layout or native scrolling; the browser verifies placement.
+    HTMLElement.prototype.scrollIntoView ??= () => {};
+    adopt({ ...ACCOUNT, role: 'super_admin' });
+    await mountAt('/admin/security#secChatChallenge');
+    expect(host.querySelector('.oa-workbench-tab[aria-pressed="true"]')?.textContent)
+      .toContain(t('controlVerification'));
+    expect(shown('.oa-control-card').map((card) => card.id)).toContain('secChatChallenge');
+    await search('.oa-workbench .oa-search input', t('signupsPerIP'));
+    expect(shown('.oa-control-card').map((card) => card.id)).toEqual(['secRegistrationLimits']);
+    await router.push('/admin/security#secSecurityLog');
+    await nextTick();
+    expect(host.querySelector<HTMLInputElement>('.oa-workbench .oa-search input')?.value).toBe('');
+    expect(shown('.oa-control-card').map((card) => card.id)).toEqual(['secSecurityLog']);
+  });
+
+  it('keeps resource data and table state after a failed refresh and does not invent a CPU sample', async () => {
+    adopt({ ...ACCOUNT, role: 'super_admin' });
+    await mountAt('/admin/resources');
+    expect(host.querySelector('.oa-resource-metrics')?.textContent).toContain(t('resMeasuring'));
+    const table = host.querySelector('.oa-table-block');
+    const server = fetch;
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/api/admin/resources')) return Promise.reject(new Error('Refresh unavailable'));
+      return server(input, init);
+    }));
+    host.querySelector<HTMLButtonElement>('.oa-admin-actions button')!.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(host.querySelector('.oa-table-block')).toBe(table);
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('Refresh unavailable');
+    expect(host.querySelector('.oa-resource-metrics')?.textContent).toContain(t('resMeasuring'));
   });
 
   it('expands the compact admin search across the navigation strip on narrow screens', async () => {
@@ -586,6 +653,7 @@ describe('what moves, and what does not', () => {
 
     const body = host.querySelector('.oa-admin-body');
     expect(body).not.toBeNull();
+    await search('#secDegradationPolicy input', '77');
 
     const probeButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
       (button) => button.textContent?.trim() === t('probeAllModels'),
@@ -603,6 +671,9 @@ describe('what moves, and what does not', () => {
     const calls = vi.mocked(globalThis.fetch).mock.calls;
     expect(calls.some(([input]) => String(input).includes('/api/admin/health/probe'))).toBe(true);
     expect(body?.textContent).toContain(t('probeAllModelsDone', { total: 2, succeeded: 1, failed: 1 }));
+    expect(host.querySelector<HTMLInputElement>('#secDegradationPolicy input')?.value).toBe('77');
+    expect(host.querySelector('.oa-control-save-state')?.textContent).toContain(t('controlUnsaved'));
+    expect(calls.filter(([input, init]) => String(input).endsWith('/api/admin/settings') && init?.method === 'GET')).toHaveLength(1);
   });
 
   it('moves each backoffice section with its heading and keeps navigation in place', async () => {

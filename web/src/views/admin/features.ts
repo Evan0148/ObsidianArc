@@ -46,6 +46,13 @@ export interface SearchGroup {
 }
 
 export const ADMIN_FEATURES: AdminFeatureItem[] = [
+  { id: 'secAbout', pageSlug: 'settings', titleKey: 'controlAbout', searchKeys: ['aboutHeading', 'aboutHeadingHint', 'aboutText', 'aboutTextHint'] },
+  { id: 'secHomeNotice', pageSlug: 'settings', titleKey: 'homeNotice', searchKeys: ['homeNoticeHint', 'homeNoticeDismissible', 'homeNoticeDismissibleHint'] },
+  { id: 'secRegistrationLimits', pageSlug: 'security', titleKey: 'controlRegistrationLimits', searchKeys: ['signupsPerMinute', 'signupsPerHour', 'signupsPerIP', 'signupsIPWindow'] },
+  { id: 'secVerificationScenes', pageSlug: 'security', titleKey: 'controlVerificationScenes', searchKeys: ['turnstileOnLogin', 'turnstileOnSignup', 'turnstileOnAPIKey', 'turnstileOnRedeem'] },
+  { id: 'secChatChallenge', pageSlug: 'security', titleKey: 'controlChatChallenge', searchKeys: ['chatChallengeRequests', 'chatChallengeWindow', 'chatChallengeClearance'] },
+  { id: 'secReviewTrial', pageSlug: 'security', titleKey: 'reviewTry', searchKeys: ['reviewTryHint', 'reviewTryRun', 'username', 'email', 'qq'] },
+
   // --- Dashboard
   {
     id: 'secInstance',
@@ -409,22 +416,22 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     id: 'secAccounts',
     pageSlug: 'security',
     titleKey: 'secAccounts',
-    searchKeys: ['newAccountsJoin', 'theDefaultGroup'],
-    keywords: ['账户准入', '默认用户组', '新账号归属', 'account access', 'default group'],
+    searchKeys: ['anyoneCanRegister', 'newAccountsJoin', 'theDefaultGroup'],
+    keywords: ['账户准入', '开放注册', '注册开关', '默认用户组', '新账号归属', 'account access', 'default group'],
   },
   {
     id: 'secRegistration',
     pageSlug: 'security',
     titleKey: 'secRegistration',
-    searchKeys: ['anyoneCanRegister', 'requireEmail', 'verifyEmail', 'emailDomains', 'qqRequirement', 'signupsPerMinute', 'signupsPerHour', 'signupsPerIP'],
-    keywords: ['开放注册', '注册开关', '强制邮箱', '邮箱验证码', '邮箱域名白名单', 'QQ号验证', '注册频率限制', '单IP限制', 'registration policy', 'email verification', 'rate limit', 'whitelist'],
+    searchKeys: ['requireEmail', 'verifyEmail', 'emailDomains', 'qqRequirement'],
+    keywords: ['强制邮箱', '邮箱验证码', '邮箱域名白名单', 'QQ号验证', 'registration policy', 'email verification', 'whitelist'],
   },
   {
     id: 'secTurnstile',
     pageSlug: 'security',
     titleKey: 'secTurnstile',
-    searchKeys: ['turnstileSiteKey', 'turnstileSecretKey', 'turnstileOnLogin', 'turnstileOnSignup', 'turnstileOnAPIKey', 'turnstileOnRedeem', 'chatChallengeRequests', 'chatChallengeWindow', 'chatChallengeClearance'],
-    keywords: ['人机验证', 'Cloudflare Turnstile', '验证码', '防刷', '登录验证', '注册验证', 'API Key验证', '兑换码验证', '对话防刷挑战', 'turnstile', 'captcha', 'bot challenge', 'anti-spam'],
+    searchKeys: ['turnstileSiteKey', 'turnstileSecretKey'],
+    keywords: ['人机验证', 'Cloudflare Turnstile', '验证码', '防刷', 'turnstile', 'captcha', 'bot challenge', 'anti-spam'],
   },
   {
     id: 'secSignupReview',
@@ -446,8 +453,8 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     id: 'secIdentity',
     pageSlug: 'settings',
     titleKey: 'secIdentity',
-    searchKeys: ['siteName', 'signInNote', 'aboutHeading', 'aboutText', 'homeNotice', 'homeNoticeDismissible'],
-    keywords: ['站点标识', '网站名称', '登录提示', '关于我们', '首页公告', '弹出公告', 'site name', 'identity', 'home notice', 'branding'],
+    searchKeys: ['siteName', 'signInNote'],
+    keywords: ['站点标识', '网站名称', '登录提示', 'site name', 'identity', 'branding'],
   },
   {
     id: 'secLanding',

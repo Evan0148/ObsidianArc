@@ -506,6 +506,9 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	chatHandlers.Deletable = func(ctx context.Context, account user.User) error {
 		return deleteAllowed(ctx, groups, account)
 	}
+	chatHandlers.Archivable = func(ctx context.Context, account user.User) error {
+		return archiveAllowed(ctx, settingsService, account)
+	}
 	// Read per request rather than captured, so raising the limit takes
 	// effect without a restart.
 	chatHandlers.MaxUploadBytes = func() int64 {
@@ -917,6 +920,19 @@ func deleteAllowed(ctx context.Context, groups *group.Store, account user.User) 
 	}
 	return httpx.ForbiddenCode("delete_not_permitted",
 		"Your group cannot delete conversations.")
+}
+
+// archiveAllowed answers whether the instance's global settings permit archiving
+// conversations. An administrator always may.
+func archiveAllowed(_ context.Context, set *settings.Service, account user.User) error {
+	if account.IsAdmin() {
+		return nil
+	}
+	if set.Bool(settings.AllowArchive) {
+		return nil
+	}
+	return httpx.ForbiddenCode("archive_not_permitted",
+		"Archiving conversations is disabled.")
 }
 
 // skipFromLog drops the requests nobody audits: the compiled frontend's own

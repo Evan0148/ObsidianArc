@@ -3,15 +3,21 @@
 // list rather than a screen of its own — a project is a name and a brief,
 // small enough that a side panel for it would be more chrome than content.
 
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import type { Project } from '@/api/projects';
 import { ApiError } from '@/api/client';
+import { listConversations, type Conversation } from '@/api/chat';
 import OaConfirmButton from '@/components/OaConfirmButton.vue';
+import OaMenu from '@/components/OaMenu.vue';
+import OaMenuItem from '@/components/OaMenuItem.vue';
 import OaScrollArea from '@/components/OaScrollArea.vue';
 import OaTextArea from '@/components/OaTextArea.vue';
 import OaTextField from '@/components/OaTextField.vue';
 import { t } from '@/composables/useI18n';
-import { IconCheck, IconGear, IconPlus, IconTrash } from '@/icons';
+import {
+  IconArchive, IconCheck, IconChevronRight, IconEdit, IconGear,
+  IconMoreVertical, IconPlus, IconTrash,
+} from '@/icons';
 import {
   createProject, deleteProject, loadProjects, projectList, projectMax,
   renameProject, updateProjectInstructions,
@@ -20,7 +26,11 @@ import { pendingProjectID, setProject } from '@/stores/workspace';
 // Shared with the rest of the chat rather than a second banner of its own:
 // a failed rename and a failed send are the same kind of interruption, and
 // the reader is already watching this one spot for it.
-import { flash } from './useChat';
+import {
+  activeID, archiveConversation, canArchive, canDelete, conversations,
+  flash, openConversation, pendingID, removeConversation, rename,
+  startProjectConversation,
+} from './useChat';
 
 onMounted(() => void loadProjects());
 
@@ -30,6 +40,86 @@ const busy = ref(false);
 function reportFailure(error: unknown): void {
   flash.value = error instanceof ApiError ? error.message : t('failed');
 }
+
+// --- project expansion and conversation list ---------------------------------
+
+const expandedProjects = ref<Record<string, boolean>>({});
+const projectConversations = ref<Record<string, Conversation[]>>({});
+const loadingProjects = ref<Record<string, boolean>>({});
+const openUpMap = ref<Record<string, boolean>>({});
+
+async function loadProjectConversations(projectID: string): Promise<void> {
+  loadingProjects.value[projectID] = true;
+  try {
+    const { conversations: list } = await listConversations({ project_id: projectID, archived: false });
+    projectConversations.value[projectID] = list;
+  } catch (error) {
+    reportFailure(error);
+  } finally {
+    loadingProjects.value[projectID] = false;
+  }
+}
+
+function toggleExpand(project: Project): void {
+  setProject(project.id);
+  expandedProjects.value[project.id] = !expandedProjects.value[project.id];
+  if (expandedProjects.value[project.id]) {
+    void loadProjectConversations(project.id);
+  }
+}
+
+function createProjectChat(projectID: string): void {
+  setProject(projectID);
+  startProjectConversation(projectID);
+}
+
+function openProjectConv(projectID: string, convID: string): void {
+  setProject(projectID);
+  void openConversation(convID);
+}
+
+async function archiveProjectConv(project: Project, conv: Conversation): Promise<void> {
+  await archiveConversation(conv);
+  if (projectConversations.value[project.id]) {
+    projectConversations.value[project.id] = projectConversations.value[project.id]!.filter(
+      (entry) => entry.id !== conv.id,
+    );
+  }
+  project.conversations = Math.max(0, project.conversations - 1);
+}
+
+async function removeProjectConv(project: Project, conv: Conversation): Promise<void> {
+  await removeConversation(conv);
+  if (projectConversations.value[project.id]) {
+    projectConversations.value[project.id] = projectConversations.value[project.id]!.filter(
+      (entry) => entry.id !== conv.id,
+    );
+  }
+  project.conversations = Math.max(0, project.conversations - 1);
+}
+
+function handleMenuTrigger(event: MouseEvent, id: string, toggle: () => void): void {
+  const target = event.currentTarget as HTMLElement | null;
+  if (target) {
+    const rect = target.getBoundingClientRect();
+    openUpMap.value[id] = (window.innerHeight - rect.bottom) < 160;
+  }
+  toggle();
+}
+
+function onRowContextMenu(event: MouseEvent): void {
+  const rowEl = event.currentTarget as HTMLElement | null;
+  const moreBtn = rowEl?.querySelector<HTMLButtonElement>('.ai-chat-list-more');
+  moreBtn?.click();
+}
+
+watch(conversations, () => {
+  for (const pID of Object.keys(expandedProjects.value)) {
+    if (expandedProjects.value[pID]) {
+      void loadProjectConversations(pID);
+    }
+  }
+}, { deep: true });
 
 // --- create ------------------------------------------------------------------
 
@@ -58,6 +148,8 @@ async function submitCreate(): Promise<void> {
     const record = await createProject(name, createInstructions.value.trim());
     creating.value = false;
     setProject(record.id);
+    expandedProjects.value[record.id] = true;
+    void loadProjectConversations(record.id);
   } catch (error) {
     reportFailure(error);
   } finally {
@@ -109,16 +201,14 @@ async function submitEdit(project: Project): Promise<void> {
 async function remove(project: Project): Promise<void> {
   try {
     await deleteProject(project.id);
+    delete expandedProjects.value[project.id];
+    delete projectConversations.value[project.id];
     // The instructions that just left are what "work" in this project meant;
     // work mode itself is not a fact about the project, so it stays.
     if (pendingProjectID.value === project.id) setProject('');
   } catch (error) {
     reportFailure(error);
   }
-}
-
-function choose(project: Project): void {
-  setProject(project.id);
 }
 </script>
 
@@ -166,8 +256,15 @@ function choose(project: Project): void {
           class="ai-chat-list-item"
           :class="{ active: project.id === pendingProjectID }"
         >
-          <button type="button" class="ai-chat-list-open" :title="t('openProject')" @click="choose(project)">
-            <span class="ai-chat-list-title">{{ project.name }}</span>
+          <button type="button" class="ai-chat-list-open" :title="t('openProject')" @click="toggleExpand(project)">
+            <span class="ai-project-title-row">
+              <IconChevronRight
+                :size="12"
+                class="ai-project-chevron"
+                :class="{ expanded: expandedProjects[project.id] }"
+              />
+              <span class="ai-chat-list-title">{{ project.name }}</span>
+            </span>
             <span class="ai-project-meta">{{ project.conversations }} {{ t('projectConversations') }}</span>
           </button>
           <button
@@ -208,6 +305,75 @@ function choose(project: Project): void {
               {{ t('saveProject') }}
             </button>
           </div>
+        </div>
+
+        <!-- Expanded project conversations -->
+        <div v-if="editingID !== project.id && expandedProjects[project.id]" class="ai-project-convs-wrap">
+          <button
+            type="button"
+            class="ai-project-new-chat"
+            :title="t('newConversationInProject')"
+            @click.stop="createProjectChat(project.id)"
+          >
+            <IconPlus :size="12" />
+            <span>{{ t('newConversationInProject') }}</span>
+          </button>
+
+          <span v-if="loadingProjects[project.id]" class="ai-chat-list-live">
+            <span class="ai-chat-spinner" />
+          </span>
+
+          <template v-else-if="projectConversations[project.id]?.length">
+            <div
+              v-for="conv in projectConversations[project.id]"
+              :key="conv.id"
+              class="ai-chat-list-item ai-project-conv-item"
+              :class="{ active: conv.id === activeID }"
+              @contextmenu.prevent="onRowContextMenu($event)"
+            >
+              <button
+                type="button"
+                class="ai-chat-list-open"
+                @click="openProjectConv(project.id, conv.id)"
+                @dblclick="rename(conv)"
+              >
+                <span class="ai-chat-list-title">{{ conv.title || t('newChat') }}</span>
+              </button>
+              <span
+                v-if="conv.id === pendingID"
+                class="ai-chat-list-live"
+                :title="t('thinking')"
+              ><span class="ai-chat-spinner" /></span>
+              <OaMenu group-class="ai-chat-item-menu" :menu-class="'ai-chat-context-menu' + (openUpMap[conv.id] ? ' open-up' : '')">
+                <template #trigger="{ open: menuOpen, toggle }">
+                  <button
+                    type="button"
+                    class="ai-chat-list-more"
+                    :class="{ active: menuOpen }"
+                    :title="t('moreOptions')"
+                    :aria-label="t('moreOptions')"
+                    aria-haspopup="menu"
+                    :aria-expanded="menuOpen ? 'true' : 'false'"
+                    @click.stop="handleMenuTrigger($event, conv.id, toggle)"
+                  >
+                    <IconMoreVertical :size="13" />
+                  </button>
+                </template>
+                <template #default="{ close }">
+                  <OaMenuItem :title="t('rename')" @click.stop="close(); rename(conv)">
+                    <template #leading><IconEdit :size="13" /></template>
+                  </OaMenuItem>
+                  <OaMenuItem v-if="canArchive" :title="t('archive')" @click.stop="close(); archiveProjectConv(project, conv)">
+                    <template #leading><IconArchive :size="13" /></template>
+                  </OaMenuItem>
+                  <OaMenuItem v-if="canDelete" :title="t('deleteChat')" @click.stop="close(); removeProjectConv(project, conv)">
+                    <template #leading><IconTrash :size="13" /></template>
+                  </OaMenuItem>
+                </template>
+              </OaMenu>
+            </div>
+          </template>
+          <p v-else class="ai-project-empty-convs">{{ t('noProjectConversations') }}</p>
         </div>
       </template>
     </OaScrollArea>

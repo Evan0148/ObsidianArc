@@ -85,6 +85,7 @@ const (
 	TrialModel           = "landing.trial_model"
 	DefaultSystemPrompt  = "chat.default_system_prompt"
 	ConversationMaxTurns = "chat.max_turns"
+	AllowArchive         = "chat.allow_archive"
 	APIEnabled           = "api.enabled"
 	AttachmentMaxMB      = "attachments.max_mb"
 	AttachmentRetain     = "attachments.retain"
@@ -254,6 +255,7 @@ var Defaults = map[string]string{
 	TrialModel:              "",
 	DefaultSystemPrompt:     "",
 	ConversationMaxTurns:    "40",
+	AllowArchive:            "true",
 	// On: asking a model nobody has used costs one token and answers the
 	// question the liveness column exists for. Off, a quiet model reads as
 	// "no data" forever, which is the state this feature was built to end.

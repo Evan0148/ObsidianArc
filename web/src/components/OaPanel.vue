@@ -175,6 +175,11 @@ function freezeSiblings(): () => void {
   };
 }
 
+function isChildHidden(child: HTMLElement): boolean {
+  const style = window.getComputedStyle(child);
+  return style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.marginLeft) < -50;
+}
+
 /**
  * Freezes siblings at their target drawer width while the panel shrinks back
  * to a column, so the content behind it is already at its final width and
@@ -195,18 +200,23 @@ function freezeSiblingsForDrawer(drawerWidth: number): () => void {
   const gap = parseFloat(rowStyle.gap) || 0;
   const rowWidth = row.getBoundingClientRect().width;
 
+  const visibleChildren = children.filter((child) => !isChildHidden(child));
   let fixedTotal = 0;
   const flexible: HTMLElement[] = [];
   for (const child of children) {
     pinned.push([child, child.style.flex]);
-    if (parseFloat(window.getComputedStyle(child).flexGrow) > 0) flexible.push(child);
-    else fixedTotal += child.getBoundingClientRect().width;
+    if (!isChildHidden(child)) {
+      if (parseFloat(window.getComputedStyle(child).flexGrow) > 0) flexible.push(child);
+      else fixedTotal += child.getBoundingClientRect().width;
+    }
   }
 
-  const remaining = Math.max(0, rowWidth - drawerWidth - fixedTotal - children.length * gap);
+  const gapCount = Math.max(0, visibleChildren.length);
+  const remaining = Math.max(0, rowWidth - drawerWidth - fixedTotal - gapCount * gap);
   const perFlex = flexible.length > 0 ? remaining / flexible.length : remaining;
 
   for (const child of children) {
+    if (isChildHidden(child)) continue;
     child.style.flex = flexible.includes(child)
       ? `0 0 ${perFlex}px`
       : `0 0 ${child.getBoundingClientRect().width}px`;

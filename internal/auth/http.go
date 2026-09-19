@@ -90,15 +90,17 @@ type accountPayload struct {
 	//
 	// True when the group cannot be read at all: losing a lookup should not
 	// quietly take a capability away from someone who has it.
-	AllowStats               bool `json:"allow_stats"`
-	AllowDeleteConversations bool `json:"allow_delete_conversations"`
+	AllowStats                bool `json:"allow_stats"`
+	AllowDeleteConversations  bool `json:"allow_delete_conversations"`
+	AllowArchiveConversations bool `json:"allow_archive_conversations"`
 }
 
 func (h *Handlers) account(r *http.Request, account user.User) accountPayload {
 	payload := accountPayload{
-		User:                     account,
-		AllowStats:               true,
-		AllowDeleteConversations: true,
+		User:                      account,
+		AllowStats:                true,
+		AllowDeleteConversations:  true,
+		AllowArchiveConversations: account.IsAdmin() || (h.settings != nil && h.settings.Bool(settings.AllowArchive)),
 	}
 	if account.GroupID != "" {
 		if found, err := h.groups.ByID(r.Context(), nil, account.GroupID); err == nil {
@@ -121,14 +123,19 @@ func (h *Handlers) site(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return httpx.Internal(err)
 	}
+	allowArchive := true
+	if h.settings != nil {
+		allowArchive = h.settings.Bool(settings.AllowArchive)
+	}
 	return httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"name":        h.settings.Get(settings.SiteName),
 		"description": h.settings.Get(settings.SiteDescription),
 		// An empty instance always accepts the first account, whatever the
 		// setting says; that account becomes the administrator.
-		"registration_enabled": !populated || h.settings.Bool(settings.RegistrationEnabled),
-		"setup_required":       !populated,
-		"health_show_users":    h.settings.Bool(settings.HealthShowUsers),
+		"registration_enabled":        !populated || h.settings.Bool(settings.RegistrationEnabled),
+		"setup_required":              !populated,
+		"health_show_users":           h.settings.Bool(settings.HealthShowUsers),
+		"allow_archive_conversations": allowArchive,
 		// So the sign-up form can mark the field required and say which
 		// addresses will be accepted, instead of finding out on submit.
 		// Neither applies to the first account.

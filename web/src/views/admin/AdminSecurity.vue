@@ -14,7 +14,11 @@ import { ApiError } from '@/api/client';
 import OaPagination from '@/components/OaPagination.vue';
 import type { PageState } from '@/components/table-types';
 import OaBadge from '@/components/OaBadge.vue';
-import OaFormSection from '@/components/OaFormSection.vue';
+import AdminControlCard from './AdminControlCard.vue';
+import AdminWorkbench from './AdminWorkbench.vue';
+import type { WorkbenchGroup } from './workbench';
+import { useSettingsDraft } from './settingsDraft';
+import { IconUsers, IconLock, IconSpark, IconFile, IconSliders, IconKey } from '@/icons';
 import OaNumberField from '@/components/OaNumberField.vue';
 import OaSelectField from '@/components/OaSelectField.vue';
 import OaSwitchField from '@/components/OaSwitchField.vue';
@@ -113,12 +117,17 @@ function collect(): Record<string, string> {
   };
 }
 
+const { dirty, accept } = useSettingsDraft(collect);
+
 async function save(): Promise<void> {
+  if (!loaded.value || error.value || busy.value) return;
+  const values = collect();
   busy.value = true;
   saveLabel.value = t('saving');
   flash.value = '';
   try {
-    await adminApi.saveSettings(collect());
+    await adminApi.saveSettings(values);
+    accept(values);
     try {
       site.value = await fetchSite();
     } catch {
@@ -241,6 +250,7 @@ async function load(): Promise<void> {
       reviewRestrictHours: Number(values['security.signup_review_restrict_hours'] ?? 24),
       reviewRefusal: values['security.signup_review_refusal'] ?? '',
     };
+    accept();
   } catch (failure) {
     error.value = failure instanceof Error ? failure.message : String(failure);
   } finally {
@@ -248,217 +258,239 @@ async function load(): Promise<void> {
   }
 }
 
+const categories: WorkbenchGroup[] = [
+  { id: 'accounts', label: 'controlAccounts', hint: 'controlAccountsHint', icon: IconUsers, sections: ['secAccounts', 'secRegistration', 'secRegistrationLimits'] },
+  { id: 'verification', label: 'controlVerification', hint: 'controlVerificationHint', icon: IconLock, sections: ['secTurnstile', 'secVerificationScenes', 'secChatChallenge'] },
+  { id: 'review', label: 'controlReview', hint: 'controlReviewHint', icon: IconSpark, sections: ['secSignupReview', 'secReviewTrial'] },
+  { id: 'events', label: 'controlEvents', hint: 'controlEventsHint', icon: IconFile, sections: ['secSecurityLog'] },
+];
+
+const columns: [string[], string[]] = [['secAccounts', 'secRegistrationLimits', 'secTurnstile', 'secChatChallenge', 'secSignupReview'], ['secRegistration', 'secVerificationScenes', 'secReviewTrial']];
+
 onMounted(load);
 </script>
 
 <template>
   <Teleport :to="view.actionsHost">
-    <button type="button" class="oa-btn primary" :disabled="busy" @click="save">
+    <span v-if="loaded && !error" class="oa-control-save-state" :class="{ dirty }" role="status">
+      <span class="oa-dashboard-dot" />{{ dirty ? t('controlUnsaved') : t('controlSaved') }}
+    </span>
+    <button type="button" class="oa-btn primary" :disabled="busy || !loaded || !!error" @click="save">
       {{ saveLabel || t('save') }}
     </button>
   </Teleport>
-
   <AdminFailure v-if="error" :message="error" @retry="load" />
   <p v-else-if="!loaded" class="oa-table-empty">{{ t('loading') }}</p>
-
-  <div v-else class="oa-settings-panel">
-    <OaFormSection id="secAccounts" :title="t('secAccounts')" />
-    <OaSwitchField
-      v-model="form.registration"
-      :label="t('anyoneCanRegister')"
-      :hint="t('anyoneCanRegisterHint')"
-    />
-    <OaSelectField
-      v-model="form.defaultGroup"
-      :label="t('newAccountsJoin')"
-      :options="[
-        { value: '', label: t('theDefaultGroup') },
-        ...groups.map((group) => ({ value: group.id, label: group.name })),
-      ]"
-    />
-
-    <OaFormSection id="secRegistration" :title="t('secRegistration')" />
-    <OaSwitchField v-model="form.requireEmail" :label="t('requireEmail')" :hint="t('requireEmailHint')" />
-    <!-- Offered but inert without SMTP, and the hint says so. The server
-         ignores it in that state too, so an operator cannot lock every new
-         account out of an instance that cannot send the link. -->
-    <div :class="{ 'oa-field-inert': !mailConfigured }">
-      <OaSwitchField
-        v-model="form.verifyEmail"
-        :label="t('verifyEmail')"
-        :hint="mailConfigured ? t('verifyEmailHint') : t('verifyEmailNoMail')"
-      />
-    </div>
-    <OaTextArea
-      v-model="form.emailDomains"
-      :label="t('emailDomains')"
-      :rows="2"
-      :placeholder="t('emailDomainsPlaceholder')"
-      :hint="t('emailDomainsHint')"
-    />
-    <OaSelectField
-      v-model="form.qqRequirement"
-      :label="t('qqRequirement')"
-      :hint="t('qqRequirementHint')"
-      :options="[
-        { value: 'off', label: t('qqRequirementOff') },
-        { value: 'optional', label: t('qqRequirementOptional') },
-        { value: 'required', label: t('qqRequirementRequired') },
-      ]"
-    />
-    <OaNumberField v-model="form.perMinute" :label="t('signupsPerMinute')" :min="0" :max="1000" />
-    <OaNumberField
-      v-model="form.perHour"
-      :label="t('signupsPerHour')"
-      :min="0"
-      :max="10000"
-      :hint="t('signupThrottleHint')"
-    />
-    <OaNumberField v-model="form.perIP" :label="t('signupsPerIP')" :min="0" :hint="t('signupsPerIPHint')" />
-    <OaNumberField
-      v-model="form.ipWindow"
-      :label="t('signupsIPWindow')"
-      :min="1"
-      :hint="t('signupsIPWindowHint')"
-    />
-
-    <OaFormSection id="secTurnstile" :title="t('secTurnstile')" :hint="t('turnstileHint')" />
-    <OaTextField
-      v-model="form.turnstileSiteKey"
-      :label="t('turnstileSiteKey')"
-      placeholder="0x4AAAAAAA…"
-      :hint="t('turnstileSiteKeyHint')"
-      monospace
-    />
-    <OaTextField
-      v-model="form.turnstileSecret"
-      :label="t('turnstileSecretKey')"
-      :placeholder="form.turnstileSecretHint || '0x4AAAAAAA…'"
-      :hint="t('turnstileSecretHint')"
-      monospace
-    />
-    <OaSwitchField
-      v-model="form.turnstileOnLogin"
-      :label="t('turnstileOnLogin')"
-      :hint="t('turnstileOnLoginHint')"
-    />
-    <OaSwitchField
-      v-model="form.turnstileOnSignup"
-      :label="t('turnstileOnSignup')"
-      :hint="t('turnstileOnSignupHint')"
-    />
-    <OaSwitchField
-      v-model="form.turnstileOnAPIKey"
-      :label="t('turnstileOnAPIKey')"
-      :hint="t('turnstileOnAPIKeyHint')"
-    />
-    <OaSwitchField
-      v-model="form.turnstileOnRedeem"
-      :label="t('turnstileOnRedeem')"
-      :hint="t('turnstileOnRedeemHint')"
-    />
-    <OaNumberField
-      v-model="form.chatChallengeRequests"
-      :label="t('chatChallengeRequests')"
-      :hint="t('chatChallengeRequestsHint')"
-      :min="0"
-      :max="1000"
-    />
-    <template v-if="(form.chatChallengeRequests ?? 0) > 0">
-      <OaNumberField
-        v-model="form.chatChallengeWindowSecs"
-        :label="t('chatChallengeWindow')"
-        :hint="t('chatChallengeWindowHint')"
-        :min="5"
-        :max="3600"
-      />
-      <OaNumberField
-        v-model="form.chatChallengeClearMins"
-        :label="t('chatChallengeClearance')"
-        :hint="t('chatChallengeClearanceHint')"
-        :min="1"
-        :max="1440"
-      />
+  <AdminWorkbench v-else page="security" :groups="categories" :columns="columns">
+    <template #left="{ visible }">
+      <AdminControlCard id="secAccounts" v-show="visible('secAccounts')" :title="t('secAccounts')" :icon="IconUsers">
+        <OaSwitchField
+          v-model="form.registration"
+          :label="t('anyoneCanRegister')"
+          :hint="t('anyoneCanRegisterHint')"
+        />
+        <OaSelectField
+          v-model="form.defaultGroup"
+          :label="t('newAccountsJoin')"
+          :options="[
+            { value: '', label: t('theDefaultGroup') },
+            ...groups.map((group) => ({ value: group.id, label: group.name })),
+          ]"
+        />
+      </AdminControlCard>
+      <AdminControlCard id="secRegistrationLimits" v-show="visible('secRegistrationLimits')" :title="t('controlRegistrationLimits')" :icon="IconSliders" :hint="t('controlRegistrationLimitsHint')">
+        <OaNumberField v-model="form.perMinute" :label="t('signupsPerMinute')" :min="0" :max="1000" />
+        <OaNumberField
+          v-model="form.perHour"
+          :label="t('signupsPerHour')"
+          :min="0"
+          :max="10000"
+          :hint="t('signupThrottleHint')"
+        />
+        <OaNumberField v-model="form.perIP" :label="t('signupsPerIP')" :min="0" :hint="t('signupsPerIPHint')" />
+        <OaNumberField
+          v-model="form.ipWindow"
+          :label="t('signupsIPWindow')"
+          :min="1"
+          :hint="t('signupsIPWindowHint')"
+        />
+      </AdminControlCard>
+      <AdminControlCard id="secTurnstile" v-show="visible('secTurnstile')" :title="t('secTurnstile')" :icon="IconKey" :hint="t('turnstileHint')">
+        <OaTextField
+          v-model="form.turnstileSiteKey"
+          :label="t('turnstileSiteKey')"
+          placeholder="0x4AAAAAAA…"
+          :hint="t('turnstileSiteKeyHint')"
+          monospace
+        />
+        <OaTextField
+          v-model="form.turnstileSecret"
+          type="password"
+          :label="t('turnstileSecretKey')"
+          :placeholder="form.turnstileSecretHint || '0x4AAAAAAA…'"
+          :hint="t('turnstileSecretHint')"
+          monospace
+        />
+      </AdminControlCard>
+      <AdminControlCard id="secChatChallenge" v-show="visible('secChatChallenge')" :title="t('controlChatChallenge')" :icon="IconSpark" :hint="t('controlChatChallengeHint')">
+        <OaNumberField
+          v-model="form.chatChallengeRequests"
+          :label="t('chatChallengeRequests')"
+          :hint="t('chatChallengeRequestsHint')"
+          :min="0"
+          :max="1000"
+        />
+        <template v-if="(form.chatChallengeRequests ?? 0) > 0">
+          <OaNumberField
+            v-model="form.chatChallengeWindowSecs"
+            :label="t('chatChallengeWindow')"
+            :hint="t('chatChallengeWindowHint')"
+            :min="5"
+            :max="3600"
+          />
+          <OaNumberField
+            v-model="form.chatChallengeClearMins"
+            :label="t('chatChallengeClearance')"
+            :hint="t('chatChallengeClearanceHint')"
+            :min="1"
+            :max="1440"
+          />
+        </template>
+      </AdminControlCard>
+      <AdminControlCard id="secSignupReview" v-show="visible('secSignupReview')" :title="t('secSignupReview')" :icon="IconSpark" :hint="t('signupReviewIntro')">
+        <OaSwitchField v-model="form.reviewEnabled" :label="t('signupReview')" :hint="t('signupReviewHint')" />
+        <OaSelectField
+          v-model="form.reviewModel"
+          :label="t('signupReviewModel')"
+          :hint="t('signupReviewModelHint')"
+          :options="[
+            { value: '', label: t('signupReviewNoModel') },
+            ...enabledModels.map((entry) => ({ value: entry.id, label: entry.display_name })),
+          ]"
+        />
+        <OaSelectField
+          v-model="form.reviewMode"
+          :label="t('signupReviewMode')"
+          :hint="t('signupReviewModeHint')"
+          :options="[
+            { value: 'loose', label: t('reviewModeLoose') },
+            { value: 'normal', label: t('reviewModeNormal') },
+            { value: 'strict', label: t('reviewModeStrict') },
+          ]"
+        />
+        <OaNumberField
+          v-model="form.reviewRestrictHours"
+          :label="t('signupReviewRestrictHours')"
+          :hint="t('signupReviewRestrictHoursHint')"
+          :min="0"
+          :max="8760"
+        />
+        <OaTextArea
+          v-model="form.reviewRefusal"
+          :label="t('signupReviewRefusal')"
+          :rows="3"
+          :placeholder="t('signupReviewRefusalPlaceholder')"
+          :hint="t('signupReviewRefusalHint')"
+        />
+      </AdminControlCard>
     </template>
-
-    <OaFormSection id="secSignupReview" :title="t('secSignupReview')" :hint="t('signupReviewIntro')" />
-    <OaSwitchField v-model="form.reviewEnabled" :label="t('signupReview')" :hint="t('signupReviewHint')" />
-    <OaSelectField
-      v-model="form.reviewModel"
-      :label="t('signupReviewModel')"
-      :hint="t('signupReviewModelHint')"
-      :options="[
-        { value: '', label: t('signupReviewNoModel') },
-        ...enabledModels.map((entry) => ({ value: entry.id, label: entry.display_name })),
-      ]"
-    />
-    <OaSelectField
-      v-model="form.reviewMode"
-      :label="t('signupReviewMode')"
-      :hint="t('signupReviewModeHint')"
-      :options="[
-        { value: 'loose', label: t('reviewModeLoose') },
-        { value: 'normal', label: t('reviewModeNormal') },
-        { value: 'strict', label: t('reviewModeStrict') },
-      ]"
-    />
-    <OaNumberField
-      v-model="form.reviewRestrictHours"
-      :label="t('signupReviewRestrictHours')"
-      :hint="t('signupReviewRestrictHoursHint')"
-      :min="0"
-      :max="8760"
-    />
-    <OaTextArea
-      v-model="form.reviewRefusal"
-      :label="t('signupReviewRefusal')"
-      :rows="3"
-      :placeholder="t('signupReviewRefusalPlaceholder')"
-      :hint="t('signupReviewRefusalHint')"
-    />
-
-    <div class="oa-field">
-      <span class="oa-field-label">{{ t('reviewTry') }}</span>
-      <span class="oa-field-hint">{{ t('reviewTryHint') }}</span>
-      <OaTextField v-model="trial.username" :label="t('username')" placeholder="123123123123" />
-      <OaTextField v-model="trial.email" :label="t('email')" placeholder="123123123123@qq.com" />
-      <OaTextField v-model="trial.qq" :label="t('qq')" placeholder="123123123123" />
-      <button type="button" class="oa-btn" :disabled="trial.running" @click="runTrial">
-        {{ t('reviewTryRun') }}
-      </button>
-      <p class="oa-field-hint">{{ trial.answer }}</p>
-    </div>
-
-    <OaFormSection id="secSecurityLog" :title="t('secSecurityLog')" :hint="t('securityLogHint')" />
-    <button type="button" class="oa-btn" :disabled="eventsLoading" @click="loadEvents">
-      {{ t('refresh') }}
-    </button>
-    <p v-if="eventsLoading" class="oa-table-empty">{{ t('loading') }}</p>
-    <p v-else-if="!events.length" class="oa-table-empty">{{ t('securityLogEmpty') }}</p>
-    <div v-else class="oa-log-list">
-      <div v-for="event in events" :key="event.id" class="oa-log-row">
-        <div class="oa-log-row-main">
-          <div class="oa-log-row-head">
-            <span class="oa-log-path">{{ eventLabel(event.event) }}</span>
-            <OaBadge
-              :tone="event.severity === 'danger'
-                ? 'danger' : event.severity === 'warning' ? 'warning' : 'muted'"
-            >{{ reviewDecision(event.decision ?? '') }}</OaBadge>
-          </div>
-          <div class="oa-log-row-meta">
-            <span>{{ absoluteTime(event.at) }}</span>
-            <span v-if="event.username">@{{ event.username }}</span>
-            <span v-if="event.ip">{{ event.ip }}</span>
-            <span v-if="event.actor_username">
-              {{ t('securityLogActor', { name: `@${event.actor_username}` }) }}
-            </span>
-          </div>
-          <span v-if="event.reason" class="oa-field-hint">{{ event.reason }}</span>
+    <template #right="{ visible }">
+      <AdminControlCard id="secRegistration" v-show="visible('secRegistration')" :title="t('secRegistration')" :icon="IconUsers">
+        <OaSwitchField v-model="form.requireEmail" :label="t('requireEmail')" :hint="t('requireEmailHint')" />
+        <!-- Offered but inert without SMTP, and the hint says so. The server
+             ignores it in that state too, so an operator cannot lock every new
+             account out of an instance that cannot send the link. -->
+        <div :class="{ 'oa-field-inert': !mailConfigured }">
+          <OaSwitchField
+            v-model="form.verifyEmail"
+            :label="t('verifyEmail')"
+            :hint="mailConfigured ? t('verifyEmailHint') : t('verifyEmailNoMail')"
+          />
         </div>
-      </div>
-    </div>
-    <OaPagination v-bind="eventPage" :total="eventsTotal" :busy="eventsLoading" @change="changeEvents" />
-
-    <p class="oa-drawer-flash" :class="{ visible: !!flash }">{{ flash }}</p>
-  </div>
+        <OaTextArea
+          v-model="form.emailDomains"
+          :label="t('emailDomains')"
+          :rows="2"
+          :placeholder="t('emailDomainsPlaceholder')"
+          :hint="t('emailDomainsHint')"
+        />
+        <OaSelectField
+          v-model="form.qqRequirement"
+          :label="t('qqRequirement')"
+          :hint="t('qqRequirementHint')"
+          :options="[
+            { value: 'off', label: t('qqRequirementOff') },
+            { value: 'optional', label: t('qqRequirementOptional') },
+            { value: 'required', label: t('qqRequirementRequired') },
+          ]"
+        />
+      </AdminControlCard>
+      <AdminControlCard id="secVerificationScenes" v-show="visible('secVerificationScenes')" :title="t('controlVerificationScenes')" :icon="IconLock" :hint="t('controlVerificationScenesHint')">
+        <OaSwitchField
+          v-model="form.turnstileOnLogin"
+          :label="t('turnstileOnLogin')"
+          :hint="t('turnstileOnLoginHint')"
+        />
+        <OaSwitchField
+          v-model="form.turnstileOnSignup"
+          :label="t('turnstileOnSignup')"
+          :hint="t('turnstileOnSignupHint')"
+        />
+        <OaSwitchField
+          v-model="form.turnstileOnAPIKey"
+          :label="t('turnstileOnAPIKey')"
+          :hint="t('turnstileOnAPIKeyHint')"
+        />
+        <OaSwitchField
+          v-model="form.turnstileOnRedeem"
+          :label="t('turnstileOnRedeem')"
+          :hint="t('turnstileOnRedeemHint')"
+        />
+      </AdminControlCard>
+      <AdminControlCard id="secReviewTrial" v-show="visible('secReviewTrial')" :title="t('reviewTry')" :icon="IconSliders" :hint="t('reviewTryHint')">
+        <div class="oa-field">
+          <OaTextField v-model="trial.username" :label="t('username')" placeholder="123123123123" />
+          <OaTextField v-model="trial.email" :label="t('email')" placeholder="123123123123@qq.com" />
+          <OaTextField v-model="trial.qq" :label="t('qq')" placeholder="123123123123" />
+          <button type="button" class="oa-btn" :disabled="trial.running" @click="runTrial">
+            {{ t('reviewTryRun') }}
+          </button>
+          <p class="oa-field-hint">{{ trial.answer }}</p>
+        </div>
+      </AdminControlCard>
+    </template>
+    <template #default="{ visible }">
+      <AdminControlCard id="secSecurityLog" v-show="visible('secSecurityLog')" :title="t('secSecurityLog')" :icon="IconFile" :hint="t('securityLogHint')" class="oa-control-card-wide">
+        <button type="button" class="oa-btn" :disabled="eventsLoading" @click="loadEvents">
+          {{ t('refresh') }}
+        </button>
+        <p v-if="eventsLoading" class="oa-table-empty">{{ t('loading') }}</p>
+        <p v-else-if="!events.length" class="oa-table-empty">{{ t('securityLogEmpty') }}</p>
+        <div v-else class="oa-log-list">
+          <div v-for="event in events" :key="event.id" class="oa-log-row">
+            <div class="oa-log-row-main">
+              <div class="oa-log-row-head">
+                <span class="oa-log-path">{{ eventLabel(event.event) }}</span>
+                <OaBadge
+                  :tone="event.severity === 'danger'
+                    ? 'danger' : event.severity === 'warning' ? 'warning' : 'muted'"
+                >{{ reviewDecision(event.decision ?? '') }}</OaBadge>
+              </div>
+              <div class="oa-log-row-meta">
+                <span>{{ absoluteTime(event.at) }}</span>
+                <span v-if="event.username">@{{ event.username }}</span>
+                <span v-if="event.ip">{{ event.ip }}</span>
+                <span v-if="event.actor_username">
+                  {{ t('securityLogActor', { name: `@${event.actor_username}` }) }}
+                </span>
+              </div>
+              <span v-if="event.reason" class="oa-field-hint">{{ event.reason }}</span>
+            </div>
+          </div>
+        </div>
+        <OaPagination v-bind="eventPage" :total="eventsTotal" :busy="eventsLoading" @change="changeEvents" />
+      </AdminControlCard>
+    </template>
+  </AdminWorkbench>
+  <p v-if="flash" class="oa-drawer-flash visible oa-control-flash" role="status">{{ flash }}</p>
 </template>

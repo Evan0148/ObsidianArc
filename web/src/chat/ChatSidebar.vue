@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import OaConfirmButton from '@/components/OaConfirmButton.vue';
+import OaMenu from '@/components/OaMenu.vue';
+import OaMenuItem from '@/components/OaMenuItem.vue';
 import OaResizer from '@/components/OaResizer.vue';
 import OaScrollArea from '@/components/OaScrollArea.vue';
 import OaSearchField from '@/components/OaSearchField.vue';
 import { matchesSearch } from '@/lib/search';
 import { t } from '@/composables/useI18n';
 import { usePanelHost } from '@/composables/usePanelHost';
-import { IconCheck, IconPlus, IconTrash } from '@/icons';
+import { IconArchive, IconEdit, IconMoreVertical, IconPlus, IconTrash } from '@/icons';
 import ProjectList from './ProjectList.vue';
 import {
-  activeID, canDelete, clearEverything, conversations, openConversation,
-  pendingID, removeConversation, rename, startNewConversation,
+  activeID, archiveConversation, canArchive, canDelete, clearEverything,
+  conversations, openConversation, pendingID, removeConversation, rename,
+  startNewConversation,
 } from './useChat';
 
 // The rail's width drives its own collapsed margin as well as its size, so
@@ -25,6 +28,23 @@ const activeTab = ref<'history' | 'projects'>('history');
 const query = ref('');
 const filteredConversations = computed(() => conversations.value.filter((entry) =>
   matchesSearch(query.value, entry.title || t('newChat'))));
+
+const openUpMap = ref<Record<string, boolean>>({});
+
+function handleMenuTrigger(event: MouseEvent, id: string, toggle: () => void): void {
+  const target = event.currentTarget as HTMLElement | null;
+  if (target) {
+    const rect = target.getBoundingClientRect();
+    openUpMap.value[id] = (window.innerHeight - rect.bottom) < 160;
+  }
+  toggle();
+}
+
+function onRowContextMenu(event: MouseEvent): void {
+  const rowEl = event.currentTarget as HTMLElement | null;
+  const moreBtn = rowEl?.querySelector<HTMLButtonElement>('.ai-chat-list-more');
+  moreBtn?.click();
+}
 
 // A short rise on the row that just became current, so switching reads as a
 // different conversation rather than the list quietly repainting.
@@ -61,14 +81,21 @@ watch(activeID, () => {
           @click="activeTab = 'projects'"
         >{{ t('tabProjects') }}</button>
       </div>
-      <button v-if="activeTab === 'history'" type="button" class="ai-chat-new" @click="startNewConversation">
-        <IconPlus :size="14" />
-        <span>{{ t('newChat') }}</span>
-      </button>
     </div>
 
     <template v-if="activeTab === 'history'">
-      <OaSearchField v-model="query" class="oa-history-search" :label="t('searchHistory')" />
+      <div class="ai-history-search-row">
+        <OaSearchField v-model="query" class="oa-history-search" :label="t('searchHistory')" />
+        <button
+          type="button"
+          class="ai-history-new-btn"
+          :title="t('newChat')"
+          :aria-label="t('newChat')"
+          @click="startNewConversation"
+        >
+          <IconPlus :size="16" />
+        </button>
+      </div>
 
       <OaScrollArea wrap-class="ai-chat-list-wrap" scroll-class="ai-chat-list">
         <p v-if="!conversations.length" class="ai-chat-list-empty">{{ t('noHistory') }}</p>
@@ -81,6 +108,7 @@ watch(activeID, () => {
             active: conversation.id === activeID,
             switched: conversation.id === activeID && switched,
           }"
+          @contextmenu.prevent="onRowContextMenu($event)"
         >
           <button
             type="button"
@@ -97,16 +125,33 @@ watch(activeID, () => {
             class="ai-chat-list-live"
             :title="t('thinking')"
           ><span class="ai-chat-spinner" /></span>
-          <OaConfirmButton
-            v-if="canDelete"
-            class="ai-chat-list-delete"
-            :resting-title="t('deleteChat')"
-            :armed-title="t('confirmDelete')"
-            @confirm="removeConversation(conversation)"
-          >
-            <IconTrash :size="13" />
-            <template #armed><IconCheck :size="13" /></template>
-          </OaConfirmButton>
+          <OaMenu group-class="ai-chat-item-menu" :menu-class="'ai-chat-context-menu' + (openUpMap[conversation.id] ? ' open-up' : '')">
+            <template #trigger="{ open: menuOpen, toggle }">
+              <button
+                type="button"
+                class="ai-chat-list-more"
+                :class="{ active: menuOpen }"
+                :title="t('moreOptions')"
+                :aria-label="t('moreOptions')"
+                aria-haspopup="menu"
+                :aria-expanded="menuOpen ? 'true' : 'false'"
+                @click.stop="handleMenuTrigger($event, conversation.id, toggle)"
+              >
+                <IconMoreVertical :size="13" />
+              </button>
+            </template>
+            <template #default="{ close }">
+              <OaMenuItem :title="t('rename')" @click.stop="close(); rename(conversation)">
+                <template #leading><IconEdit :size="13" /></template>
+              </OaMenuItem>
+              <OaMenuItem v-if="canArchive" :title="t('archive')" @click.stop="close(); archiveConversation(conversation)">
+                <template #leading><IconArchive :size="13" /></template>
+              </OaMenuItem>
+              <OaMenuItem v-if="canDelete" :title="t('deleteChat')" @click.stop="close(); removeConversation(conversation)">
+                <template #leading><IconTrash :size="13" /></template>
+              </OaMenuItem>
+            </template>
+          </OaMenu>
         </div>
       </OaScrollArea>
 

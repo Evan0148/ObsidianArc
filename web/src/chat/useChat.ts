@@ -13,6 +13,7 @@
 
 import { computed, ref } from 'vue';
 import {
+  archiveConversation as archiveConversationApi,
   deleteAllConversations,
   deleteConversation,
   getConversation,
@@ -191,6 +192,7 @@ export const statsWanted = computed(
   () => currentUser.value?.allow_stats !== false && currentPreferences.value['show_stats'] === true,
 );
 export const canDelete = computed(() => currentUser.value?.allow_delete_conversations !== false);
+export const canArchive = computed(() => currentUser.value?.allow_archive_conversations !== false);
 
 /** What the composer and the transcript need to know about the chosen model. */
 export const status = computed(() => {
@@ -565,12 +567,21 @@ async function reloadActive(): Promise<void> {
     return;
   }
   try {
-    const { messages: list } = await getConversation(id);
+    const { messages: list, conversation } = await getConversation(id);
     // Switching no longer waits for a turn, so a reload can land after the
     // reader has moved on. Rows belong to the conversation they were read
     // from, never to whatever happens to be on screen when they arrive.
     if (activeID.value !== id) return;
     messages.value = list;
+    if (conversation) {
+      if (conversation.project_id) {
+        pendingProjectID.value = conversation.project_id;
+        pendingMode.value = 'work';
+      } else {
+        pendingProjectID.value = '';
+        pendingMode.value = (conversation.mode as 'chat' | 'work') || 'chat';
+      }
+    }
   } catch (error) {
     if (error instanceof ApiError && error.status === 404 && activeID.value === id) {
       activeID.value = '';
@@ -603,6 +614,8 @@ export async function openConversation(id: string): Promise<void> {
 
 export function startNewConversation(): void {
   activeID.value = '';
+  pendingProjectID.value = '';
+  pendingMode.value = 'chat';
   messages.value = [];
   editingID.value = '';
   justSentID.value = '';
@@ -614,12 +627,49 @@ export function startNewConversation(): void {
   switchTick.value += 1;
 }
 
+export function startProjectConversation(projectID: string): void {
+  activeID.value = '';
+  pendingProjectID.value = projectID;
+  pendingMode.value = 'work';
+  messages.value = [];
+  editingID.value = '';
+  justSentID.value = '';
+  historyOpen.value = false;
+  clearAttachments();
+  switchTick.value += 1;
+}
+
 export async function rename(conversation: Conversation): Promise<void> {
   const next = window.prompt(t('renamePrompt'), conversation.title);
   if (next === null) return;
   try {
     const { conversation: updated } = await renameConversation(conversation.id, next.trim());
     conversation.title = updated.title;
+  } catch (error) {
+    setFlash(error instanceof ApiError ? error.message : String(error));
+  }
+}
+
+export async function archiveConversation(conversation: Conversation): Promise<void> {
+  try {
+    await archiveConversationApi(conversation.id, true);
+  } catch (error) {
+    setFlash(error instanceof ApiError ? error.message : String(error));
+    return;
+  }
+  conversations.value = conversations.value.filter((entry) => entry.id !== conversation.id);
+  if (activeID.value === conversation.id) {
+    activeID.value = '';
+    messages.value = [];
+  }
+  setFlash(t('archiveSuccess'));
+}
+
+export async function unarchiveConversation(id: string): Promise<void> {
+  try {
+    await archiveConversationApi(id, false);
+    await refreshList();
+    setFlash(t('unarchiveSuccess'));
   } catch (error) {
     setFlash(error instanceof ApiError ? error.message : String(error));
   }

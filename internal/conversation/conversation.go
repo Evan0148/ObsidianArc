@@ -42,6 +42,7 @@ type Conversation struct {
 	// not started in one.
 	ProjectID    string `json:"project_id"`
 	Pinned       bool   `json:"pinned"`
+	Archived     bool   `json:"archived"`
 	MessageCount int    `json:"message_count"`
 	CreatedAt    int64  `json:"created_at"`
 	UpdatedAt    int64  `json:"updated_at"`
@@ -141,7 +142,7 @@ type Store struct{ db *database.DB }
 
 func NewStore(db *database.DB) *Store { return &Store{db: db} }
 
-const conversationColumns = `id, title, model_id, mode, project_id, pinned, message_count, created_at, updated_at`
+const conversationColumns = `id, title, model_id, mode, project_id, pinned, archived, message_count, created_at, updated_at`
 
 // --- conversations --------------------------------------------------------
 
@@ -177,8 +178,8 @@ func (s *Store) Create(ctx context.Context, q database.Queryer, userID string, i
 	}
 
 	_, err := q.Exec(ctx,
-		`INSERT INTO conversations (id, user_id, title, model_id, mode, project_id, pinned, message_count, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+		`INSERT INTO conversations (id, user_id, title, model_id, mode, project_id, pinned, archived, message_count, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, false, 0, ?, ?)`,
 		record.ID, userID, record.Title, nullable(record.ModelID), string(record.Mode),
 		nullable(record.ProjectID), false, record.CreatedAt, record.UpdatedAt)
 	if err != nil {
@@ -187,49 +188,44 @@ func (s *Store) Create(ctx context.Context, q database.Queryer, userID string, i
 	return record, nil
 }
 
-// List is a page of the conversations a user owns, newest first.
-//
-// It clamps: every caller it was written for is a screen, and a screen that
-// asks for more than a page is asking the wrong question. Use ListForExport
-// for the one caller that genuinely means "all of them".
-func (s *Store) List(ctx context.Context, userID string, limit int) ([]Conversation, error) {
-	if limit <= 0 || limit > MaxListLimit {
+// ListFilter narrows which conversations are listed.
+type ListFilter struct {
+	Limit     int
+	Offset    int
+	Archived  *bool
+	ProjectID *string
+}
+
+// ListWithFilter returns conversations matching the given filter.
+func (s *Store) ListWithFilter(ctx context.Context, userID string, filter ListFilter) ([]Conversation, error) {
+	limit := filter.Limit
+	if limit <= 0 {
 		limit = DefaultListLimit
 	}
-	return s.list(ctx, userID, limit)
-}
+	offset := max(0, filter.Offset)
 
-// ListForExport is every conversation a user owns, up to the caller's own
-// ceiling, with no page clamp.
-//
-// The export asks for all of them and used to go through List, which quietly
-// rewrote its request for two thousand into sixty. Nobody was told: the
-// document simply held the sixty most recent threads and called itself
-// complete, so the feature whose whole purpose is handing somebody their own
-// history handed them a sixth of it. ResetGroup records the same failure on
-// the quota side — a page size on a bulk path is a silent cap on how much of
-// the data the path reaches.
-//
-// The limit is still a limit, because the export document has a ceiling of
-// its own; it is just the caller's rather than a screen's.
-func (s *Store) ListForExport(ctx context.Context, userID string, limit int) ([]Conversation, error) {
-	if limit <= 0 {
-		limit = MaxListLimit
-	}
-	return s.list(ctx, userID, limit)
-}
+	where := []string{"user_id = ?"}
+	args := []any{userID}
 
-// list is the one query behind both, so a change to the ordering or the
-// projection cannot land on one path and miss the other.
-func (s *Store) list(ctx context.Context, userID string, limit int, offsets ...int) ([]Conversation, error) {
-	offset := 0
-	if len(offsets) > 0 {
-		offset = max(0, offsets[0])
+	if filter.Archived != nil {
+		where = append(where, "archived = ?")
+		args = append(args, *filter.Archived)
 	}
+	if filter.ProjectID != nil {
+		if *filter.ProjectID == "" {
+			where = append(where, "(project_id IS NULL OR project_id = '')")
+		} else {
+			where = append(where, "project_id = ?")
+			args = append(args, *filter.ProjectID)
+		}
+	}
+
+	args = append(args, limit, offset)
 	rows, err := s.db.Query(ctx,
 		`SELECT `+conversationColumns+` FROM conversations
-		 WHERE user_id = ? ORDER BY pinned DESC, updated_at DESC, id DESC LIMIT ? OFFSET ?`,
-		userID, limit, offset)
+		 WHERE `+strings.Join(where, " AND ")+`
+		 ORDER BY pinned DESC, updated_at DESC, id DESC LIMIT ? OFFSET ?`,
+		args...)
 	if err != nil {
 		return nil, fmt.Errorf("conversation: list: %w", err)
 	}
@@ -246,6 +242,39 @@ func (s *Store) list(ctx context.Context, userID string, limit int, offsets ...i
 	return out, rows.Err()
 }
 
+// List is a page of the conversations a user owns, newest first.
+// Defaults to non-archived conversations.
+func (s *Store) List(ctx context.Context, userID string, limit int) ([]Conversation, error) {
+	if limit <= 0 || limit > MaxListLimit {
+		limit = DefaultListLimit
+	}
+	f := false
+	return s.ListWithFilter(ctx, userID, ListFilter{Limit: limit, Archived: &f})
+}
+
+// ListForExport is every conversation a user owns, up to the caller's own
+// ceiling, with no page clamp. Includes both active and archived conversations.
+func (s *Store) ListForExport(ctx context.Context, userID string, limit int) ([]Conversation, error) {
+	if limit <= 0 {
+		limit = MaxListLimit
+	}
+	return s.ListWithFilter(ctx, userID, ListFilter{Limit: limit})
+}
+
+// list is the helper behind paginated callers, defaulting to active conversations.
+func (s *Store) list(ctx context.Context, userID string, limit int, offsets ...int) ([]Conversation, error) {
+	offset := 0
+	if len(offsets) > 0 {
+		offset = max(0, offsets[0])
+	}
+	f := false
+	return s.ListWithFilter(ctx, userID, ListFilter{
+		Limit:    limit,
+		Offset:   offset,
+		Archived: &f,
+	})
+}
+
 func (s *Store) Get(ctx context.Context, q database.Queryer, userID, conversationID string) (Conversation, error) {
 	if q == nil {
 		q = s.db
@@ -256,8 +285,9 @@ func (s *Store) Get(ctx context.Context, q database.Queryer, userID, conversatio
 }
 
 type Update struct {
-	Title  *string
-	Pinned *bool
+	Title    *string
+	Pinned   *bool
+	Archived *bool
 }
 
 func (s *Store) Update(ctx context.Context, userID, conversationID string, in Update) (Conversation, error) {
@@ -275,6 +305,10 @@ func (s *Store) Update(ctx context.Context, userID, conversationID string, in Up
 	if in.Pinned != nil {
 		sets = append(sets, "pinned = ?")
 		args = append(args, *in.Pinned)
+	}
+	if in.Archived != nil {
+		sets = append(sets, "archived = ?")
+		args = append(args, *in.Archived)
 	}
 	if len(sets) == 0 {
 		return s.Get(ctx, nil, userID, conversationID)
@@ -658,7 +692,7 @@ func scanConversation(row rowScanner) (Conversation, error) {
 		projectID sql.NullString
 	)
 	err := row.Scan(&record.ID, &record.Title, &modelID, &mode, &projectID, &record.Pinned,
-		&record.MessageCount, &record.CreatedAt, &record.UpdatedAt)
+		&record.Archived, &record.MessageCount, &record.CreatedAt, &record.UpdatedAt)
 	if err != nil {
 		if database.IsNotFound(err) {
 			return Conversation{}, ErrNotFound

@@ -11,9 +11,12 @@ import { ApiError, api } from './client';
 
 export interface Conversation {
   id: string;
+  project_id?: string;
+  mode?: 'chat' | 'work';
   title: string;
   model_id: string;
   pinned: boolean;
+  archived?: boolean;
   message_count: number;
   created_at: number;
   updated_at: number;
@@ -79,8 +82,23 @@ export interface Message {
   created_at: number;
 }
 
-export function listConversations(): Promise<{ conversations: Conversation[] }> {
-  return api.get<{ conversations: Conversation[] }>('/api/conversations');
+export interface ListConversationsParams {
+  project_id?: string;
+  archived?: boolean;
+  limit?: number;
+}
+
+export function listConversations(params?: ListConversationsParams): Promise<{ conversations: Conversation[] }> {
+  const query = new URLSearchParams();
+  if (params?.project_id !== undefined) query.set('project_id', params.project_id);
+  if (params?.archived !== undefined) query.set('archived', String(params.archived));
+  if (params?.limit !== undefined) query.set('limit', String(params.limit));
+  const qs = query.toString();
+  return api.get<{ conversations: Conversation[] }>(`/api/conversations${qs ? `?${qs}` : ''}`);
+}
+
+export function archiveConversation(id: string, archived = true): Promise<{ conversation: Conversation }> {
+  return api.patch<{ conversation: Conversation }>(`/api/conversations/${id}`, { archived });
 }
 
 export function getConversation(id: string): Promise<{ conversation: Conversation; messages: Message[] }> {

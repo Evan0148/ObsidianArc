@@ -5,15 +5,16 @@
 // understand before they change it. Anything with a sensible answer for every
 // deployment is a constant, not a setting.
 
-import { computed, onMounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed, onMounted, ref } from 'vue';
 import { adminApi, type AdminModel, type HeldAttachments } from '@/admin/api';
 import { pickJSONFile, saveAsFile } from '@/api/backup';
 import { ApiError } from '@/api/client';
 import OaConfirmButton from '@/components/OaConfirmButton.vue';
-import OaFormSection from '@/components/OaFormSection.vue';
-import OaSearchField from '@/components/OaSearchField.vue';
-import { matchesSearch } from '@/lib/search';
+import AdminControlCard from './AdminControlCard.vue';
+import AdminWorkbench from './AdminWorkbench.vue';
+import type { WorkbenchGroup } from './workbench';
+import { useSettingsDraft } from './settingsDraft';
+import { IconHome, IconSpark, IconFile, IconKey, IconInfo, IconBell, IconSliders, IconTrash } from '@/icons';
 import OaNumberField from '@/components/OaNumberField.vue';
 import OaSelectField from '@/components/OaSelectField.vue';
 import OaSwitchField from '@/components/OaSwitchField.vue';
@@ -25,16 +26,12 @@ import AdminFailure from './AdminFailure.vue';
 import { useAdminView } from './adminView';
 
 const view = useAdminView();
-view.setTitle(t('adminSettingsTitle'));
+view.setTitle(t('adminSettingsTitle'), t('controlSettingsSubtitle'));
 
-const route = useRoute();
-const query = ref('');
 const SEARCH_GROUPS = {
-  secIdentity: [
-    'secIdentity', 'siteName', 'siteNameHint', 'signInNote', 'signInNoteHint', 'aboutHeading',
-    'aboutHeadingHint', 'aboutText', 'aboutTextHint', 'homeNotice', 'homeNoticeHint', 'homeNoticeDismissible',
-    'homeNoticeDismissibleHint',
-  ],
+  secIdentity: ['secIdentity', 'siteName', 'siteNameHint', 'signInNote', 'signInNoteHint'],
+  secAbout: ['controlAbout', 'aboutHeading', 'aboutHeadingHint', 'aboutText', 'aboutTextHint'],
+  secHomeNotice: ['homeNotice', 'homeNoticeHint', 'homeNoticeDismissible', 'homeNoticeDismissibleHint'],
   secLanding: [
     'secLanding', 'landingMode', 'landingModeHint', 'landingLogin', 'landingIntro', 'landingChat',
     'landingIntroHTML', 'landingIntroHTMLHint', 'trialEnabled', 'trialEnabledHint', 'trialTurns',
@@ -61,23 +58,6 @@ const SEARCH_GROUPS = {
     'apiKeys', 'apiEnabled', 'apiEnabledHint',
   ],
 } satisfies Record<string, StringKey[]>;
-const visibleGroups = computed(() => Object.fromEntries(
-  Object.entries(SEARCH_GROUPS).map(([group, terms]) => [group, matchesSearch(query.value, ...terms.map((key) => t(key)))]),
-));
-
-// If navigating to a specific setting section from global admin search,
-// clear the local query so the targeted section is visible.
-watch(
-  () => route.hash,
-  (nextHash) => {
-    const hash = nextHash.replace(/^#/, '');
-    if (hash && hash in SEARCH_GROUPS) {
-      query.value = '';
-    }
-  },
-  { immediate: true },
-);
-
 const error = ref('');
 const loaded = ref(false);
 const models = ref<Pick<AdminModel, 'id' | 'display_name' | 'model_id' | 'enabled' | 'provider_name'>[]>([]);
@@ -161,13 +141,18 @@ function collect(): Record<string, string> {
   };
 }
 
+const { dirty, accept } = useSettingsDraft(collect);
+
 async function save(): Promise<void> {
+  if (!loaded.value || error.value || busy.value) return;
+  const values = collect();
   busy.value = true;
   saveLabel.value = t('saving');
   flash.value = '';
   flashOK.value = false;
   try {
-    await adminApi.saveSettings(collect());
+    await adminApi.saveSettings(values);
+    accept(values);
     saveLabel.value = t('saved');
     window.setTimeout(() => { saveLabel.value = ''; }, 1500);
   } catch (failure) {
@@ -270,6 +255,7 @@ async function load(): Promise<void> {
       orphanMinutes: Number(values['attachments.orphan_minutes'] ?? 60),
       apiEnabled: values['api.enabled'] === 'true',
     };
+    accept();
   } catch (failure) {
     error.value = failure instanceof Error ? failure.message : String(failure);
   } finally {
@@ -277,200 +263,203 @@ async function load(): Promise<void> {
   }
 }
 
+const categories: WorkbenchGroup[] = [
+  { id: 'site', label: 'controlSite', hint: 'controlSiteHint', icon: IconHome, sections: ['secIdentity', 'secLanding', 'secAbout', 'secHomeNotice'] },
+  { id: 'chat', label: 'controlChat', hint: 'controlChatHint', icon: IconSpark, sections: ['secChat', 'secLimits'] },
+  { id: 'files', label: 'controlFiles', hint: 'controlFilesHint', icon: IconFile, sections: ['secAttachments', 'secCleanup'] },
+  { id: 'integrations', label: 'controlIntegrations', hint: 'controlIntegrationsHint', icon: IconKey, sections: ['apiKeys', 'backupSettings'] },
+];
+
+const columns: [string[], string[]] = [['secIdentity', 'secAbout', 'secChat', 'secAttachments', 'apiKeys'], ['secLanding', 'secHomeNotice', 'secLimits', 'secCleanup', 'backupSettings']];
+
 onMounted(load);
 </script>
 
 <template>
   <Teleport :to="view.actionsHost">
-    <div id="backupSettings" style="display: contents">
-      <button type="button" class="oa-btn" @click="exportSettings">{{ t('exportSettings') }}</button>
-      <button type="button" class="oa-btn" @click="importSettings">{{ t('importSettings') }}</button>
-    </div>
-    <button type="button" class="oa-btn primary" :disabled="busy" @click="save">
+    <span v-if="loaded && !error" class="oa-control-save-state" :class="{ dirty }" role="status">
+      <span class="oa-dashboard-dot" />{{ dirty ? t('controlUnsaved') : t('controlSaved') }}
+    </span>
+    <button type="button" class="oa-btn primary" :disabled="busy || !loaded || !!error" @click="save">
       {{ saveLabel || t('save') }}
     </button>
   </Teleport>
-
   <AdminFailure v-if="error" :message="error" @retry="load" />
   <p v-else-if="!loaded" class="oa-table-empty">{{ t('loading') }}</p>
-
-  <div v-else class="oa-drawer-body" style="padding: 0; overflow: visible">
-    <OaSearchField v-model="query" :label="t('searchSettings')" />
-    <p v-if="!Object.values(visibleGroups).some(Boolean)" class="oa-search-empty" role="status">{{ t('noSearchResults') }}</p>
-
-    <section id="secIdentity" v-show="visibleGroups.secIdentity" class="oa-settings-group">
-      <OaFormSection :title="t('secIdentity')" />
-      <OaTextField v-model="form.siteName" :label="t('siteName')" :hint="t('siteNameHint')" :max-length="60" />
-      <OaTextArea v-model="form.description" :label="t('signInNote')" :rows="2" :hint="t('signInNoteHint')" />
-      <OaTextField
-        v-model="form.aboutHeading"
-        :label="t('aboutHeading')"
-        :hint="t('aboutHeadingHint')"
-        :max-length="60"
-      />
-      <OaTextArea v-model="form.aboutText" :label="t('aboutText')" :rows="10" :hint="t('aboutTextHint')" />
-      <OaTextArea v-model="form.homeNotice" :label="t('homeNotice')" :rows="3" :hint="t('homeNoticeHint')" />
-      <OaSwitchField
-        v-model="form.homeNoticeDismissible"
-        :label="t('homeNoticeDismissible')"
-        :hint="t('homeNoticeDismissibleHint')"
-      />
-    </section>
-
-    <section id="secLanding" v-show="visibleGroups.secLanding" class="oa-settings-group">
-      <OaFormSection :title="t('secLanding')" />
-      <OaSelectField
-        v-model="form.landingMode"
-        :label="t('landingMode')"
-        :hint="t('landingModeHint')"
-        :options="[
-          { value: 'login', label: t('landingLogin') },
-          { value: 'intro', label: t('landingIntro') },
-          { value: 'chat', label: t('landingChat') },
-        ]"
-      />
-      <OaTextArea
-        v-if="showIntro"
-        v-model="form.landingIntro"
-        :label="t('landingIntroHTML')"
-        :rows="8"
-        :hint="t('landingIntroHTMLHint')"
-      />
-      <OaSwitchField
-        v-if="showTrialSwitch"
-        v-model="form.trialEnabled"
-        :label="t('trialEnabled')"
-        :hint="t('trialEnabledHint')"
-      />
-      <OaNumberField
-        v-if="showTrialDetail"
-        v-model="form.trialTurns"
-        :label="t('trialTurns')"
-        :min="1"
-        :max="20"
-        :hint="t('trialTurnsHint', { max: 20 })"
-      />
-      <OaSelectField
-        v-if="showTrialDetail"
-        v-model="form.trialModel"
-        :label="t('trialModel')"
-        :options="[
-          { value: '', label: t('trialFirstAvailable') },
-          ...enabledModels.map((entry) => ({ value: entry.id, label: entry.display_name })),
-        ]"
-      />
-    </section>
-
-    <section id="secChat" v-show="visibleGroups.secChat" class="oa-settings-group">
-      <OaFormSection :title="t('secChat')" />
-      <OaTextArea
-        v-model="form.systemPrompt"
-        :label="t('instanceSystemPrompt')"
-        :rows="4"
-        :hint="t('instanceSystemPromptHint')"
-      />
-      <OaNumberField
-        v-model="form.maxTurns"
-        :label="t('turnsResent')"
-        :min="2"
-        :max="200"
-        :hint="t('turnsResentHint')"
-      />
-      <OaNumberField
-        v-model="form.agentMaxRounds"
-        :label="t('agentMaxRounds')"
-        :min="1"
-        :max="50"
-        :hint="t('agentMaxRoundsHint')"
-      />
-    </section>
-
-    <section id="secLimits" v-show="visibleGroups.secLimits" class="oa-settings-group">
-      <OaFormSection :title="t('secLimits')" />
-      <OaSwitchField
-        v-model="form.adminBypass"
-        :label="t('adminsIgnoreLimits')"
-        :hint="t('adminsIgnoreLimitsHint')"
-      />
-      <OaNumberField
-        v-model="form.maxConcurrent"
-        :label="t('maxConcurrentPerUser')"
-        :min="0"
-        :max="100"
-        :hint="t('maxConcurrentPerUserHint')"
-      />
-      <OaSelectField
-        v-model="form.usageDisplay"
-        :label="t('usageDisplay')"
-        :hint="t('usageDisplayHint')"
-        :options="[
-          { value: 'absolute', label: t('usageDisplayAbsolute') },
-          { value: 'remaining', label: t('usageDisplayRemaining') },
-          { value: 'used', label: t('usageDisplayUsed') },
-        ]"
-      />
-    </section>
-
-    <section id="secAttachments" v-show="visibleGroups.secAttachments" class="oa-settings-group">
-      <OaFormSection :title="t('secAttachments')" :hint="t('attachmentsHint')" />
-      <OaNumberField
-        v-model="form.attachmentMaxMB"
-        :label="t('attachmentMaxMB')"
-        :min="1"
-        :max="64"
-        :hint="t('attachmentMaxMBHint')"
-      />
-      <OaSwitchField
-        v-model="form.attachmentRetain"
-        :label="t('attachmentRetain')"
-        :hint="t('attachmentRetainHint')"
-      />
-    </section>
-
-    <section id="secCleanup" v-show="visibleGroups.secCleanup" class="oa-settings-group">
-      <OaFormSection :title="t('secCleanup')" :hint="t('cleanupHint')" />
-      <OaNumberField
-        v-model="form.purgeAfterDays"
-        :label="t('attachmentPurgeDays')"
-        :min="0"
-        :max="3650"
-        :hint="t('attachmentPurgeDaysHint')"
-      />
-      <OaTextField
-        v-model="form.purgeDailyAt"
-        :label="t('attachmentPurgeDaily')"
-        placeholder="03:00"
-        :hint="t('attachmentPurgeDailyHint')"
-        :max-length="5"
-      />
-      <OaNumberField
-        v-model="form.orphanMinutes"
-        :label="t('attachmentOrphanMinutes')"
-        :min="5"
-        :max="1440"
-        :hint="t('attachmentOrphanMinutesHint')"
-      />
-      <!-- The figure matters more than it looks: without it an operator has to
-           trust that their cleanup is working rather than watch it work. -->
-      <div class="oa-field">
-        <p class="oa-field-hint">{{ heldLabel }}</p>
-        <OaConfirmButton
-          class="oa-btn"
-          :label="t('purgeNow')"
-          :armed-label="t('purgeNowConfirm')"
-          :armed-title="t('purgeNow')"
-          :resting-title="t('purgeNow')"
-          :disabled="purging"
-          @confirm="purge"
+  <AdminWorkbench v-else page="settings" :groups="categories" :terms="SEARCH_GROUPS" :columns="columns">
+    <template #left="{ visible }">
+      <AdminControlCard id="secIdentity" v-show="visible('secIdentity')" :title="t('secIdentity')" :icon="IconHome" :hint="t('controlIdentityHint')">
+        <OaTextField v-model="form.siteName" :label="t('siteName')" :hint="t('siteNameHint')" :max-length="60" />
+        <OaTextArea v-model="form.description" :label="t('signInNote')" :rows="2" :hint="t('signInNoteHint')" />
+      </AdminControlCard>
+      <AdminControlCard id="secAbout" v-show="visible('secAbout')" :title="t('controlAbout')" :icon="IconInfo" :hint="t('controlAboutHint')">
+        <OaTextField
+          v-model="form.aboutHeading"
+          :label="t('aboutHeading')"
+          :hint="t('aboutHeadingHint')"
+          :max-length="60"
         />
-      </div>
-    </section>
-
-    <section id="apiKeys" v-show="visibleGroups.apiKeys" class="oa-settings-group">
-      <OaFormSection :title="t('apiKeys')" />
-      <OaSwitchField v-model="form.apiEnabled" :label="t('apiEnabled')" :hint="t('apiEnabledHint')" />
-    </section>
-
-    <p class="oa-drawer-flash" :class="{ visible: !!flash, ok: flashOK }">{{ flash }}</p>
-  </div>
+        <OaTextArea v-model="form.aboutText" :label="t('aboutText')" :rows="5" :hint="t('aboutTextHint')" />
+      </AdminControlCard>
+      <AdminControlCard id="secChat" v-show="visible('secChat')" :title="t('secChat')" :icon="IconSpark">
+        <OaTextArea
+          v-model="form.systemPrompt"
+          :label="t('instanceSystemPrompt')"
+          :rows="4"
+          :hint="t('instanceSystemPromptHint')"
+        />
+        <OaNumberField
+          v-model="form.maxTurns"
+          :label="t('turnsResent')"
+          :min="2"
+          :max="200"
+          :hint="t('turnsResentHint')"
+        />
+        <OaNumberField
+          v-model="form.agentMaxRounds"
+          :label="t('agentMaxRounds')"
+          :min="1"
+          :max="50"
+          :hint="t('agentMaxRoundsHint')"
+        />
+      </AdminControlCard>
+      <AdminControlCard id="secAttachments" v-show="visible('secAttachments')" :title="t('secAttachments')" :icon="IconFile" :hint="t('attachmentsHint')">
+        <OaNumberField
+          v-model="form.attachmentMaxMB"
+          :label="t('attachmentMaxMB')"
+          :min="1"
+          :max="64"
+          :hint="t('attachmentMaxMBHint')"
+        />
+        <OaSwitchField
+          v-model="form.attachmentRetain"
+          :label="t('attachmentRetain')"
+          :hint="t('attachmentRetainHint')"
+        />
+      </AdminControlCard>
+      <AdminControlCard id="apiKeys" v-show="visible('apiKeys')" :title="t('apiKeys')" :icon="IconKey">
+        <OaSwitchField v-model="form.apiEnabled" :label="t('apiEnabled')" :hint="t('apiEnabledHint')" />
+      </AdminControlCard>
+    </template>
+    <template #right="{ visible }">
+      <AdminControlCard id="secLanding" v-show="visible('secLanding')" :title="t('secLanding')" :icon="IconSliders" :hint="t('controlLandingHint')">
+        <OaSelectField
+          v-model="form.landingMode"
+          :label="t('landingMode')"
+          :hint="t('landingModeHint')"
+          :options="[
+            { value: 'login', label: t('landingLogin') },
+            { value: 'intro', label: t('landingIntro') },
+            { value: 'chat', label: t('landingChat') },
+          ]"
+        />
+        <OaTextArea
+          v-if="showIntro"
+          v-model="form.landingIntro"
+          :label="t('landingIntroHTML')"
+          :rows="8"
+          :hint="t('landingIntroHTMLHint')"
+        />
+        <OaSwitchField
+          v-if="showTrialSwitch"
+          v-model="form.trialEnabled"
+          :label="t('trialEnabled')"
+          :hint="t('trialEnabledHint')"
+        />
+        <OaNumberField
+          v-if="showTrialDetail"
+          v-model="form.trialTurns"
+          :label="t('trialTurns')"
+          :min="1"
+          :max="20"
+          :hint="t('trialTurnsHint', { max: 20 })"
+        />
+        <OaSelectField
+          v-if="showTrialDetail"
+          v-model="form.trialModel"
+          :label="t('trialModel')"
+          :options="[
+            { value: '', label: t('trialFirstAvailable') },
+            ...enabledModels.map((entry) => ({ value: entry.id, label: entry.display_name })),
+          ]"
+        />
+      </AdminControlCard>
+      <AdminControlCard id="secHomeNotice" v-show="visible('secHomeNotice')" :title="t('homeNotice')" :icon="IconBell" :hint="t('controlNoticeHint')">
+        <OaTextArea v-model="form.homeNotice" :label="t('homeNotice')" :rows="3" :hint="t('homeNoticeHint')" />
+        <OaSwitchField
+          v-model="form.homeNoticeDismissible"
+          :label="t('homeNoticeDismissible')"
+          :hint="t('homeNoticeDismissibleHint')"
+        />
+      </AdminControlCard>
+      <AdminControlCard id="secLimits" v-show="visible('secLimits')" :title="t('secLimits')" :icon="IconSliders">
+        <OaSwitchField
+          v-model="form.adminBypass"
+          :label="t('adminsIgnoreLimits')"
+          :hint="t('adminsIgnoreLimitsHint')"
+        />
+        <OaNumberField
+          v-model="form.maxConcurrent"
+          :label="t('maxConcurrentPerUser')"
+          :min="0"
+          :max="100"
+          :hint="t('maxConcurrentPerUserHint')"
+        />
+        <OaSelectField
+          v-model="form.usageDisplay"
+          :label="t('usageDisplay')"
+          :hint="t('usageDisplayHint')"
+          :options="[
+            { value: 'absolute', label: t('usageDisplayAbsolute') },
+            { value: 'remaining', label: t('usageDisplayRemaining') },
+            { value: 'used', label: t('usageDisplayUsed') },
+          ]"
+        />
+      </AdminControlCard>
+      <AdminControlCard id="secCleanup" v-show="visible('secCleanup')" :title="t('secCleanup')" :icon="IconTrash" :hint="t('cleanupHint')">
+        <OaNumberField
+          v-model="form.purgeAfterDays"
+          :label="t('attachmentPurgeDays')"
+          :min="0"
+          :max="3650"
+          :hint="t('attachmentPurgeDaysHint')"
+        />
+        <OaTextField
+          v-model="form.purgeDailyAt"
+          :label="t('attachmentPurgeDaily')"
+          placeholder="03:00"
+          :hint="t('attachmentPurgeDailyHint')"
+          :max-length="5"
+        />
+        <OaNumberField
+          v-model="form.orphanMinutes"
+          :label="t('attachmentOrphanMinutes')"
+          :min="5"
+          :max="1440"
+          :hint="t('attachmentOrphanMinutesHint')"
+        />
+        <!-- The figure matters more than it looks: without it an operator has to
+             trust that their cleanup is working rather than watch it work. -->
+        <div class="oa-field">
+          <p class="oa-field-hint">{{ heldLabel }}</p>
+          <OaConfirmButton
+            class="oa-btn"
+            :label="t('purgeNow')"
+            :armed-label="t('purgeNowConfirm')"
+            :armed-title="t('purgeNow')"
+            :resting-title="t('purgeNow')"
+            :disabled="purging"
+            @confirm="purge"
+          />
+        </div>
+      </AdminControlCard>
+      <AdminControlCard id="backupSettings" v-show="visible('backupSettings')" :title="t('controlBackup')" :icon="IconFile" :hint="t('controlBackupHint')">
+        <div class="oa-control-actions">
+          <button type="button" class="oa-btn" @click="exportSettings">{{ t('exportSettings') }}</button>
+          <button type="button" class="oa-btn" @click="importSettings">{{ t('importSettings') }}</button>
+        </div>
+      </AdminControlCard>
+    </template>
+  </AdminWorkbench>
+  <p v-if="flash" class="oa-drawer-flash visible oa-control-flash" :class="{ ok: flashOK }" role="status">{{ flash }}</p>
 </template>

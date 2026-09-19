@@ -5,13 +5,19 @@
 // thresholds, user-facing uptime visibility, and manual uptime reset into a
 // single screen.
 
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { adminApi, type ModelHealth } from '@/admin/api';
 import { ApiError } from '@/api/client';
 import { loadModels } from '@/chat/useModels';
 import OaBadge from '@/components/OaBadge.vue';
+import OaSearchField from '@/components/OaSearchField.vue';
+import { matchesSearch } from '@/lib/search';
 import OaConfirmButton from '@/components/OaConfirmButton.vue';
-import OaFormSection from '@/components/OaFormSection.vue';
+import AdminControlCard from './AdminControlCard.vue';
+import AdminWorkbench from './AdminWorkbench.vue';
+import type { WorkbenchGroup } from './workbench';
+import { useSettingsDraft } from './settingsDraft';
+import { IconPulse, IconLock, IconSliders, IconTrash, IconUsers } from '@/icons';
 import OaNumberField from '@/components/OaNumberField.vue';
 import OaSwitchField from '@/components/OaSwitchField.vue';
 import { t } from '@/composables/useI18n';
@@ -55,13 +61,18 @@ function collect(): Record<string, string> {
   };
 }
 
+const { dirty, accept } = useSettingsDraft(collect);
+
 async function save(): Promise<void> {
+  if (!loaded.value || error.value || busy.value) return;
+  const values = collect();
   busy.value = true;
   saveLabel.value = t('saving');
   flash.value = '';
   flashSuccess.value = '';
   try {
-    await adminApi.saveSettings(collect());
+    await adminApi.saveSettings(values);
+    accept(values);
     saveLabel.value = t('saved');
     window.setTimeout(() => { saveLabel.value = ''; }, 1500);
   } catch (failure) {
@@ -80,7 +91,7 @@ async function resetUptime(): Promise<void> {
     await adminApi.resetHealth();
     flashSuccess.value = t('resetUptimeDone');
     window.setTimeout(() => { flashSuccess.value = ''; }, 3000);
-    await Promise.all([load(), loadModels()]);
+    await Promise.all([refreshHealth(), loadModels()]);
   } catch (failure) {
     flash.value = failure instanceof ApiError ? failure.message : String(failure);
   } finally {
@@ -105,13 +116,23 @@ async function probeAllModels(): Promise<void> {
       failed: result.failed,
     });
     window.setTimeout(() => { flashSuccess.value = ''; }, 5000);
-    await Promise.all([load(), loadModels()]);
+    await Promise.all([refreshHealth(), loadModels()]);
   } catch (failure) {
     flash.value = failure instanceof ApiError ? failure.message : String(failure);
   } finally {
     probing.value = false;
   }
 }
+
+// A health refresh must not reload settings and discard a policy draft.
+async function refreshHealth(): Promise<void> { models.value = (await adminApi.health()).models; }
+const modelQuery = ref('');
+const filteredModels = computed(() => models.value.filter((model) => matchesSearch(modelQuery.value, model.name, model.provider)));
+const counts = computed(() => ({
+  up: models.value.filter((m) => m.status.state === 'up' && !m.auto_disabled).length,
+  down: models.value.filter((m) => m.status.state === 'down' || m.auto_disabled).length,
+  unknown: models.value.filter((m) => m.status.state === 'unknown' && !m.auto_disabled).length,
+}));
 
 async function load(): Promise<void> {
   error.value = '';
@@ -131,6 +152,7 @@ async function load(): Promise<void> {
       healthRetainDays: Number(values['health.retain_days'] ?? 14),
     };
     models.value = healthData.models;
+    accept();
   } catch (failure) {
     error.value = failure instanceof Error ? failure.message : String(failure);
   } finally {
@@ -138,141 +160,111 @@ async function load(): Promise<void> {
   }
 }
 
+const categories: WorkbenchGroup[] = [
+  { id: 'status', label: 'controlHealth', hint: 'controlHealthHint', icon: IconPulse, sections: ['modelHealthOverview'] },
+  { id: 'protection', label: 'controlProtection', hint: 'controlProtectionHint', icon: IconLock, sections: ['secDegradationPolicy', 'secProbingWindow'] },
+  { id: 'maintenance', label: 'controlMaintenance', hint: 'controlMaintenanceHint', icon: IconSliders, sections: ['secUserVisibility', 'secResetUptime'] },
+];
+
 onMounted(load);
 </script>
 
 <template>
   <Teleport :to="view.actionsHost">
-    <button type="button" class="oa-btn primary" :disabled="busy" @click="save">
+    <span v-if="loaded && !error" class="oa-control-save-state" :class="{ dirty }" role="status">
+      <span class="oa-dashboard-dot" />{{ dirty ? t('controlUnsaved') : t('controlSaved') }}
+    </span>
+    <button type="button" class="oa-btn primary" :disabled="busy || !loaded || !!error" @click="save">
       {{ saveLabel || t('save') }}
     </button>
   </Teleport>
-
   <AdminFailure v-if="error" :message="error" @retry="load" />
   <p v-else-if="!loaded" class="oa-table-empty">{{ t('loading') }}</p>
-
-  <div v-else class="oa-settings-panel">
-    <p v-if="flashSuccess" class="oa-drawer-flash visible" style="color: #10b981;">
-      {{ flashSuccess }}
-    </p>
-
-    <!-- 1. Service Degradation and Auto-disable Thresholds -->
-    <OaFormSection id="secDegradationPolicy" :title="t('secDegradationPolicy')" :hint="t('healthWarnBelowHint')" />
-    <OaNumberField
-      v-model="form.healthWarnBelow"
-      :label="t('healthWarnBelow')"
-      :min="0"
-      :max="100"
-      :hint="t('healthWarnBelowHint')"
-    />
-    <OaNumberField
-      v-model="form.healthDisableBelow"
-      :label="t('healthDisableBelow')"
-      :min="0"
-      :max="100"
-      :hint="t('healthDisableBelowHint')"
-    />
-    <OaNumberField
-      v-model="form.healthDisableAfter"
-      :label="t('healthDisableAfter')"
-      :min="0"
-      :hint="t('healthDisableAfterHint')"
-    />
-
-    <!-- 2. Probing and Window -->
-    <OaFormSection id="secProbingWindow" :title="t('secProbingWindow')" :hint="t('livenessHint')" />
-    <OaSwitchField v-model="form.healthProbe" :label="t('healthProbe')" :hint="t('healthProbeHint')" />
-    <OaNumberField v-model="form.healthWindow" :label="t('healthWindow')" :min="1" :hint="t('healthWindowHint')" />
-    <OaNumberField
-      v-model="form.healthRetainDays"
-      :label="t('healthRetainDays')"
-      :min="1"
-      :hint="t('healthRetainDaysHint')"
-    />
-
-    <!-- 3. User-facing Availability Visibility -->
-    <OaFormSection id="secUserVisibility" :title="t('secUserVisibility')" />
-    <OaSwitchField
-      v-model="form.healthShowUsers"
-      :label="t('healthShowUsers')"
-      :hint="t('healthShowUsersHint')"
-    />
-
-    <!-- 4. Reset Uptime -->
-    <OaFormSection id="secResetUptime" :title="t('secResetUptime')" :hint="t('resetUptimeHint')" />
-    <div class="oa-field">
-      <OaConfirmButton
-        class="oa-btn"
-        :label="t('resetUptime')"
-        :armed-label="t('resetUptimeConfirm')"
-        :armed-title="t('resetUptime')"
-        :resting-title="t('resetUptime')"
-        :disabled="resetting"
-        @confirm="resetUptime"
-      />
+  <AdminWorkbench v-else page="availability" :groups="categories" :searchable="false" v-slot="{ visible }">
+    <div v-show="visible('modelHealthOverview')" class="oa-health-summary oa-control-card-wide">
+      <div><IconPulse :size="22" /><span>{{ t('controlTotalModels') }}</span><strong>{{ models.length }}</strong></div>
+      <div><span>{{ t('uptimeOperational') }}</span><strong>{{ counts.up }}</strong></div>
+      <div :class="{ 'has-errors': counts.down > 0 }"><span>{{ t('controlNeedsAttention') }}</span><strong>{{ counts.down }}</strong></div>
+      <div><span>{{ t('uptimeNoData') }}</span><strong>{{ counts.unknown }}</strong></div>
     </div>
-
-    <!-- 5. Current Models Health Overview -->
-    <div class="oa-uptime-section-head" style="margin-top: 24px;">
-      <OaFormSection id="modelHealthOverview" :title="t('modelHealthOverview')" />
-      <div class="oa-uptime-actions">
-        <button
-          type="button"
-          class="oa-uptime-action-btn"
-          :disabled="probing"
-          @click="probeAllModels"
-        >
-          {{
-            probing
-              ? probeTotal > 0
-                ? t('probeAllModelsProgress', { completed: probeCompleted, total: probeTotal })
-                : t('probeAllModelsRunning')
-              : t('probeAllModels')
-          }}
+    <AdminControlCard id="modelHealthOverview" v-show="visible('modelHealthOverview')" class="oa-control-card-wide"
+      :title="t('modelHealthOverview')" :hint="t('controlHealthHintDetail')" :icon="IconPulse">
+      <template #actions><div class="oa-control-actions">
+        <button type="button" class="oa-btn" :disabled="probing || resetting" @click="probeAllModels">
+          {{ probing ? probeTotal > 0 ? t('probeAllModelsProgress', { completed: probeCompleted, total: probeTotal }) : t('probeAllModelsRunning') : t('probeAllModels') }}
         </button>
-        <a href="/uptime" target="_blank" class="oa-uptime-action-btn">
-          {{ t('viewUptimePage') }}
-        </a>
-      </div>
-    </div>
-
-    <div v-if="!models.length" class="oa-field-hint">
-      {{ t('healthNoEvidence') }}
-    </div>
-    <div v-else class="oa-uptime-list">
-      <div v-for="m in models" :key="m.model_id" class="oa-uptime-row">
-        <div class="oa-uptime-row-main">
-          <span
-            class="oa-uptime-status-dot"
-            :class="m.status.state === 'up' ? 'up' : m.status.state === 'down' ? 'down' : ''"
-          />
-          <div class="oa-uptime-row-names">
-            <span class="oa-uptime-row-title">{{ m.name }}</span>
-            <span class="oa-field-hint">{{ m.provider }}</span>
+        <a href="/uptime" target="_blank" rel="noopener" class="oa-btn">{{ t('viewUptimePage') }}</a>
+      </div></template>
+      <OaSearchField v-model="modelQuery" :label="t('controlHealthSearch')" />
+      <p v-if="!models.length" class="oa-table-empty">{{ t('noModelsConfigured') }}</p>
+      <p v-else-if="!filteredModels.length" class="oa-table-empty" role="status">{{ t('noSearchResults') }}</p>
+      <div v-else class="oa-health-grid">
+        <article v-for="m in filteredModels" :key="m.model_id" class="oa-health-model" :class="{ 'has-errors': m.auto_disabled || m.status.state === 'down' }">
+          <div class="oa-health-model-heading"><span class="oa-dashboard-dot" />
+            <h4>{{ m.name }}</h4><OaBadge :tone="m.auto_disabled || m.status.state === 'down' ? 'danger' : 'muted'">
+              {{ m.auto_disabled || m.status.state === 'down' ? t('uptimeOutage') : m.status.state === 'up' ? t('uptimeOperational') : t('uptimeNoData') }}
+            </OaBadge>
           </div>
-        </div>
-        <div class="oa-uptime-row-meta">
-          <span v-if="m.status.samples > 0" class="oa-uptime-percentage">
-            {{ (m.status.uptime * 100).toFixed(1) }}%
-            ({{ m.status.samples }} {{ t('statRequests').toLowerCase() }})
-          </span>
-          <OaBadge
-            :tone="m.auto_disabled ? 'danger' : m.status.state === 'up' ? 'default' : m.status.state === 'down' ? 'danger' : 'muted'"
-          >
-            {{
-              m.auto_disabled
-                ? t('uptimeOutage')
-                : m.status.state === 'up'
-                  ? t('uptimeOperational')
-                  : m.status.state === 'down'
-                    ? t('uptimeOutage')
-                    : t('uptimeNoData')
-            }}
-          </OaBadge>
-        </div>
+          <p>{{ m.provider }}</p>
+          <div class="oa-health-model-value"><strong>{{ m.status.samples > 0 ? (m.status.uptime * 100).toFixed(1) + '%' : '—' }}</strong>
+            <span>{{ m.status.samples }} {{ t('statRequests') }}</span></div>
+          <div class="oa-health-meter" aria-hidden="true"><span :style="{ width: `${m.status.samples > 0 ? Math.min(100, Math.max(0, m.status.uptime * 100)) : 0}%` }" /></div>
+        </article>
       </div>
-    </div>
-
-    <p class="oa-drawer-flash" :class="{ visible: !!flash }">{{ flash }}</p>
-  </div>
+    </AdminControlCard>
+    <AdminControlCard id="secDegradationPolicy" v-show="visible('secDegradationPolicy')" :title="t('secDegradationPolicy')" :icon="IconLock">
+      <OaNumberField
+        v-model="form.healthWarnBelow"
+        :label="t('healthWarnBelow')"
+        :min="0"
+        :max="100"
+        :hint="t('healthWarnBelowHint')"
+      />
+      <OaNumberField
+        v-model="form.healthDisableBelow"
+        :label="t('healthDisableBelow')"
+        :min="0"
+        :max="100"
+        :hint="t('healthDisableBelowHint')"
+      />
+      <OaNumberField
+        v-model="form.healthDisableAfter"
+        :label="t('healthDisableAfter')"
+        :min="0"
+        :hint="t('healthDisableAfterHint')"
+      />
+    </AdminControlCard>
+    <AdminControlCard id="secProbingWindow" v-show="visible('secProbingWindow')" :title="t('secProbingWindow')" :icon="IconPulse" :hint="t('livenessHint')">
+      <OaSwitchField v-model="form.healthProbe" :label="t('healthProbe')" :hint="t('healthProbeHint')" />
+      <OaNumberField v-model="form.healthWindow" :label="t('healthWindow')" :min="1" :hint="t('healthWindowHint')" />
+      <OaNumberField
+        v-model="form.healthRetainDays"
+        :label="t('healthRetainDays')"
+        :min="1"
+        :hint="t('healthRetainDaysHint')"
+      />
+    </AdminControlCard>
+    <AdminControlCard id="secUserVisibility" v-show="visible('secUserVisibility')" :title="t('secUserVisibility')" :icon="IconUsers">
+      <OaSwitchField
+        v-model="form.healthShowUsers"
+        :label="t('healthShowUsers')"
+        :hint="t('healthShowUsersHint')"
+      />
+    </AdminControlCard>
+    <AdminControlCard id="secResetUptime" v-show="visible('secResetUptime')" :title="t('secResetUptime')" :icon="IconTrash" :hint="t('resetUptimeHint')">
+      <div class="oa-field">
+        <OaConfirmButton
+          class="oa-btn"
+          :label="t('resetUptime')"
+          :armed-label="t('resetUptimeConfirm')"
+          :armed-title="t('resetUptime')"
+          :resting-title="t('resetUptime')"
+          :disabled="resetting || probing"
+          @confirm="resetUptime"
+        />
+      </div>
+    </AdminControlCard>
+  </AdminWorkbench>
+  <p v-if="flashSuccess" class="oa-drawer-flash visible ok oa-control-flash" role="status">{{ flashSuccess }}</p>
+  <p v-if="flash" class="oa-drawer-flash visible oa-control-flash" role="alert">{{ flash }}</p>
 </template>

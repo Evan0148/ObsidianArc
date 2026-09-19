@@ -33,14 +33,22 @@ func init() {
 		},
 		Flags: []Flag{
 			{Name: "--limit", Hint: Text{EN: "page size, default 60, max 200", ZH: "每页数量，默认 60，最多 200"}, Value: "N", Default: "60"},
+			{Name: "--archived", Hint: Text{EN: "show archived conversations", ZH: "显示已归档的对话"}, Value: "BOOL"},
+			{Name: "--project", Hint: Text{EN: "filter by project id", ZH: "按项目 ID 筛选"}, Value: "ID"},
 		},
-		Examples:   []string{"chat list", "chat list --limit 20"},
-		SeeAlso:    []string{"chat show"},
+		Examples:   []string{"chat list", "chat list --limit 20", "chat list --archived=true"},
+		SeeAlso:    []string{"chat show", "chat archive", "chat unarchive"},
 		Permission: Anyone,
 		Endpoints:  []string{"GET /api/conversations"},
 		Run: func(_ context.Context, rt *Runtime) error {
 			q := url.Values{}
 			q.Set("limit", strconv.Itoa(rt.IntOr("limit", 60)))
+			if rt.Present("archived") {
+				q.Set("archived", strconv.FormatBool(rt.Bool("archived")))
+			}
+			if rt.Present("project") {
+				q.Set("project_id", rt.String("project"))
+			}
 			data, _, err := rt.Call(http.MethodGet, "/api/conversations?"+q.Encode(), nil)
 			if err != nil {
 				return err
@@ -50,10 +58,11 @@ func init() {
 				c := asMap(raw)
 				rows = append(rows, []string{
 					asStr(c["id"]), asStr(c["title"]), asStr(c["model_id"]),
-					yesNo(asBoolVal(c["pinned"])), fmt.Sprint(asNum(c["message_count"])), formatMS(c["created_at"]),
+					yesNo(asBoolVal(c["pinned"])), yesNo(asBoolVal(c["archived"])),
+					fmt.Sprint(asNum(c["message_count"])), formatMS(c["created_at"]),
 				})
 			}
-			return rt.Table([]string{"id", "title", "model_id", "pinned", "messages", "created"}, rows)
+			return rt.Table([]string{"id", "title", "model_id", "pinned", "archived", "messages", "created"}, rows)
 		},
 	})
 
@@ -83,7 +92,8 @@ func init() {
 			jsonMode := rt.effectiveJSON()
 			if err := rt.Fields([][2]string{
 				{"id", asStr(c["id"])}, {"title", asStr(c["title"])}, {"model_id", asStr(c["model_id"])},
-				{"pinned", yesNo(asBoolVal(c["pinned"]))}, {"messages", fmt.Sprint(asNum(c["message_count"]))},
+				{"pinned", yesNo(asBoolVal(c["pinned"]))}, {"archived", yesNo(asBoolVal(c["archived"]))},
+				{"messages", fmt.Sprint(asNum(c["message_count"]))},
 				{"created_at", formatMS(c["created_at"])}, {"updated_at", formatMS(c["updated_at"])},
 			}); err != nil {
 				return err
@@ -213,6 +223,74 @@ func init() {
 				return err
 			}
 			return rt.Fields([][2]string{{"deleted", fmt.Sprint(asNum(asMap(data)["deleted"]))}})
+		},
+	})
+
+	registerCommand(Command{
+		Name:    "chat archive",
+		Group:   "chat",
+		Summary: Text{EN: "Archive one of your conversations", ZH: "归档你的一段对话"},
+		Usage:   "chat archive <conversation-id>",
+		Help: Text{
+			EN: "Moves the conversation into the archive without deleting its messages.",
+			ZH: "将对话移入归档，但不会删除其中的消息。",
+		},
+		Args: []Arg{
+			{Name: "conversation-id", Hint: Text{EN: "from chat list", ZH: "来自 chat list"}, Required: true},
+		},
+		Examples:   []string{"chat archive 01H9Z…", "chat archive 01ARZ…"},
+		SeeAlso:    []string{"chat unarchive", "chat list"},
+		Permission: Anyone,
+		Endpoints:  []string{"PATCH /api/conversations/{id}"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			ref, err := requireRef(rt, "conversation id")
+			if err != nil {
+				return err
+			}
+			body := map[string]any{"archived": true}
+			if _, _, err := rt.Call(http.MethodPatch, "/api/conversations/"+url.PathEscape(ref), body); err != nil {
+				return err
+			}
+			if rt.Session.Lang == "zh" {
+				rt.Printf("已归档。\n")
+			} else {
+				rt.Printf("archived.\n")
+			}
+			return nil
+		},
+	})
+
+	registerCommand(Command{
+		Name:    "chat unarchive",
+		Group:   "chat",
+		Summary: Text{EN: "Restore an archived conversation", ZH: "恢复一段已归档的对话"},
+		Usage:   "chat unarchive <conversation-id>",
+		Help: Text{
+			EN: "Restores an archived conversation back to your active chat list.",
+			ZH: "将已归档的对话恢复到活动对话列表中。",
+		},
+		Args: []Arg{
+			{Name: "conversation-id", Hint: Text{EN: "from chat list --archived", ZH: "来自 chat list --archived"}, Required: true},
+		},
+		Examples:   []string{"chat unarchive 01H9Z…", "chat unarchive 01ARZ…"},
+		SeeAlso:    []string{"chat archive", "chat list"},
+		Permission: Anyone,
+		Endpoints:  []string{"PATCH /api/conversations/{id}"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			ref, err := requireRef(rt, "conversation id")
+			if err != nil {
+				return err
+			}
+			body := map[string]any{"archived": false}
+			if _, _, err := rt.Call(http.MethodPatch, "/api/conversations/"+url.PathEscape(ref), body); err != nil {
+				return err
+			}
+			if rt.Session.Lang == "zh" {
+				rt.Printf("已取消归档。\n")
+			} else {
+				rt.Printf("unarchived.\n")
+			}
+			return nil
 		},
 	})
 }

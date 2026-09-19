@@ -216,16 +216,17 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | --- | --- | --- |
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
-| Binary (SQLite + embedded SPA) | < 30 MB | 19.8 MB (16.1 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 135 kB | 143.52 kB to open the chat (121.95 JS + 21.57 CSS) |
+| Binary (SQLite + embedded SPA) | < 30 MB | 19.9 MB (16.1 MB `-tags nosqlite`, Linux amd64) |
+| Frontend, on the wire | < 135 kB | 148.89 kB to open the chat (125.42 JS + 23.47 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
 
-The bundle and binaries were remeasured on 2026-09-19 (UTC) after the
-dashboard redesign. The chat payload is 8.52 kB above the existing target;
-that target is unchanged. This redesign adds 2.30 kB to the previously
-recorded 141.22 kB first paint, mainly the overview stylesheet. Its Vue
-components remain in the backoffice chunk, and no dependency was added.
+The bundle and binaries were remeasured on 2026-09-19 (UTC), including the
+grouped administration pages and the current conversation workspace changes.
+The chat payload is 13.89 kB above the existing target; that target is unchanged.
+The first paint is 5.37 kB above the previously recorded 143.52 kB. The new
+administration components remain in the backoffice chunk; their English
+strings and stylesheet join the main payload. No dependency was added.
 
 The earlier administrative console — the terminal section and its SSH
 transport — is also admin-only code, and all 8.35 kB of its frontend landed in the backoffice
@@ -243,7 +244,7 @@ dependency — but it is a megabyte of code that only runs when
 Binary sizes use Go 1.27.0,
 Linux amd64, `-trimpath -ldflags "-s -w"`; transfer sizes are gzip-compressed
 JS and CSS in decimal kB, with totals rounded after summing. Binary sizes
-are decimal MB (19,804,320 bytes with SQLite; 16,089,248 bytes without it).
+are decimal MB (19,853,472 bytes with SQLite; 16,138,400 bytes without it).
 
 The target moved with the interface. It was < 80 kB while the frontend was
 hand-written DOM calls, and 71.6 kB against it; adopting Vue put roughly 45 kB
@@ -260,10 +261,10 @@ What each reader actually downloads:
 
 | | gzipped |
 | --- | --- |
-| English, not an administrator | 143.52 kB |
-| Chinese, not an administrator | 166.30 kB |
-| …and a conversation containing a formula | 169.95 kB |
-| Chinese administrator, backoffice open | 227.19 kB |
+| English, not an administrator | 148.89 kB |
+| Chinese, not an administrator | 172.58 kB |
+| …and a conversation containing a formula | 176.23 kB |
+| Chinese administrator, backoffice open | 236.56 kB |
 
 Route-level splitting would shave the first paint further and is deliberately
 switched off for everything but the backoffice: /settings, /keys, /usage and

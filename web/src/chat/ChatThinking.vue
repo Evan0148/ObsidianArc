@@ -13,7 +13,12 @@ const props = defineProps<{
   live?: boolean;
 }>();
 
+const isOpen = ref(!!props.live);
 const body = ref<HTMLElement | null>(null);
+
+watch(() => props.live, (live) => {
+  if (live) isOpen.value = true;
+});
 
 // Follows the tail while it streams, but only from the tail: somebody who has
 // scrolled up inside the box is reading, and yanking them back is worse than
@@ -25,11 +30,24 @@ watch(() => props.text, () => {
   const atEnd = node.scrollHeight - node.scrollTop - node.clientHeight < 24;
   if (atEnd) void nextTick(() => { node.scrollTop = node.scrollHeight; });
 }, { immediate: true });
+
+function toggle(): void {
+  isOpen.value = !isOpen.value;
+}
 </script>
 
 <template>
-  <details class="ai-thinking" :open="props.live">
-    <summary class="ai-thinking-head">{{ t(props.live ? 'reasoningLive' : 'reasoning') }}</summary>
-    <div ref="body" class="ai-thinking-body">{{ props.text }}</div>
-  </details>
+  <div class="ai-thinking" :class="{ open: isOpen }">
+    <button
+      type="button"
+      class="ai-thinking-head"
+      :aria-expanded="isOpen"
+      @click="toggle"
+    >
+      {{ t(props.live ? 'reasoningLive' : 'reasoning') }}
+    </button>
+    <div class="ai-thinking-content">
+      <div ref="body" class="ai-thinking-body">{{ props.text }}</div>
+    </div>
+  </div>
 </template>

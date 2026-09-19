@@ -12,8 +12,8 @@
 import { computed, onMounted, ref } from 'vue';
 import { useIntervalFn } from '@vueuse/core';
 import { adminApi, type Resources, type UserStorage } from '@/admin/api';
-import OaAdminSection from '@/components/OaAdminSection.vue';
-import OaStatGrid from '@/components/OaStatGrid.vue';
+import AdminControlCard from './AdminControlCard.vue';
+import { IconFile, IconCpu, IconLayers } from '@/icons';
 import OaTable from '@/components/OaTable.vue';
 import type { Column, SortState } from '@/components/table-types';
 import type { Stat } from '@/components/stat';
@@ -25,21 +25,13 @@ import { useAdminView } from './adminView';
 const REFRESH_MS = 5000;
 
 const view = useAdminView();
-view.setTitle(t('navResources'), t('resourcesSubtitle'));
+view.setTitle(t('navResources'), t('controlResourceHint'));
 
 const snapshot = ref<Resources | null>(null);
 const error = ref('');
+const refreshing = ref(false);
+const updatedAt = computed(() => snapshot.value ? new Date(snapshot.value.sampled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '');
 const sort = ref<SortState | null>(null);
-
-const storageStats = computed<Stat[]>(() => {
-  const storage = snapshot.value?.storage;
-  if (!storage) return [];
-  return [
-    { label: t('resHeld'), value: formatBytes(storage.held_bytes), note: t('resHeldNote') },
-    { label: t('resFiles'), value: String(storage.held_count) },
-    { label: t('resDiscarded'), value: String(storage.discarded_count), note: t('resDiscardedNote') },
-  ];
-});
 
 const memoryStats = computed<Stat[]>(() => {
   const memory = snapshot.value?.memory;
@@ -86,7 +78,7 @@ const columns = computed<Array<Column<UserStorage>>>(() => [
     header: t('resHeld'),
     text: (row) => formatBytes(row.bytes),
     numeric: true,
-    width: '110px',
+    width: '150px',
     sort: (row) => row.bytes,
   },
 ]);
@@ -100,54 +92,68 @@ function duration(seconds: number): string {
 }
 
 async function load(): Promise<void> {
+  if (refreshing.value) return;
+  refreshing.value = true;
   error.value = '';
   try {
     snapshot.value = await adminApi.resources();
   } catch (failure) {
     error.value = failure instanceof Error ? failure.message : String(failure);
+  } finally {
+    refreshing.value = false;
   }
 }
 
-// It reads the page again rather than re-rendering it through the router, so
-// a table somebody is looking at does not jump. A failed refresh leaves what
-// is on screen: an operator watching a struggling instance would rather see
-// the last good numbers than an error where they were.
-useIntervalFn(() => {
-  void adminApi.resources().then((next) => { snapshot.value = next; }).catch(() => {});
-}, REFRESH_MS);
+// Manual and automatic refresh share the same in-flight guard and keep the
+// table mounted, including its page and sort order, if a sample fails.
+useIntervalFn(() => { void load(); }, REFRESH_MS);
 
 onMounted(load);
 </script>
 
 <template>
   <Teleport :to="view.actionsHost">
-    <button type="button" class="oa-btn" @click="view.reload()">{{ t('refresh') }}</button>
+    <button type="button" class="oa-btn" :disabled="refreshing" @click="load">{{ refreshing ? t('loading') : t('refresh') }}</button>
   </Teleport>
-
-  <AdminFailure v-if="error" :message="error" @retry="load" />
+  <AdminFailure v-if="error && !snapshot" :message="error" @retry="load" />
   <p v-else-if="!snapshot" class="oa-table-empty">{{ t('loading') }}</p>
-
-  <template v-else>
-    <OaAdminSection id="resStorage" :title="t('resStorage')">
-      <OaStatGrid :stats="storageStats" />
-    </OaAdminSection>
-
-    <OaTable
-      :columns="columns"
-      :rows="snapshot.storage.by_user"
-      :empty="t('resNoFiles')"
-      :sort="sort"
-      @sort="sort = $event"
-    />
-
-    <OaAdminSection id="resMemory" :title="t('resMemory')">
-      <OaStatGrid :stats="memoryStats" />
-    </OaAdminSection>
-
-    <OaAdminSection id="resCPU" :title="t('resCPU')">
-      <OaStatGrid :stats="cpuStats" />
-    </OaAdminSection>
-
+  <div v-else class="oa-resource-page">
+    <div class="oa-resource-status"><span><span class="oa-dashboard-dot" />{{ t('controlAutoRefresh') }}</span><span>{{ t('controlResourceUpdated', { time: updatedAt }) }}</span></div>
+    <p v-if="error" class="oa-drawer-flash visible" role="alert">{{ error }}</p>
+    <div class="oa-resource-metrics">
+      <div class="oa-resource-metric"><div class="oa-resource-metric-head"><span>{{ t('resStorage') }}</span><IconFile :size="20" /></div>
+        <strong>{{ formatBytes(snapshot.storage.held_bytes) }}</strong><p>{{ t('resHeldNote') }}</p></div>
+      <div class="oa-resource-metric"><div class="oa-resource-metric-head"><span>{{ t('resProcessMemory') }}</span><IconLayers :size="20" /></div>
+        <strong>{{ formatBytes(snapshot.memory.sys_bytes) }}</strong><p>{{ t('resHeap') }} · {{ formatBytes(snapshot.memory.heap_bytes) }}</p></div>
+      <div class="oa-resource-metric"><div class="oa-resource-metric-head"><span>{{ t('resCPUShare') }}</span><IconCpu :size="20" /></div>
+        <strong>{{ cpuStats[0]?.value }}</strong><p>{{ cpuStats[0]?.note }}</p></div>
+    </div>
+    <div class="oa-resource-layout">
+      <AdminControlCard id="resStorage" :title="t('resStorage')" :hint="t('controlStorageHint')" :icon="IconFile">
+        <div class="oa-resource-storage-totals">
+          <div><span>{{ t('resFiles') }}</span><strong>{{ snapshot.storage.held_count }}</strong></div>
+          <div><span>{{ t('resDiscarded') }}</span><strong>{{ snapshot.storage.discarded_count }}</strong></div>
+        </div>
+        <p class="oa-field-hint">{{ t('resDiscardedNote') }}</p>
+        <OaTable :columns="columns" :rows="snapshot.storage.by_user" :empty="t('resNoFiles')" :sort="sort" @sort="sort = $event">
+          <template #cell-account="{ row }"><div class="oa-resource-account"><span class="oa-resource-avatar" aria-hidden="true">{{ Array.from(row.name)[0]?.toUpperCase() || '—' }}</span><span>{{ row.name }}</span></div></template>
+          <template #cell-held="{ row }"><div class="oa-resource-share"><span>{{ formatBytes(row.bytes) }}</span>
+            <div class="oa-health-meter" :title="t('controlStorageShare')" aria-hidden="true"><span :style="{ width: `${snapshot.storage.held_bytes > 0 ? Math.min(100, row.bytes / snapshot.storage.held_bytes * 100) : 0}%` }" /></div></div></template>
+        </OaTable>
+      </AdminControlCard>
+      <div class="oa-resource-details">
+        <AdminControlCard id="resMemory" :title="t('resMemory')" :icon="IconLayers">
+          <dl class="oa-resource-definition"><div v-for="(stat, index) in memoryStats" :key="stat.label" :id="index === 2 ? 'resGoroutines' : undefined">
+            <dt>{{ stat.label }}<small v-if="stat.note">{{ stat.note }}</small></dt><dd>{{ stat.value }}</dd>
+          </div></dl>
+        </AdminControlCard>
+        <AdminControlCard id="resCPU" :title="t('resCPU')" :icon="IconCpu">
+          <dl class="oa-resource-definition"><div v-for="stat in cpuStats.slice(1)" :key="stat.label">
+            <dt>{{ stat.label }}<small v-if="stat.note">{{ stat.note }}</small></dt><dd>{{ stat.value }}</dd>
+          </div></dl>
+        </AdminControlCard>
+      </div>
+    </div>
     <p class="oa-field-hint">{{ t('resNoDatabaseSize') }}</p>
-  </template>
+  </div>
 </template>
