@@ -29,6 +29,7 @@ const props = defineProps<{
 const emit = defineEmits<{ (event: 'measure', cols: number): void }>();
 
 const scrollComp = ref<InstanceType<typeof OaScrollArea> | null>(null);
+const blocksRef = ref<HTMLElement | null>(null);
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 const completions = ref<ConsoleCompletionItem[]>([]);
 /** False once the reader has scrolled up — CONTRACT.md #5.2's "auto-follow unless scrolled up". */
@@ -51,6 +52,13 @@ function estimateColumns(widthPx: number, fontSizePx: number): number {
 useResizeObserver(() => scrollComp.value?.scroller, (entries) => {
   const width = entries[0]?.contentRect.width ?? 0;
   emit('measure', estimateColumns(width, props.fontSize));
+});
+
+// Auto-follow when output lines stream into the current block and expand the container.
+useResizeObserver(blocksRef, () => {
+  if (following.value) {
+    scrollToBottom();
+  }
 });
 
 watch(() => props.fontSize, () => {
@@ -110,6 +118,8 @@ async function submit(): Promise<void> {
   if (props.session.running.value) return;
   const line = props.session.draft.value;
   completions.value = [];
+  following.value = true;
+  scrollToBottom();
   await props.session.run(line);
   void nextTick(resizeInput);
 }
@@ -182,7 +192,7 @@ function onPaneMouseUp(): void {
 <template>
   <div class="oa-terminal-pane" @mouseup="onPaneMouseUp">
     <OaScrollArea ref="scrollComp" wrap-class="oa-terminal-scroll-wrap" scroll-class="oa-terminal-scroll" @scroll.passive="onScroll">
-      <div class="oa-terminal-blocks">
+      <div ref="blocksRef" class="oa-terminal-blocks">
         <TerminalLine
           v-for="block in props.session.scrollback.value"
           :key="block.id"

@@ -200,6 +200,16 @@ func TestConsoleGivesASuperAdministratorTheWholeSurface(t *testing.T) {
 			t.Errorf("%q failed for a super administrator: %s / %q", line, done.Code, output)
 		}
 	}
+
+	output, done := consoleRun(t, in, founder, "help")
+	if !done.OK {
+		t.Fatalf("help failed: %s / %q", done.Code, output)
+	}
+	for _, expected := range []string{"Accounts", "Providers & Models", "Groups", "Instance", "Operations", "Session"} {
+		if !strings.Contains(output, expected) {
+			t.Errorf("help output missing group %q", expected)
+		}
+	}
 }
 
 // A regular account cannot reach the console at all — the section is not

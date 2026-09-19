@@ -136,7 +136,9 @@ export function createTerminalSession(options: CreateTerminalSessionOptions): Te
     nextBlockId += 1;
     scrollback.value.push(block);
     trimScrollback();
-    return block;
+    // Return the reactive proxy inside scrollback rather than the raw block,
+    // so subsequent token appends to currentOutputBlock trigger Vue updates.
+    return scrollback.value[scrollback.value.length - 1] ?? block;
   }
 
   /**

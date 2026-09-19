@@ -140,6 +140,29 @@ describe('the admin terminal', () => {
     expect(textarea.value).toBe('');
   });
 
+  it('renders output incrementally across multiple stream chunks without truncation', async () => {
+    vi.mocked(execConsoleLine).mockImplementation(async (_request, handlers: ConsoleExecHandlers) => {
+      handlers.onOut?.('Accounts\n');
+      await nextTick();
+      handlers.onOut?.('Groups\n');
+      await nextTick();
+      handlers.onOut?.('Session\n');
+      handlers.onDone?.({ ok: true, code: '', exit: false, elapsed_ms: 20, json: false, lang: 'en' });
+    });
+    await mountTerminal();
+
+    const textarea = host.querySelector<HTMLTextAreaElement>('.oa-terminal-input')!;
+    input(textarea, 'help');
+    key(textarea, 'Enter');
+    await settle();
+    await settle();
+
+    const outputBlock = host.querySelector('.oa-terminal-block-output');
+    expect(outputBlock?.textContent).toContain('Accounts');
+    expect(outputBlock?.textContent).toContain('Groups');
+    expect(outputBlock?.textContent).toContain('Session');
+  });
+
   it('keeps the tab strip inside the card at ten tabs, with the settings button always reachable', async () => {
     await mountTerminal();
 
