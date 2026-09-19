@@ -577,6 +577,8 @@ export const zh: Record<StringKey, string> = {
   capStreams: '支持流式',
   capSystemPrompt: '接受 system prompt',
   capTools: '支持工具调用',
+  capEmulateTools: '把工具写进提示词',
+  capEmulateToolsHint: '用于会丢弃 tools 字段、不返回工具调用的端点——工具改在提示词里描述，调用从回答文本里解析出来。除非确认这个端点会忽略 tools，否则保持关闭：原生支持的模型做得更好。',
   contextWindow: '上下文窗口',
   maxOutputTokens: '最大输出 Tokens',
   secWeights: '用量倍率',

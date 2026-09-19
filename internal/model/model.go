@@ -46,8 +46,13 @@ type Capabilities struct {
 	// every model that predates the split: generating happens in the lab
 	// unless somebody says this model does it in the transcript too.
 	SupportsChatImageGen bool `json:"supports_chat_image_gen"`
-	ContextWindow        int  `json:"context_window"`
-	MaxOutputTokens      int  `json:"max_output_tokens"`
+	// Its upstream drops the tools instead of honouring them, so they are
+	// written into the prompt and the call is read back out of the answer.
+	// A property of the endpoint, not of the model, which is why it is not
+	// SupportsTools: that one is false on models that call tools natively.
+	EmulateTools    bool `json:"emulate_tools"`
+	ContextWindow   int  `json:"context_window"`
+	MaxOutputTokens int  `json:"max_output_tokens"`
 }
 
 // Weights turn tokens into credits. Every model is 1x until an administrator
@@ -176,6 +181,7 @@ func (m Model) Spec() adapter.ModelSpec {
 		SupportsImages:    m.SupportsImages,
 		SupportsStreaming: m.SupportsStreaming,
 		SupportsSystem:    m.SupportsSystemPrompt,
+		EmulateTools:      m.EmulateTools,
 		MaxOutputTokens:   m.MaxOutputTokens,
 	}
 }
@@ -238,7 +244,7 @@ const columns = `m.id, m.provider_id, m.model_id, m.display_name, m.description,
 	m.request_weight, m.input_token_weight, m.output_token_weight, m.reasoning_token_weight,
 	m.created_at, m.updated_at, m.route_to_id, m.reasoning_style, m.hidden,
 	m.reasoning_tiers, m.api_name, m.auto_disabled, m.system_prompt, m.supports_image_gen,
-	m.supports_chat_image_gen, m.request_override`
+	m.supports_chat_image_gen, m.request_override, m.emulate_tools`
 
 const withProvider = columns + `, p.name, p.kind`
 
@@ -325,8 +331,8 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (Model, error) {
 			 supports_system_prompt, supports_tools, context_window, max_output_tokens,
 			 request_weight, input_token_weight, output_token_weight, reasoning_token_weight,
 			 created_at, updated_at, route_to_id, reasoning_style, reasoning_tiers, api_name, auto_disabled, system_prompt, supports_image_gen,
-			 supports_chat_image_gen, request_override)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 supports_chat_image_gen, request_override, emulate_tools)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			record.ID, record.ProviderID, record.ModelID, record.DisplayName, record.Description,
 			record.Avatar, record.Enabled, record.Hidden, record.SortOrder,
 			record.SupportsReasoning, record.SupportsImages, record.SupportsVision,
@@ -335,7 +341,7 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (Model, error) {
 			record.Request, record.InputToken, record.OutputToken, record.ReasoningToken,
 			record.CreatedAt, record.UpdatedAt, routeValue(record.RouteToID), record.ReasoningStyle,
 			encodeTiers(record.ReasoningTiers), record.APIName, record.AutoDisabled, record.SystemPrompt, record.SupportsImageGen,
-			record.SupportsChatImageGen, record.RequestOverride)
+			record.SupportsChatImageGen, record.RequestOverride, record.EmulateTools)
 		if err != nil {
 			return err
 		}
@@ -381,6 +387,7 @@ type Update struct {
 	SupportsTools        *bool
 	SupportsImageGen     *bool
 	SupportsChatImageGen *bool
+	EmulateTools         *bool
 	ContextWindow        *int
 	MaxOutputTokens      *int
 
@@ -419,6 +426,7 @@ func (s *Store) Update(ctx context.Context, modelID string, in Update) (Model, e
 	assign(&next.SupportsTools, in.SupportsTools)
 	assign(&next.SupportsImageGen, in.SupportsImageGen)
 	assign(&next.SupportsChatImageGen, in.SupportsChatImageGen)
+	assign(&next.EmulateTools, in.EmulateTools)
 	assign(&next.ContextWindow, in.ContextWindow)
 	assign(&next.MaxOutputTokens, in.MaxOutputTokens)
 	assign(&next.Request, in.RequestWeight)
@@ -449,6 +457,7 @@ func (s *Store) Update(ctx context.Context, modelID string, in Update) (Model, e
 			model_id = ?, display_name = ?, description = ?, avatar = ?, enabled = ?, hidden = ?, sort_order = ?,
 			supports_reasoning = ?, supports_images = ?, supports_vision = ?, supports_streaming = ?,
 			supports_system_prompt = ?, supports_tools = ?, supports_image_gen = ?, supports_chat_image_gen = ?,
+			emulate_tools = ?,
 			context_window = ?, max_output_tokens = ?,
 			request_weight = ?, input_token_weight = ?, output_token_weight = ?, reasoning_token_weight = ?,
 			route_to_id = ?, reasoning_style = ?, reasoning_tiers = ?, api_name = ?, auto_disabled = ?, system_prompt = ?, request_override = ?, updated_at = ?
@@ -456,6 +465,7 @@ func (s *Store) Update(ctx context.Context, modelID string, in Update) (Model, e
 			next.ModelID, next.DisplayName, next.Description, next.Avatar, next.Enabled, next.Hidden, next.SortOrder,
 			next.SupportsReasoning, next.SupportsImages, next.SupportsVision, next.SupportsStreaming,
 			next.SupportsSystemPrompt, next.SupportsTools, next.SupportsImageGen, next.SupportsChatImageGen,
+			next.EmulateTools,
 			next.ContextWindow, next.MaxOutputTokens,
 			next.Request, next.InputToken, next.OutputToken, next.ReasoningToken,
 			routeValue(next.RouteToID), next.ReasoningStyle, encodeTiers(next.ReasoningTiers),
@@ -690,6 +700,7 @@ func (s *Store) readCallable(
 		&record.CreatedAt, &record.UpdatedAt, &route, &record.ReasoningStyle,
 		&record.Hidden, &tiers, &record.APIName, &record.AutoDisabled, &record.SystemPrompt,
 		&record.SupportsImageGen, &record.SupportsChatImageGen, &record.RequestOverride,
+		&record.EmulateTools,
 		&record.ProviderName, &record.ProviderKind,
 		&upstream.BaseURL, &sealed, &headerJSON, &upstream.AnthropicVersion, &upstream.ReasoningStyle,
 		&upstream.TimeoutSeconds, &upstream.APIKeyHint, &upstream.SortOrder, &upstream.Enabled,
@@ -1075,6 +1086,7 @@ func scan(row rowScanner, joined bool, withUsable bool) (Model, error) {
 		&record.CreatedAt, &record.UpdatedAt, &route, &record.ReasoningStyle,
 		&record.Hidden, &tiers, &record.APIName, &record.AutoDisabled, &record.SystemPrompt,
 		&record.SupportsImageGen, &record.SupportsChatImageGen, &record.RequestOverride,
+		&record.EmulateTools,
 	}
 	if joined {
 		targets = append(targets, &record.ProviderName, &record.ProviderKind)

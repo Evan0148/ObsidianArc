@@ -497,7 +497,7 @@ func (openAIAdapter) readStream(ctx context.Context, response *http.Response, si
 		// appearing in the answer and then vanishing.
 		visible := len(answer)
 		if !final {
-			visible -= partialThinkTagLen(answer)
+			visible -= partialTagLen(answer, thinkOpen)
 		}
 
 		if len(inline) > emittedInline {
@@ -592,17 +592,6 @@ func (openAIAdapter) readStream(ctx context.Context, response *http.Response, si
 		return result, err
 	}
 	return result, nil
-}
-
-// partialThinkTagLen reports how many trailing characters could still grow
-// into a `<think>` opening tag.
-func partialThinkTagLen(text string) int {
-	for length := len(thinkOpen) - 1; length > 0; length-- {
-		if strings.HasSuffix(text, thinkOpen[:length]) {
-			return length
-		}
-	}
-	return 0
 }
 
 // --- listing -----------------------------------------------------------------

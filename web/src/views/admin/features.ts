@@ -211,8 +211,8 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     id: 'secCapabilities',
     pageSlug: 'models',
     titleKey: 'secCapabilities',
-    searchKeys: ['capVision', 'capReasoning', 'capImages', 'capImageGen', 'capChatImageGen', 'capStreams', 'capTools', 'contextWindow', 'maxOutputTokens'],
-    keywords: ['模型特性', '模型能力', '视觉识图', '画图', '生图', '工具调用', '流式输出', '上下文长度', '最大Token', 'capabilities', 'vision', 'image generation', 'tools', 'context window'],
+    searchKeys: ['capVision', 'capReasoning', 'capImages', 'capImageGen', 'capChatImageGen', 'capStreams', 'capTools', 'capEmulateTools', 'contextWindow', 'maxOutputTokens'],
+    keywords: ['模型特性', '模型能力', '视觉识图', '画图', '生图', '工具调用', '流式输出', '上下文长度', '最大Token', '模拟工具调用', '工具调用兼容', 'capabilities', 'vision', 'image generation', 'tools', 'emulate tools', 'context window'],
   },
   {
     id: 'secWeights',

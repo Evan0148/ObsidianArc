@@ -1,0 +1,13 @@
+-- Write the tools into the prompt for an upstream that drops them.
+--
+-- Separate from supports_tools, which describes the model and is widely
+-- wrong: of the 34 models configured on the instance this was written for,
+-- four answer a tools request with a native call while carrying
+-- supports_tools = false, so emulating on that flag would break four working
+-- models to fix the two that need it. This column describes the upstream
+-- instead, and an operator turns it on for the endpoint that has been
+-- observed swallowing the field.
+--
+-- Defaults to false: every model keeps sending tools the way it does today,
+-- and nothing changes until somebody has a reason to change it.
+ALTER TABLE models ADD COLUMN emulate_tools BOOLEAN NOT NULL DEFAULT FALSE;

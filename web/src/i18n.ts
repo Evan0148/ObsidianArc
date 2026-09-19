@@ -594,6 +594,8 @@ const en = {
   capStreams: 'Streams',
   capSystemPrompt: 'Takes a system prompt',
   capTools: 'Supports tools',
+  capEmulateTools: 'Write tools into the prompt',
+  capEmulateToolsHint: 'For an endpoint that drops the tools instead of answering with a call — the tools are described in the prompt and the call is read back out of the answer. Leave off unless this endpoint has been seen ignoring them: a model that calls tools natively does it better.',
   contextWindow: 'Context window',
   maxOutputTokens: 'Max output tokens',
   secWeights: 'Credit weights',

@@ -95,7 +95,12 @@ type ModelSpec struct {
 	SupportsImages    bool
 	SupportsStreaming bool
 	SupportsSystem    bool
-	MaxOutputTokens   int
+	// Whether this model's upstream drops the protocol's tool fields
+	// instead of honouring them. When it does, Registry.Chat trades them
+	// for the prose protocol in toolprompt.go before any adapter sees the
+	// request, so no adapter has to know a call might arrive as text.
+	EmulateTools    bool
+	MaxOutputTokens int
 }
 
 type Role string
@@ -412,6 +417,9 @@ func (r *Registry) Chat(ctx context.Context, p Provider, req ChatRequest, sink S
 	adapter, ok := r.adapters[p.Kind]
 	if !ok {
 		return Result{}, &Error{Kind: ErrorInvalidRequest, Message: "Unknown provider type " + string(p.Kind) + "."}
+	}
+	if needsToolEmulation(req) {
+		return emulatedChat(ctx, adapter, r.client, p, req, sink)
 	}
 	return adapter.Chat(ctx, r.client, p, req, sink)
 }

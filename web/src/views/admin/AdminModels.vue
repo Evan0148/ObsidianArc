@@ -250,6 +250,7 @@ const form = ref({
   tools: false,
   imageGen: false,
   chatImageGen: false,
+  emulateTools: false,
   contextWindow: null as number | null,
   maxOutput: null as number | null,
   routeTo: '',
@@ -335,6 +336,7 @@ function open(row: AdminModel | null, from: AdminModel | null = null): void {
     tools: source?.supports_tools ?? false,
     imageGen: source?.supports_image_gen ?? false,
     chatImageGen: source?.supports_chat_image_gen ?? false,
+    emulateTools: source?.emulate_tools ?? false,
     contextWindow: source?.context_window ?? null,
     maxOutput: source?.max_output_tokens ?? null,
     routeTo: source?.route_to_id ?? '',
@@ -400,6 +402,7 @@ async function save(): Promise<void> {
     supports_tools: form.value.tools,
     supports_image_gen: form.value.imageGen,
     supports_chat_image_gen: form.value.chatImageGen,
+    emulate_tools: form.value.emulateTools,
     context_window: form.value.contextWindow ?? 0,
     max_output_tokens: form.value.maxOutput ?? 0,
     request_weight: form.value.requestWeight ?? 0,
@@ -511,6 +514,7 @@ function portable(row: AdminModel): Record<string, unknown> {
     supports_tools: row.supports_tools,
     supports_image_gen: row.supports_image_gen,
     supports_chat_image_gen: row.supports_chat_image_gen,
+    emulate_tools: row.emulate_tools,
     context_window: row.context_window,
     max_output_tokens: row.max_output_tokens,
     request_weight: row.request_weight,
@@ -896,6 +900,11 @@ let sortState: SortState | null = null;
     <OaSwitchField v-model="form.streaming" :label="t('capStreams')" />
     <OaSwitchField v-model="form.systemPromptSupported" :label="t('capSystemPrompt')" />
     <OaSwitchField v-model="form.tools" :label="t('capTools')" />
+    <OaSwitchField
+      v-model="form.emulateTools"
+      :label="t('capEmulateTools')"
+      :hint="t('capEmulateToolsHint')"
+    />
     <OaNumberField v-model="form.contextWindow" :label="t('contextWindow')" placeholder="200000" :min="0" />
     <OaNumberField v-model="form.maxOutput" :label="t('maxOutputTokens')" placeholder="8192" :min="0" />
 

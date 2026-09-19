@@ -184,14 +184,14 @@ func TestSplitThinking(t *testing.T) {
 func TestPartialThinkTagIsHeldBack(t *testing.T) {
 	// "<th" could still become "<think>", so it must not be emitted as text
 	// and then have to be taken back.
-	if got := partialThinkTagLen("hello <th"); got != 3 {
-		t.Errorf(`partialThinkTagLen("hello <th") = %d, want 3`, got)
+	if got := partialTagLen("hello <th", thinkOpen); got != 3 {
+		t.Errorf(`partialTagLen("hello <th", thinkOpen) = %d, want 3`, got)
 	}
-	if got := partialThinkTagLen("hello <think"); got != 6 {
-		t.Errorf(`partialThinkTagLen("hello <think") = %d, want 6`, got)
+	if got := partialTagLen("hello <think", thinkOpen); got != 6 {
+		t.Errorf(`partialTagLen("hello <think", thinkOpen) = %d, want 6`, got)
 	}
-	if got := partialThinkTagLen("hello there"); got != 0 {
-		t.Errorf("partialThinkTagLen on ordinary text = %d, want 0", got)
+	if got := partialTagLen("hello there", thinkOpen); got != 0 {
+		t.Errorf("partialTagLen on ordinary text = %d, want 0", got)
 	}
 }
 

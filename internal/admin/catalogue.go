@@ -230,6 +230,7 @@ type modelRequest struct {
 	SupportsTools        *bool `json:"supports_tools"`
 	SupportsImageGen     *bool `json:"supports_image_gen"`
 	SupportsChatImageGen *bool `json:"supports_chat_image_gen"`
+	EmulateTools         *bool `json:"emulate_tools"`
 	ContextWindow        *int  `json:"context_window"`
 	MaxOutputTokens      *int  `json:"max_output_tokens"`
 
@@ -342,6 +343,7 @@ func (h *Handlers) updateModel(w http.ResponseWriter, r *http.Request) error {
 		SupportsTools:        body.SupportsTools,
 		SupportsImageGen:     body.SupportsImageGen,
 		SupportsChatImageGen: body.SupportsChatImageGen,
+		EmulateTools:         body.EmulateTools,
 		ContextWindow:        body.ContextWindow,
 		MaxOutputTokens:      body.MaxOutputTokens,
 		RequestWeight:        body.RequestWeight,
@@ -454,6 +456,7 @@ func applyModelFields(
 	setIf(&capabilities.SupportsTools, body.SupportsTools)
 	setIf(&capabilities.SupportsImageGen, body.SupportsImageGen)
 	setIf(&capabilities.SupportsChatImageGen, body.SupportsChatImageGen)
+	setIf(&capabilities.EmulateTools, body.EmulateTools)
 	setIf(&capabilities.ContextWindow, body.ContextWindow)
 	setIf(&capabilities.MaxOutputTokens, body.MaxOutputTokens)
 
