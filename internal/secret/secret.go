@@ -24,6 +24,11 @@ import (
 // Purposes. Each gets its own derived key.
 const (
 	PurposeProviderKey = "obsidian-arc/provider-api-key"
+	// The RSA key that signs the identity tokens other sites verify.
+	// Sealed because it lives in the database rather than in the data
+	// directory — two instances against one database have to sign with
+	// the same key — and a database backup should not be a signing key.
+	PurposeSigningKey = "obsidian-arc/oidc-signing-key"
 )
 
 var ErrDecrypt = errors.New("secret: could not decrypt (wrong key, or the value is corrupt)")

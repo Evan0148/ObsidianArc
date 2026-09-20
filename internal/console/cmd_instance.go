@@ -88,11 +88,11 @@ func init() {
 		Help: Text{
 			EN: "Every value is sent as a string, including booleans ('true') and numbers — the server " +
 				"decides the type per key. Which grant this needs depends on the key's prefix: health.* " +
-				"needs availability, registration.*/turnstile.*/security.* need security, everything " +
-				"else needs settings.",
+				"needs availability, registration.*/turnstile.*/security.*/oauth.* need security, " +
+				"everything else needs settings.",
 			ZH: "所有值都以字符串形式发送，包括布尔值（'true'）和数字——具体类型由服务器按键名判断。" +
 				"所需权限取决于键名前缀：health.* 需要 availability，" +
-				"registration.*/turnstile.*/security.* 需要 security，其余需要 settings。",
+				"registration.*/turnstile.*/security.*/oauth.* 需要 security，其余需要 settings。",
 		},
 		Args: []Arg{
 			{Name: "key", Hint: Text{EN: "the setting key", ZH: "设置键"}, Required: true},

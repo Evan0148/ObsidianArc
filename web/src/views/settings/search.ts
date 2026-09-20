@@ -21,6 +21,13 @@ const TERMS = {
   ],
   password: [
     'secPassword', 'passwordSectionHint', 'currentPassword', 'newPassword', 'newPasswordHint', 'changePassword',
+    'setPassword', 'setPasswordHint',
+  ],
+  connections: [
+    'secConnections', 'connectionsHint', 'connect', 'disconnect', 'connected', 'notConnected',
+  ],
+  authorizations: [
+    'secAuthorizations', 'authorizationsHint', 'authorizationsNone', 'withdraw',
   ],
   data: [
     'secData', 'dataHint', 'exportData', 'importData',

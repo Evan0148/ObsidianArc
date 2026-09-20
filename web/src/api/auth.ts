@@ -84,6 +84,12 @@ export interface SiteInfo {
   turnstile_on_chat_speed?: boolean;
   /** Whether a model reads each sign-up, so the button can say it is happening. */
   signup_review?: boolean;
+  /**
+   * The sign-ins that do not start with a password here. Served only for
+   * providers the operator has both configured and switched on, so an empty
+   * list means the card draws no divider and no buttons.
+   */
+  oauth?: { id: string; name: string }[];
   // Whether a new account has to confirm its address before it can
   // send anything. False whenever the server cannot post mail,
   // whatever the setting says.

@@ -34,8 +34,10 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/group"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/health"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/httpx"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/idp"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/mail"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/model"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/oauth"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/project"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/provider"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/quota"
@@ -70,6 +72,7 @@ type Server struct {
 	conversations *conversation.Store
 	quota         *quota.Service
 	requests      *reqlog.Store
+	idp           *idp.Store
 	health        *health.Checker
 	// nil when no SSH address is configured, which is the default.
 	ssh *consolessh.Server
@@ -709,9 +712,63 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		return settingsService.Bool(settings.FeedbackShowStaffName)
 	}
 	feedbackHandlers.Routes(mux)
+
+	// Signing in with an account somebody already holds at GitHub or Google.
+	// This instance is the client of those providers and never one itself:
+	// nothing here issues an identity for anybody else to check.
+	oauthService := oauth.NewService(db, oauth.NewStore(db), users, authService, settingsService)
+	oauthHandlers := oauth.NewHandlers(oauthService, cfg.SecretKey)
+	// Its own client rather than the challenge one above: these calls go to
+	// two other hosts, and a pool per destination is what keeps a slow
+	// provider from sitting in front of a Turnstile check.
+	oauthHandlers.Client = &http.Client{}
+	// The state cookie rides beside the session cookie and is marked the same
+	// way, so a development instance over plain HTTP still works and a real
+	// one never puts it on the wire in the clear.
+	oauthHandlers.SecureCookie = cfg.Session.SecureCookie
+	// TLS ends at the proxy in every deployment of this, so neither the host
+	// nor the scheme can come from this process's own socket.
+	publicOrigin := func(r *http.Request) string {
+		return httpx.PublicOrigin(r, proxyTrust, cfg.Mail.PublicURL)
+	}
+	oauthHandlers.Origin = publicOrigin
+	oauthHandlers.ClientIP = func(r *http.Request) string { return httpx.ClientIP(r, proxyTrust) }
+	oauthHandlers.Routes(mux)
+	// Which buttons the sign-in card draws. Read per request, so switching a
+	// provider on takes effect on the next visitor rather than the next
+	// restart.
+	authHandlers.SignInProviders = func() []auth.SignInProvider {
+		out := []auth.SignInProvider{}
+		for _, provider := range oauth.Providers() {
+			if oauthService.Enabled(provider.ID) {
+				out = append(out, auth.SignInProvider{ID: provider.ID, Name: provider.Name})
+			}
+		}
+		return out
+	}
+
+	// And the other direction: this instance as the place somebody else's site
+	// sends people to sign in. internal/idp is the provider; internal/oauth
+	// above is the client. Two features, opposite arrows, and the package
+	// comments on both say which is which.
+	signingBox, err := secret.New(cfg.SecretKey, secret.PurposeSigningKey)
+	if err != nil {
+		return nil, err
+	}
+	idpStore := idp.NewStore(db)
+	idpService := idp.NewService(idpStore, idp.NewKeys(db, signingBox), users, groups)
+	idpHandlers := idp.NewHandlers(idpService, cfg.SecretKey)
+	// The issuer named in every identity token, and in the discovery document
+	// a client library reads to configure itself. The same resolution the
+	// provider callbacks use, so the two cannot disagree about what this
+	// instance is called.
+	idpHandlers.Origin = publicOrigin
+	idpHandlers.Routes(mux)
+
 	trial.NewHandlers(settingsService, models, registry, proxyTrust, cfg.SecretKey).Routes(mux)
-	adminHandlers := admin.NewHandlers(db, users, groups, providers, models, settingsService, registry, authService, usageStore, quotaService, conversations, announcements, keys, requestLog, securityLog, cards, healthStore, feedbackStore)
+	adminHandlers := admin.NewHandlers(db, users, groups, providers, models, settingsService, registry, authService, usageStore, quotaService, conversations, announcements, keys, requestLog, securityLog, cards, healthStore, feedbackStore, idpStore)
 	adminHandlers.TryReview = adminTryReview
+	adminHandlers.Origin = publicOrigin
 	adminHandlers.Routes(mux)
 
 	// The console is a client of the administrative API, not a second
@@ -742,6 +799,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	backupHandlers.Routes(consoleAPI)
 	projectHandlers.Routes(consoleAPI)
 	feedbackHandlers.Routes(consoleAPI)
+	oauthHandlers.Routes(consoleAPI)
 
 	// Read before the SSH server is built rather than from it: `help ssh`
 	// prints the fingerprint, so the engine needs it, and the server needs
@@ -886,6 +944,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		conversations: conversations,
 		quota:         quotaService,
 		requests:      requestLog,
+		idp:           idpStore,
 		health: &health.Checker{
 			Store: healthStore, Models: models, Providers: providers, Registry: registry,
 		},
@@ -1005,6 +1064,13 @@ func (s *Server) sweep(ctx context.Context) {
 		slog.ErrorContext(sweepCtx, "could not expire group memberships", "error", err)
 	}
 	s.sweepAttachments(sweepCtx)
+	// Authorisation codes live two minutes and tokens an hour; without this
+	// the two tables grow forever with rows nothing will read again.
+	if s.idp != nil {
+		if _, err := s.idp.Purge(sweepCtx); err != nil {
+			slog.ErrorContext(sweepCtx, "could not purge sign-in grants", "error", err)
+		}
+	}
 	// Counter buckets whose window has long since rolled over. The ledger is
 	// never pruned: it is the audit trail.
 	_, _ = s.quota.PruneCounters(sweepCtx)

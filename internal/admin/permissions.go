@@ -30,7 +30,8 @@ func settingPermission(key string) string {
 	switch {
 	case strings.HasPrefix(key, "health."):
 		return "availability"
-	case strings.HasPrefix(key, "registration."), strings.HasPrefix(key, "turnstile."), strings.HasPrefix(key, "security."):
+	case strings.HasPrefix(key, "registration."), strings.HasPrefix(key, "turnstile."),
+		strings.HasPrefix(key, "security."), strings.HasPrefix(key, "oauth."):
 		return "security"
 	default:
 		return "settings"

@@ -222,9 +222,14 @@ func (s *Store) Create(ctx context.Context, q database.Queryer, in CreateInput) 
 		Status:   orDefault(in.Status, StatusActive),
 		// An account with no address has nothing to confirm, so it is
 		// never held back for not having confirmed it.
-		EmailVerified:        !in.Unverified || email == "",
-		CreatedAt:            now,
-		UpdatedAt:            now,
+		EmailVerified: !in.Unverified || email == "",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+		// Carried on the record as well as written to the row: this is what
+		// the caller hands back to the browser, and a field that is correct
+		// only after the account is read a second time is a field that reads
+		// as missing on the response that creates it.
+		SignupIP:             in.SignupIP,
 		SignupUserAgent:      text.Truncate(in.SignupUserAgent, MaxSignupUserAgentChars),
 		APIRestricted:        in.APIRestricted,
 		APIRestrictedUntil:   in.APIRestrictedUntil,
@@ -260,6 +265,54 @@ func (s *Store) ByID(ctx context.Context, q database.Queryer, userID string) (Us
 		return User{}, err
 	}
 	return s.ResolveMembership(ctx, q, record)
+}
+
+// ByEmail resolves an address to the account holding it.
+//
+// Folded the way the column is written rather than compared with EqualFold,
+// which applies Unicode simple case folding and would read two different
+// stored addresses as one. This is the lookup a provider sign-in makes before
+// it decides whether to open a second account, so "the same address" has to
+// mean exactly what the uniqueness index means by it.
+//
+// Takes a Queryer because that decision is a check followed by a write and
+// has to happen inside the transaction holding the lock.
+func (s *Store) ByEmail(ctx context.Context, q database.Queryer, email string) (User, error) {
+	if q == nil {
+		q = s.db
+	}
+	folded := strings.ToLower(strings.TrimSpace(email))
+	if folded == "" {
+		return User{}, ErrNotFound
+	}
+	record, err := scanUser(q.QueryRow(ctx,
+		`SELECT `+columns+` FROM users WHERE email_lower <> '' AND email_lower = ?`, folded))
+	if err != nil {
+		return User{}, err
+	}
+	return s.ResolveMembership(ctx, q, record)
+}
+
+// PasswordHash is the stored credential, or the empty string for an account
+// that has never had one — every account created by a provider sign-in.
+//
+// Separate from CredentialsByLogin because the callers are different
+// questions: that one is "is this the right password", this one is "is a
+// password one of the ways into this account", which is what the last way in
+// may not be removed.
+func (s *Store) PasswordHash(ctx context.Context, q database.Queryer, userID string) (string, error) {
+	if q == nil {
+		q = s.db
+	}
+	var hash string
+	if err := q.QueryRow(ctx,
+		`SELECT password_hash FROM users WHERE id = ?`, userID).Scan(&hash); err != nil {
+		if database.IsNotFound(err) {
+			return "", ErrNotFound
+		}
+		return "", fmt.Errorf("user: read credential: %w", err)
+	}
+	return hash, nil
 }
 
 // CredentialsByLogin resolves a username or an email address to the account

@@ -86,6 +86,206 @@
   cursor: progress;
 }
 
+/* The divider between the password form and the providers. A rule with a word
+   sitting in it, drawn with borders on the pseudo-elements rather than a
+   background gradient, so it takes the surface colour of whatever theme is on. */
+.oa-auth-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0;
+  color: var(--ai-text-secondary);
+  font-size: 11.5px;
+}
+
+.oa-auth-or::before,
+.oa-auth-or::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--ai-border);
+}
+
+.oa-auth-providers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* A link that has to read as a button: the sign-in is a navigation to the
+   provider, which an <a> makes and a <button> in a form would not. */
+.oa-auth-provider {
+  /* A link, unlike a button, is content-box by default: without this the
+     padding is added to the 100% and both of these hang over the edge of the
+     card the submit button above them fits inside. */
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+/* --- the consent screen ------------------------------------------------------
+
+   Somebody who has never seen this interface lands here from another site and
+   has to decide something. So the card leads with the shape of the decision
+   rather than with words: the application on one side, the person on the
+   other, and the run of dots between them that is about to become a
+   connection. */
+
+.oa-consent-card {
+  /* The header block is centred and the list below it is not: the two marks
+     and the sentence are the thing being looked at, and a list reads worse
+     centred than left. */
+  text-align: left;
+}
+
+.oa-consent-head {
+  margin-bottom: 18px;
+  text-align: center;
+}
+
+/* Whose account is about to be handed over. Quieter than the application's
+   own description above it, because it is a fact to check rather than
+   something to read. */
+.oa-consent-as {
+  margin: 0;
+  color: var(--ai-text-secondary);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.oa-consent-head .oa-auth-sub {
+  margin-bottom: 6px;
+}
+
+.oa-consent-parties {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 6px 0 16px;
+}
+
+/* The application's mark: its initials, because nothing here uploads a logo
+   and a letter in a rounded square is a better identity than a generic glyph. */
+.oa-consent-party {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 15px;
+  background: var(--ai-field-bg);
+  color: var(--ai-text);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+/* The account's own avatar is a circle everywhere else in the interface and
+   stays one here, which is what makes the two marks read as two different
+   kinds of thing rather than as a pair. */
+.oa-consent-party.oa-avatar {
+  border-radius: 50%;
+}
+
+.oa-consent-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.oa-consent-run i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--ai-text-secondary);
+  opacity: 0.45;
+}
+
+/* The list of what an application would be told. A list rather than a
+   paragraph because each line is a separate thing to agree to, and a
+   paragraph invites skimming past one of them. */
+.oa-consent-label {
+  margin: 0 0 10px;
+  color: var(--ai-text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.oa-consent-scopes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.oa-consent-scopes li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* The tick sits in its own disc, on the first line of a label that may wrap
+   onto two. */
+.oa-consent-tick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--ai-badge-bg);
+  color: var(--ai-primary);
+}
+
+/* Where the browser goes next. A footnote rather than a panel: it is the last
+   thing to check, not the thing being decided. */
+.oa-consent-where {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 18px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--ai-border);
+  color: var(--ai-text-secondary);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.oa-consent-where svg {
+  flex: none;
+}
+
+.oa-consent-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.oa-consent-actions .oa-btn {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
 .oa-auth-error {
   margin: 0;
   padding: 9px 12px;

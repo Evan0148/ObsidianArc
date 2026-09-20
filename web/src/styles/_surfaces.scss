@@ -1601,6 +1601,297 @@
   align-items: center;
 }
 
+/* One row per provider: the mark, who it is, and the one control that
+   applies. Rows rather than a table because there are two of them and a table
+   head would be three words explaining two. */
+.oa-connections {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.oa-connection {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--ai-field-bg);
+}
+
+.oa-connection-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 10px;
+  background: var(--ai-surface-container);
+  color: var(--ai-text);
+}
+
+.oa-connection-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.oa-connection-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* The provider's own name for the person, which can be long and is never
+   worth wrapping a row for. */
+.oa-connection-meta {
+  overflow: hidden;
+  color: var(--ai-text-secondary);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oa-connection > .oa-btn {
+  flex: none;
+  text-decoration: none;
+}
+
+/* --- registered sign-in applications ----------------------------------------
+
+   Three facts per row, in the order an operator needs them: what it is called,
+   what its client id is, and where it is allowed to send people. The first is
+   read, the second is copied, and the third is what a failing integration
+   turns out to disagree about — so each gets its own line rather than being
+   crushed into one. */
+
+.oa-apps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.oa-app {
+  display: flex;
+  align-items: flex-start;
+  /* Wraps rather than overflows: the buttons drop to their own line before
+     they can push past the edge of a card that has been narrowed. */
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--ai-surface-container);
+}
+
+/* A disabled application is still listed — it is still registered — but it
+   should not read as one that is working. */
+.oa-app.off .oa-app-mark,
+.oa-app.off .oa-app-body {
+  opacity: 0.55;
+}
+
+.oa-app-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 12px;
+  background: var(--ai-surface-card);
+  color: var(--ai-text);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.oa-app-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  /* A basis rather than nothing, so the row knows when it has run out of
+     width and the actions should go below instead of beside. */
+  flex: 1 1 240px;
+}
+
+.oa-app-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.oa-app-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.oa-app-desc {
+  margin: 0;
+  color: var(--ai-text-secondary);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/* The whole value is the button: a copy icon beside a long string is a target
+   the size of a full stop. */
+.oa-app-id {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  /* Hugs the value rather than stretching across the row: it is one field,
+     not a column heading. */
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 5px 9px;
+  border: none;
+  border-radius: 9px;
+  background: var(--ai-surface-container);
+  color: var(--ai-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.oa-app-id:hover {
+  color: var(--ai-text);
+}
+
+.oa-app-id span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oa-app-id svg {
+  flex: none;
+}
+
+.oa-app-uris {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.oa-app-uri {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: var(--ai-badge-bg);
+  color: var(--ai-badge-text);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oa-app-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  /* Pushed right while it fits beside the details, and left where it has
+     wrapped underneath them — which is where the 34px mark already is. */
+  margin-left: auto;
+  flex: 0 1 auto;
+}
+
+.oa-app-id,
+.oa-app-secret-value,
+.oa-app-uri {
+  /* Every one of these is a long value in a box that may be narrow. */
+  box-sizing: border-box;
+}
+
+/* --- the providers this instance signs in with ------------------------------
+
+   Two panels side by side rather than six stacked fields: each provider is
+   one thing to configure, and a wall of Client ID / Client secret pairs makes
+   the reader work out which pair belongs to which. */
+
+.oa-providers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.oa-provider {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  padding: 18px;
+  border-radius: 14px;
+  background: var(--ai-surface-container);
+}
+
+.oa-provider-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 11px;
+  background: var(--ai-surface-card);
+  color: var(--ai-text);
+}
+
+/* The client secret, for the one moment it exists. */
+.oa-app-secret {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-left: 2px solid var(--ai-primary);
+  border-radius: 4px 14px 14px 4px;
+  background: var(--ai-badge-bg);
+}
+
+.oa-app-secret-label {
+  color: var(--ai-text);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.oa-app-secret-value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 10px;
+  background: var(--ai-surface-container);
+  color: var(--ai-text);
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.oa-app-secret-value span {
+  overflow-wrap: anywhere;
+}
+
+.oa-app-secret-value svg {
+  flex: none;
+}
+
+/* The form under the list, set apart from it: what exists and what is being
+   added are two different things to be looking at. */
+.oa-app-form-title {
+  margin: 18px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--ai-border);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .oa-settings-panel .oa-select,
 .oa-settings-panel input[type='text'],
 .oa-settings-panel input[type='email'],
@@ -2975,7 +3266,7 @@
 .oa-uptime-banner-title {
   font-size: 14px;
   font-weight: 500;
-  color: var(--ai-text-primary);
+  color: var(--ai-text);
 }
 
 .oa-uptime-banner-sub {
@@ -3042,7 +3333,7 @@
 
 .oa-uptime-row-title {
   font-size: 13px;
-  color: var(--ai-text-primary);
+  color: var(--ai-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3091,7 +3382,7 @@
 
   &:hover:not(:disabled) {
     background: var(--ai-surface-container-highest);
-    color: var(--ai-text-primary);
+    color: var(--ai-text);
   }
 
   // A full pass can take several seconds; keeping the control visibly busy
@@ -3186,7 +3477,7 @@
   padding: 0 4px;
 
   strong {
-    color: var(--ai-text-primary);
+    color: var(--ai-text);
     font-weight: 500;
   }
 }
@@ -3212,7 +3503,7 @@
 }
 
 .oa-linechart-hover-info {
-  color: var(--ai-text-primary);
+  color: var(--ai-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 10px;
 }

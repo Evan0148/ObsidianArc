@@ -21,30 +21,35 @@ import (
 // The two lists are in different languages in different directories, so
 // nothing but a test that reads both could notice.
 func TestEverySettingTheFormSendsIsWritable(t *testing.T) {
-	source, err := os.ReadFile("../../web/src/views/admin/AdminSettings.vue")
-	if err != nil {
-		t.Fatalf("read the settings screen: %v", err)
-	}
-
-	// The payload is a literal object of 'dotted.key': value pairs. Matching
-	// the quoted key is enough to find them all, and a key that appears only
-	// in the load half is still a key this screen deals in.
-	pattern := regexp.MustCompile(`'([a-z][a-z0-9_]*\.[a-z][a-z0-9_.]*)'`)
-	matches := pattern.FindAllStringSubmatch(string(source), -1)
-	if len(matches) == 0 {
-		t.Fatal("found no setting keys in the form; the scanner has drifted from the source")
-	}
-
-	seen := map[string]bool{}
-	for _, match := range matches {
-		key := match[1]
-		if seen[key] {
-			continue
+	// Both screens that write settings, because both save the same way and
+	// both fail the same way. The security screen is where the registration
+	// controls, the challenges and the provider sign-ins live.
+	for _, screen := range []string{"AdminSettings.vue", "AdminSecurity.vue"} {
+		source, err := os.ReadFile("../../web/src/views/admin/" + screen)
+		if err != nil {
+			t.Fatalf("read %s: %v", screen, err)
 		}
-		seen[key] = true
-		if !writableSettings[key] {
-			t.Errorf("the settings screen sends %q, which updateSettings refuses — "+
-				"add it to writableSettings, or the whole screen stops saving", key)
+
+		// The payload is a literal object of 'dotted.key': value pairs.
+		// Matching the quoted key is enough to find them all, and a key that
+		// appears only in the load half is still a key this screen deals in.
+		pattern := regexp.MustCompile(`'([a-z][a-z0-9_]*\.[a-z][a-z0-9_.]*)'`)
+		matches := pattern.FindAllStringSubmatch(string(source), -1)
+		if len(matches) == 0 {
+			t.Fatalf("found no setting keys in %s; the scanner has drifted from the source", screen)
+		}
+
+		seen := map[string]bool{}
+		for _, match := range matches {
+			key := match[1]
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			if !writableSettings[key] {
+				t.Errorf("%s sends %q, which updateSettings refuses — "+
+					"add it to writableSettings, or the whole screen stops saving", screen, key)
+			}
 		}
 	}
 }

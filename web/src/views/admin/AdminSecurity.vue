@@ -8,23 +8,26 @@
 // junk accounts opens one page, not seven sections of another.
 
 import { computed, onMounted, ref } from 'vue';
-import { adminApi, type AdminModel, type Group, type SecurityEvent } from '@/admin/api';
+import { adminApi, type AdminModel, type Group, type SecurityEvent, type SignInApplication } from '@/admin/api';
 import { fetchSite } from '@/api/auth';
 import { ApiError } from '@/api/client';
 import OaPagination from '@/components/OaPagination.vue';
 import type { PageState } from '@/components/table-types';
 import OaBadge from '@/components/OaBadge.vue';
+import OaConfirmButton from '@/components/OaConfirmButton.vue';
 import AdminControlCard from './AdminControlCard.vue';
 import AdminWorkbench from './AdminWorkbench.vue';
 import type { WorkbenchGroup } from './workbench';
 import { useSettingsDraft } from './settingsDraft';
-import { IconUsers, IconLock, IconSpark, IconFile, IconSliders, IconKey } from '@/icons';
+import { IconUsers, IconLock, IconSpark, IconFile, IconSliders, IconKey, IconGithub, IconGoogle, IconCopy, IconCheck } from '@/icons';
 import OaNumberField from '@/components/OaNumberField.vue';
 import OaSelectField from '@/components/OaSelectField.vue';
 import OaSwitchField from '@/components/OaSwitchField.vue';
 import OaTextArea from '@/components/OaTextArea.vue';
 import OaTextField from '@/components/OaTextField.vue';
 import { t } from '@/composables/useI18n';
+import { copyToClipboard } from '@/chat/markdown';
+import { initials } from '@/lib/account';
 import { absoluteTime } from '@/lib/format';
 import { site } from '@/stores/session';
 import AdminFailure from './AdminFailure.vue';
@@ -75,7 +78,123 @@ const form = ref({
   reviewMode: 'normal',
   reviewRestrictHours: 24 as number | null,
   reviewRefusal: '',
+  githubEnabled: false,
+  githubClientID: '',
+  githubSecret: '',
+  githubSecretHint: '',
+  googleEnabled: false,
+  googleClientID: '',
+  googleSecret: '',
+  googleSecretHint: '',
+  oauthAllowSignup: true,
+  oauthLinkByEmail: true,
 });
+
+/**
+ * What to paste into the provider's own console.
+ *
+ * Read off the address bar rather than configured: it is the address this
+ * page was opened at, which is by definition the one a browser reaches this
+ * instance on — and a callback URL that differs from the registered one by a
+ * scheme or a trailing slash is refused by the provider with an error that
+ * names neither.
+ */
+function callbackURL(provider: string): string {
+  return `${window.location.origin}/api/auth/oauth/callback/${provider}`;
+}
+
+// --- the applications that may sign people in with an account here -------------
+//
+// Not a settings card: these are rows rather than fields, and they commit on
+// their own buttons. They live on this screen anyway because they are the
+// same subject as everything else on it — who gets in, and how.
+
+const applications = ref<SignInApplication[]>([]);
+const issuer = ref('');
+const appFlash = ref('');
+const appBusy = ref(false);
+/** The client secret, for the one moment it exists. */
+const freshSecret = ref('');
+const draft = ref({ name: '', description: '', redirects: '', public: false, trusted: false });
+/** The value that was last copied, so the control can say it landed. */
+const copied = ref('');
+
+function copy(value: string): void {
+  void copyToClipboard(value).then((ok) => {
+    if (!ok) return;
+    copied.value = value;
+    window.setTimeout(() => {
+      if (copied.value === value) copied.value = '';
+    }, 1500);
+  });
+}
+
+async function loadApplications(): Promise<void> {
+  try {
+    const result = await adminApi.applications();
+    applications.value = result.applications ?? [];
+    issuer.value = result.issuer;
+  } catch (failure) {
+    appFlash.value = failure instanceof ApiError ? failure.message : String(failure);
+  }
+}
+
+function registerApplication(): void {
+  if (appBusy.value) return;
+  appBusy.value = true;
+  appFlash.value = '';
+  freshSecret.value = '';
+  void adminApi.createApplication({
+    name: draft.value.name.trim(),
+    description: draft.value.description.trim(),
+    redirect_uris: draft.value.redirects,
+    public: draft.value.public,
+    trusted: draft.value.trusted,
+  })
+    .then((result) => {
+      freshSecret.value = result.client_secret;
+      draft.value = { name: '', description: '', redirects: '', public: false, trusted: false };
+      return loadApplications();
+    })
+    .catch((failure: unknown) => {
+      appFlash.value = failure instanceof ApiError ? failure.message : String(failure);
+    })
+    .finally(() => { appBusy.value = false; });
+}
+
+function toggleApplication(app: SignInApplication, disabled: boolean): void {
+  appBusy.value = true;
+  appFlash.value = '';
+  void adminApi.updateApplication(app.id, { disabled })
+    .then(loadApplications)
+    .catch((failure: unknown) => {
+      appFlash.value = failure instanceof ApiError ? failure.message : String(failure);
+    })
+    .finally(() => { appBusy.value = false; });
+}
+
+function rotateApplication(app: SignInApplication): void {
+  appBusy.value = true;
+  appFlash.value = '';
+  freshSecret.value = '';
+  void adminApi.rotateApplicationSecret(app.id)
+    .then((result) => { freshSecret.value = result.client_secret; })
+    .catch((failure: unknown) => {
+      appFlash.value = failure instanceof ApiError ? failure.message : String(failure);
+    })
+    .finally(() => { appBusy.value = false; });
+}
+
+function removeApplication(app: SignInApplication): void {
+  appBusy.value = true;
+  appFlash.value = '';
+  void adminApi.deleteApplication(app.id)
+    .then(loadApplications)
+    .catch((failure: unknown) => {
+      appFlash.value = failure instanceof ApiError ? failure.message : String(failure);
+    })
+    .finally(() => { appBusy.value = false; });
+}
 
 // Trying the reviewer on an account that is not being created.
 const trial = ref({ username: '', email: '', qq: '', answer: '', running: false });
@@ -116,6 +235,17 @@ function collect(): Record<string, string> {
     'security.signup_review_mode': form.value.reviewMode,
     'security.signup_review_restrict_hours': String(form.value.reviewRestrictHours ?? 24),
     'security.signup_review_refusal': form.value.reviewRefusal.trim(),
+    'oauth.github_enabled': String(form.value.githubEnabled),
+    'oauth.github_client_id': form.value.githubClientID.trim(),
+    // Empty keeps what is stored, the same bargain the Turnstile secret
+    // makes: the field was never shown the secret, so sending its emptiness
+    // back would erase it.
+    'oauth.github_client_secret': form.value.githubSecret.trim(),
+    'oauth.google_enabled': String(form.value.googleEnabled),
+    'oauth.google_client_id': form.value.googleClientID.trim(),
+    'oauth.google_client_secret': form.value.googleSecret.trim(),
+    'oauth.allow_signup': String(form.value.oauthAllowSignup),
+    'oauth.link_by_email': String(form.value.oauthLinkByEmail),
   };
 }
 
@@ -217,7 +347,7 @@ async function load(): Promise<void> {
     // reviews a sign-up, and a select needs its options. The groups arrive
     // with the settings already.
     const [data, modelsResult] = await Promise.all([
-      adminApi.settings(), adminApi.modelOptions(), loadEvents(),
+      adminApi.settings(), adminApi.modelOptions(), loadEvents(), loadApplications(),
     ]);
     const values = data.settings;
     mailConfigured.value = data.mail_configured ?? false;
@@ -252,6 +382,16 @@ async function load(): Promise<void> {
       reviewMode: values['security.signup_review_mode'] ?? 'normal',
       reviewRestrictHours: Number(values['security.signup_review_restrict_hours'] ?? 24),
       reviewRefusal: values['security.signup_review_refusal'] ?? '',
+      githubEnabled: values['oauth.github_enabled'] === 'true',
+      githubClientID: values['oauth.github_client_id'] ?? '',
+      githubSecret: '',
+      githubSecretHint: values['oauth.github_client_secret'] ?? '',
+      googleEnabled: values['oauth.google_enabled'] === 'true',
+      googleClientID: values['oauth.google_client_id'] ?? '',
+      googleSecret: '',
+      googleSecretHint: values['oauth.google_client_secret'] ?? '',
+      oauthAllowSignup: (values['oauth.allow_signup'] ?? 'true') === 'true',
+      oauthLinkByEmail: (values['oauth.link_by_email'] ?? 'true') === 'true',
     };
     accept();
   } catch (failure) {
@@ -265,6 +405,7 @@ const categories: WorkbenchGroup[] = [
   { id: 'accounts', label: 'controlAccounts', hint: 'controlAccountsHint', icon: IconUsers, sections: ['secAccounts', 'secRegistration', 'secRegistrationLimits'] },
   { id: 'verification', label: 'controlVerification', hint: 'controlVerificationHint', icon: IconLock, sections: ['secTurnstile', 'secVerificationScenes', 'secChatChallenge'] },
   { id: 'review', label: 'controlReview', hint: 'controlReviewHint', icon: IconSpark, sections: ['secSignupReview', 'secReviewTrial'] },
+  { id: 'signin', label: 'controlSignIn', hint: 'controlSignInHint', icon: IconGithub, sections: ['secOAuth', 'secApplications'] },
   { id: 'events', label: 'controlEvents', hint: 'controlEventsHint', icon: IconFile, sections: ['secSecurityLog'] },
 ];
 
@@ -468,6 +609,138 @@ onMounted(load);
       </AdminControlCard>
     </template>
     <template #default="{ visible }">
+      <!-- Both halves of the sign-in tab are full-width rows: one narrow card
+           beside one wide one reads as a mistake, and these two are the same
+           kind of thing pointing in opposite directions. -->
+      <AdminControlCard id="secOAuth" v-show="visible('secOAuth')" :title="t('secOAuth')" :icon="IconGithub" :hint="t('oauthHint')" class="oa-control-card-wide">
+        <div class="oa-providers">
+          <div class="oa-provider">
+            <span class="oa-provider-mark"><IconGithub :size="15" /></span>
+            <OaSwitchField v-model="form.githubEnabled" :label="t('oauthGitHub')" :hint="t('oauthGitHubHint')" />
+            <OaTextField
+              v-model="form.githubClientID"
+              :label="t('oauthClientID')"
+              placeholder="Iv1.…"
+              monospace
+            />
+            <OaTextField
+              v-model="form.githubSecret"
+              type="password"
+              :label="t('oauthClientSecret')"
+              :placeholder="form.githubSecretHint || '••••'"
+              :hint="t('oauthCallback', { url: callbackURL('github') })"
+              monospace
+            />
+          </div>
+          <div class="oa-provider">
+            <span class="oa-provider-mark"><IconGoogle :size="15" /></span>
+            <OaSwitchField v-model="form.googleEnabled" :label="t('oauthGoogle')" :hint="t('oauthGoogleHint')" />
+            <OaTextField
+              v-model="form.googleClientID"
+              :label="t('oauthClientID')"
+              placeholder="…apps.googleusercontent.com"
+              monospace
+            />
+            <OaTextField
+              v-model="form.googleSecret"
+              type="password"
+              :label="t('oauthClientSecret')"
+              :placeholder="form.googleSecretHint || '••••'"
+              :hint="t('oauthCallback', { url: callbackURL('google') })"
+              monospace
+            />
+          </div>
+        </div>
+        <OaSwitchField
+          v-model="form.oauthAllowSignup"
+          :label="t('oauthAllowSignup')"
+          :hint="t('oauthAllowSignupHint')"
+        />
+        <OaSwitchField
+          v-model="form.oauthLinkByEmail"
+          :label="t('oauthLinkByEmail')"
+          :hint="t('oauthLinkByEmailHint')"
+        />
+      </AdminControlCard>
+      <AdminControlCard id="secApplications" v-show="visible('secApplications')" :title="t('secApplications')" :icon="IconKey" :hint="t('applicationsHint')" class="oa-control-card-wide">
+        <p class="oa-field-hint">{{ t('applicationsIssuer', { issuer }) }}</p>
+
+        <p v-if="!applications.length" class="oa-table-empty">{{ t('applicationsEmpty') }}</p>
+        <div v-else class="oa-apps">
+          <div v-for="app in applications" :key="app.id" class="oa-app" :class="{ off: app.disabled }">
+            <!-- Its initials, the same mark the consent screen draws it with,
+                 so a row here and the card a stranger sees are the same thing. -->
+            <span class="oa-app-mark">{{ initials(app.name) }}</span>
+            <div class="oa-app-body">
+              <div class="oa-app-head">
+                <span class="oa-app-name">{{ app.name }}</span>
+                <OaBadge v-if="app.disabled" tone="danger">{{ t('disabled') }}</OaBadge>
+                <OaBadge v-if="app.trusted" tone="muted">{{ t('applicationTrusted') }}</OaBadge>
+                <OaBadge v-if="!app.confidential" tone="muted">{{ t('applicationPublic') }}</OaBadge>
+              </div>
+              <p v-if="app.description" class="oa-app-desc">{{ app.description }}</p>
+              <!-- The client id is the one value an operator has to move to
+                   another program by hand, so the row is the copy control. -->
+              <button type="button" class="oa-app-id mono" :title="t('copy')" @click="copy(app.client_id)">
+                <span>{{ app.client_id }}</span>
+                <IconCheck v-if="copied === app.client_id" :size="12" />
+                <IconCopy v-else :size="12" />
+              </button>
+              <div class="oa-app-uris">
+                <span v-for="uri in app.redirect_uris" :key="uri" class="oa-app-uri">{{ uri }}</span>
+              </div>
+            </div>
+            <div class="oa-app-actions">
+              <button type="button" class="oa-btn" :disabled="appBusy" @click="toggleApplication(app, !app.disabled)">
+                {{ app.disabled ? t('enable') : t('disable') }}
+              </button>
+              <button v-if="app.confidential" type="button" class="oa-btn" :disabled="appBusy" @click="rotateApplication(app)">
+                {{ t('applicationRotate') }}
+              </button>
+              <OaConfirmButton
+                class="oa-btn"
+                :label="t('deleteLabel')"
+                :armed-label="t('confirmWord')"
+                :armed-title="t('applicationDeleteConfirm', { application: app.name })"
+                :resting-title="t('deleteLabel')"
+                :disabled="appBusy"
+                @confirm="removeApplication(app)"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- The one moment this value exists. It gets a surface of its own
+             rather than a line of hint text, because everything else on this
+             screen can be read again tomorrow and this cannot. -->
+        <div v-if="freshSecret" class="oa-app-secret">
+          <span class="oa-app-secret-label">{{ t('applicationSecretOnce') }}</span>
+          <button type="button" class="oa-app-secret-value mono" :title="t('copy')" @click="copy(freshSecret)">
+            <span>{{ freshSecret }}</span>
+            <IconCheck v-if="copied === freshSecret" :size="13" />
+            <IconCopy v-else :size="13" />
+          </button>
+        </div>
+
+        <h3 class="oa-app-form-title">{{ t('applicationRegister') }}</h3>
+        <OaTextField v-model="draft.name" :label="t('applicationName')" :hint="t('applicationNameHint')" />
+        <OaTextField v-model="draft.description" :label="t('applicationDescription')" :hint="t('applicationDescriptionHint')" />
+        <OaTextArea
+          v-model="draft.redirects"
+          :label="t('applicationRedirects')"
+          :rows="2"
+          placeholder="https://wiki.example.com/oidc/callback"
+          :hint="t('applicationRedirectsHint')"
+        />
+        <OaSwitchField v-model="draft.public" :label="t('applicationPublicField')" :hint="t('applicationPublicHint')" />
+        <OaSwitchField v-model="draft.trusted" :label="t('applicationTrustedField')" :hint="t('applicationTrustedHint')" />
+        <div class="oa-button-row">
+          <button type="button" class="oa-btn primary" :disabled="appBusy" @click="registerApplication">
+            {{ t('applicationRegister') }}
+          </button>
+        </div>
+        <p class="oa-drawer-flash" :class="{ visible: !!appFlash }">{{ appFlash }}</p>
+      </AdminControlCard>
       <AdminControlCard id="secSecurityLog" v-show="visible('secSecurityLog')" :title="t('secSecurityLog')" :icon="IconFile" :hint="t('securityLogHint')" class="oa-control-card-wide">
         <button type="button" class="oa-btn" :disabled="eventsLoading" @click="loadEvents">
           {{ t('refresh') }}

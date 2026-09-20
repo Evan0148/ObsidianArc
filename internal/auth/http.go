@@ -27,6 +27,19 @@ type Handlers struct {
 	preferences *user.PreferenceStore
 	settings    *settings.Service
 	trust       httpx.ProxyTrust
+	// Which third-party sign-ins the front door should offer. Set by the
+	// wiring rather than read here: internal/oauth is the package that knows,
+	// and it is the one that imports this one, so the arrow cannot point both
+	// ways. A function because an operator switches these on and off while
+	// the process runs.
+	SignInProviders func() []SignInProvider
+}
+
+// SignInProvider is one button on the sign-in card. Nothing secret: the whole
+// of it is already in the link the button points at.
+type SignInProvider struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 func NewHandlers(
@@ -163,6 +176,11 @@ func (h *Handlers) site(w http.ResponseWriter, r *http.Request) error {
 		"turnstile_on_redeem":     h.settings.Bool(settings.TurnstileOnRedeem),
 		"turnstile_on_feedback":   h.settings.Bool(settings.TurnstileOnFeedback),
 		"turnstile_on_chat_speed": h.settings.Int(settings.ChatChallengeRequests, 0) > 0,
+		// The sign-ins that do not start with a password here. Empty unless
+		// an operator has both configured a provider and switched it on, so
+		// the card draws a divider and a row of buttons only when there is
+		// something to draw.
+		"oauth": h.signInProviders(),
 		// So the sign-up button can say what it is waiting for. A review
 		// takes seconds, and a button that only says "creating account" for
 		// that long reads as a form that has hung.
@@ -189,6 +207,13 @@ func (h *Handlers) site(w http.ResponseWriter, r *http.Request) error {
 			"dismissible": h.settings.Bool(settings.HomeNoticeDismissible),
 		},
 	})
+}
+
+func (h *Handlers) signInProviders() []SignInProvider {
+	if h.SignInProviders == nil {
+		return []SignInProvider{}
+	}
+	return h.SignInProviders()
 }
 
 func (h *Handlers) qqRequirement(first bool) string {

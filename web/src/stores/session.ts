@@ -52,6 +52,7 @@ const FALLBACK_SITE: SiteInfo = {
   turnstile_on_feedback: false,
   turnstile_on_redeem: false,
   turnstile_on_chat_speed: false,
+  oauth: [],
   landing: { mode: 'login', intro: '', trial: false, trial_turns: 0 },
   about: { title: '', body: '' },
   home_notice: { text: '', dismissible: true },

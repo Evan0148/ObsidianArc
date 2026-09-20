@@ -388,6 +388,35 @@ export interface CardHolding {
 export type GroupOption = Pick<Group, 'id' | 'name'>;
 export type ModelOption = Pick<AdminModel, 'id' | 'display_name' | 'model_id' | 'enabled' | 'provider_name'>;
 export type ProviderOption = Pick<Provider, 'id' | 'name' | 'kind' | 'enabled'>;
+/** An application registered to sign people in with accounts from here. */
+export interface SignInApplication {
+  id: string;
+  client_id: string;
+  name: string;
+  description: string;
+  /** Matched by exact string equality when a code is issued. */
+  redirect_uris: string[];
+  scopes: string[];
+  /** Skips the consent screen. For the operator's own services only. */
+  trusted: boolean;
+  disabled: boolean;
+  /** False for an application with nowhere to keep a secret, which must use PKCE. */
+  confidential: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ApplicationInput {
+  name?: string;
+  description?: string;
+  /** One per line, as the textarea collects them. */
+  redirect_uris?: string;
+  scopes?: string[];
+  trusted?: boolean;
+  disabled?: boolean;
+  public?: boolean;
+}
+
 export const adminApi = {
   groupOptions: () => api.get<{ groups: GroupOption[] }>('/api/admin/references'),
   modelOptions: () => api.get<{ models: ModelOption[] }>('/api/admin/references'),
@@ -399,6 +428,22 @@ export const adminApi = {
   tryReview: (body: Record<string, unknown>) =>
     api.post<{ ran: boolean; decision: 'allow' | 'restrict' | 'refuse'; reason: string }>(
       '/api/admin/security/review', body),
+  // The applications allowed to use this instance as a sign-in. Registering
+  // one answers with its client secret, once; nothing can show it again.
+  applications: () =>
+    api.get<{ applications: SignInApplication[]; issuer: string; scopes: string[] }>(
+      '/api/admin/applications',
+    ),
+  createApplication: (input: ApplicationInput) =>
+    api.post<{ application: SignInApplication; client_secret: string }>(
+      '/api/admin/applications', input,
+    ),
+  updateApplication: (id: string, input: ApplicationInput) =>
+    api.patch<{ application: SignInApplication }>(`/api/admin/applications/${id}`, input),
+  rotateApplicationSecret: (id: string) =>
+    api.post<{ client_secret: string }>(`/api/admin/applications/${id}/secret`, {}),
+  deleteApplication: (id: string) =>
+    api.delete<void>(`/api/admin/applications/${id}`),
   securityEvents: (query = '') =>
     api.get<{ events: SecurityEvent[]; total: number; limit: number; offset: number }>(
       `/api/admin/security/events${query}`,

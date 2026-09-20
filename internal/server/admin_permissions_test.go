@@ -122,7 +122,12 @@ func TestSettingsGrantsAreScopedBySection(t *testing.T) {
 			if strings.HasPrefix(key, "health.") {
 				section = "availability"
 			}
-			if strings.HasPrefix(key, "registration.") || strings.HasPrefix(key, "turnstile.") || strings.HasPrefix(key, "security.") {
+			// Spelled out rather than borrowed from admin.settingPermission,
+			// which is unexported: this is the claim that the mapping is
+			// what it says it is, so it has to be written independently of
+			// the thing it checks.
+			if strings.HasPrefix(key, "registration.") || strings.HasPrefix(key, "turnstile.") ||
+				strings.HasPrefix(key, "security.") || strings.HasPrefix(key, "oauth.") {
 				section = "security"
 			}
 			if section != grant {

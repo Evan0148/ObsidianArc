@@ -62,6 +62,32 @@ const (
 	// challenge only on an instance that has actually been spammed.
 	TurnstileOnFeedback = "turnstile.on_feedback"
 
+	// Signing in with an account somebody already holds somewhere else. Each
+	// provider is a switch and a pair of credentials from its own console;
+	// the secret is write-only, the way the Turnstile one is.
+	//
+	// The switch is separate from the credentials on purpose: an operator
+	// pasting a client id is configuring, not yet opening a second front
+	// door, and a button that appeared the moment a key was saved would be a
+	// button nobody had finished setting up.
+	OAuthGitHubEnabled = "oauth.github_enabled"
+	OAuthGitHubID      = "oauth.github_client_id"
+	OAuthGitHubSecret  = "oauth.github_client_secret"
+	OAuthGoogleEnabled = "oauth.google_enabled"
+	OAuthGoogleID      = "oauth.google_client_id"
+	OAuthGoogleSecret  = "oauth.google_client_secret"
+	// Whether a provider identity nobody here knows may open an account, or
+	// only sign in to one that already exists. On, because an instance that
+	// has closed registration already refuses it through
+	// registration.enabled, and one that has not has just been handed a
+	// visitor a provider vouches for.
+	OAuthAllowSignup = "oauth.allow_signup"
+	// Whether an address a provider has verified may adopt the account that
+	// already holds it, instead of being refused as taken. On: it is what
+	// makes "sign in with Google" work for the people who registered with a
+	// password months ago, and the address is proven before it is believed.
+	OAuthLinkByEmail = "oauth.link_by_email"
+
 	// Whether a reader is told which operator answered their report. On by
 	// default: an answer signed by a person reads as one, and the people
 	// answering are the same handful whose names are already on the
@@ -241,8 +267,19 @@ var Defaults = map[string]string{
 	TurnstileOnRedeem:     "false",
 	TurnstileOnFeedback:   "false",
 	FeedbackShowStaffName: "true",
-	SignupReview:          "false",
-	SignupReviewModel:     "",
+	// Off, and off even once the credentials are filled in, for the reason
+	// the challenge switches above are: pasting a key is not the same as
+	// opening the door.
+	OAuthGitHubEnabled: "false",
+	OAuthGitHubID:      "",
+	OAuthGitHubSecret:  "",
+	OAuthGoogleEnabled: "false",
+	OAuthGoogleID:      "",
+	OAuthGoogleSecret:  "",
+	OAuthAllowSignup:   "true",
+	OAuthLinkByEmail:   "true",
+	SignupReview:       "false",
+	SignupReviewModel:  "",
 	// Loose, normal or strict. Normal refuses what reads as generated and
 	// allows what reads as chosen; the other two move the line, and strict
 	// also refuses when the model cannot answer at all.

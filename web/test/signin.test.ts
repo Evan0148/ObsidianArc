@@ -1,0 +1,360 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createApp, h, nextTick, shallowRef, type App, type Component } from 'vue';
+import * as consentApi from '../src/api/consent';
+import * as oauthApi from '../src/api/oauth';
+import { signInURL } from '../src/api/oauth';
+import * as backupApi from '../src/api/backup';
+import { providePanelHost } from '../src/composables/usePanelHost';
+import { changeLanguage, t } from '../src/composables/useI18n';
+import { safeNext } from '../src/lib/next';
+import { adopt, forget, site, siteInfo } from '../src/stores/session';
+import AuthView from '../src/views/AuthView.vue';
+import ConsentView from '../src/views/ConsentView.vue';
+import AccountSection from '../src/views/settings/AccountSection.vue';
+
+// Signing in with an account from elsewhere, and letting somebody else's site
+// sign people in with an account here. Two features pointing opposite ways,
+// tested together because the screens they touch are the same three.
+
+const route = { path: '/login', query: {} as Record<string, string> };
+const replace = vi.fn();
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: vi.fn(), replace }),
+  useRoute: () => route,
+}));
+
+let app: App | undefined;
+let host: HTMLElement;
+let panels: HTMLElement;
+
+beforeEach(async () => {
+  await changeLanguage('en');
+  route.path = '/login';
+  route.query = {};
+  replace.mockReset();
+  host = document.createElement('div');
+  panels = document.createElement('div');
+  document.body.append(host, panels);
+});
+
+afterEach(() => {
+  app?.unmount();
+  app = undefined;
+  document.body.textContent = '';
+  vi.restoreAllMocks();
+  site.value = null;
+  forget();
+});
+
+async function settle(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await nextTick();
+}
+
+async function mount(component: Component, props: Record<string, unknown> = {}): Promise<void> {
+  app = createApp({
+    setup() {
+      providePanelHost(shallowRef(panels));
+      return () => h(component, props);
+    },
+  });
+  app.mount(host);
+  await settle();
+}
+
+function offer(providers: { id: string; name: string }[]): void {
+  site.value = { ...siteInfo.value, oauth: providers };
+}
+
+describe('signing in with an account from elsewhere', () => {
+  it('draws a button for each provider the operator switched on', async () => {
+    offer([{ id: 'github', name: 'GitHub' }, { id: 'google', name: 'Google' }]);
+    await mount(AuthView, { mode: 'login' });
+
+    const links = [...host.querySelectorAll<HTMLAnchorElement>('.oa-auth-provider')];
+    expect(links).toHaveLength(2);
+    expect(links[0]!.textContent).toContain(t('continueWith', { provider: 'GitHub' }));
+    // A link, not a button: the server answers with a redirect to somebody
+    // else's site, which a fetch could not follow anywhere useful.
+    expect(links[0]!.getAttribute('href')).toBe('/api/auth/oauth/start/github');
+    expect(links[1]!.getAttribute('href')).toBe('/api/auth/oauth/start/google');
+    // Each one carries its own mark.
+    expect(links[0]!.querySelector('svg')).not.toBeNull();
+  });
+
+  it('draws nothing at all when none is configured', async () => {
+    offer([]);
+    await mount(AuthView, { mode: 'login' });
+    expect(host.querySelector('.oa-auth-provider')).toBeNull();
+    expect(host.querySelector('.oa-auth-or')).toBeNull();
+  });
+
+  // The callback is a redirect, so a refusal has nowhere to put a response
+  // body: it arrives as a code in the query and is worded here.
+  it('says why a provider sign-in came back empty-handed', async () => {
+    offer([{ id: 'github', name: 'GitHub' }]);
+    route.query = { oauth_error: 'address_taken' };
+    await mount(AuthView, { mode: 'login' });
+
+    expect(host.querySelector('.oa-auth-error')!.textContent).toBe(t('oauthAddressTaken'));
+    // And out of the address bar, so a reload does not raise it again.
+    expect(replace).toHaveBeenCalledWith({ path: '/login', query: {} });
+  });
+
+  it('falls back to a general sentence for a code it does not know', async () => {
+    route.query = { oauth_error: 'something-new' };
+    await mount(AuthView, { mode: 'login' });
+    expect(host.querySelector('.oa-auth-error')!.textContent).toBe(t('oauthFailed'));
+  });
+
+  // Somebody sent to sign in from the consent screen has to come back to it,
+  // because what is waiting is not a page but another site's request.
+  it('carries where it was going through the provider buttons', async () => {
+    offer([{ id: 'github', name: 'GitHub' }]);
+    route.query = { next: '/oauth/consent?request=abc' };
+    await mount(AuthView, { mode: 'login' });
+
+    const link = host.querySelector<HTMLAnchorElement>('.oa-auth-provider')!;
+    expect(link.getAttribute('href')).toBe(
+      '/api/auth/oauth/start/github?next=%2Foauth%2Fconsent%3Frequest%3Dabc',
+    );
+  });
+
+  it('keeps a destination on this site and drops one that is not', () => {
+    for (const safe of ['/', '/settings', '/oauth/consent?request=abc']) {
+      expect(safeNext(safe)).toBe(safe);
+    }
+    for (const unsafe of ['//evil.example', 'https://evil.example', '/\\evil.example', '', 7, null]) {
+      expect(safeNext(unsafe)).toBe('');
+    }
+  });
+
+  it('builds the start URL without empty parameters in it', () => {
+    expect(signInURL('github')).toBe('/api/auth/oauth/start/github');
+    expect(signInURL('github', { next: '' })).toBe('/api/auth/oauth/start/github');
+    expect(signInURL('github', { link: true })).toBe('/api/auth/oauth/start/github?link=1');
+  });
+});
+
+describe('the connections an account holds', () => {
+  const account = {
+    id: 'u1', username: 'reader', email: '', qq: '', nickname: '', avatar: '', bio: '',
+    role: 'user' as const, group_id: '', group_expires_at: 0, group_name: '',
+    status: 'active' as const, created_at: 0, updated_at: 0, last_login_at: 0,
+    email_verified: true, allow_stats: true, allow_delete_conversations: true,
+    api_restricted: false, api_restricted_until: 0, api_restriction_source: '',
+  };
+
+  beforeEach(() => {
+    adopt(account);
+    route.path = '/settings';
+    vi.spyOn(consentApi, 'fetchAuthorizations').mockResolvedValue({ authorizations: [] });
+    vi.spyOn(backupApi, 'exportAccount').mockResolvedValue({} as never);
+  });
+
+  it('offers a connect link for a provider and a way out of one it holds', async () => {
+    vi.spyOn(oauthApi, 'fetchConnections').mockResolvedValue({
+      connections: [{
+        provider: 'github', login: 'octocat', email: 'cat@example.com',
+        created_at: Date.now(), last_login_at: Date.now(),
+      }],
+      providers: [
+        { id: 'github', name: 'GitHub', enabled: true },
+        { id: 'google', name: 'Google', enabled: true },
+      ],
+      has_password: true,
+    });
+    await mount(AccountSection);
+
+    const rows = [...host.querySelectorAll('.oa-connection')];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.textContent).toContain('octocat');
+    // The one that is connected has no link to connect it again.
+    expect(rows[0]!.querySelector('a')).toBeNull();
+    expect(rows[1]!.querySelector('a')!.getAttribute('href'))
+      .toBe('/api/auth/oauth/start/google?link=1&next=%2Fsettings');
+  });
+
+  // A provider the operator has since switched off is still a way into this
+  // account, so it stays listed: hiding it would hide the only control that
+  // can remove it.
+  it('keeps listing a provider that is connected but no longer offered', async () => {
+    vi.spyOn(oauthApi, 'fetchConnections').mockResolvedValue({
+      connections: [{
+        provider: 'github', login: 'octocat', email: '', created_at: 0, last_login_at: 0,
+      }],
+      providers: [
+        { id: 'github', name: 'GitHub', enabled: false },
+        { id: 'google', name: 'Google', enabled: false },
+      ],
+      has_password: true,
+    });
+    await mount(AccountSection);
+
+    const rows = [...host.querySelectorAll('.oa-connection')];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.textContent).toContain('GitHub');
+  });
+
+  it('says a connection cannot be the last way in', async () => {
+    vi.spyOn(oauthApi, 'fetchConnections').mockResolvedValue({
+      connections: [{
+        provider: 'github', login: 'octocat', email: '', created_at: 0, last_login_at: 0,
+      }],
+      providers: [{ id: 'github', name: 'GitHub', enabled: true }],
+      has_password: false,
+    });
+    const { ApiError } = await import('../src/api/client');
+    vi.spyOn(oauthApi, 'disconnectProvider').mockRejectedValue(
+      new ApiError(409, 'last_way_in', 'nope', {}),
+    );
+    await mount(AccountSection);
+
+    const remove = host.querySelector<HTMLButtonElement>('.oa-connection button')!;
+    remove.click();
+    await settle();
+    remove.click();
+    await settle();
+
+    expect(host.textContent).toContain(t('oauthLastWayIn'));
+  });
+
+  // An account opened through a provider has no password. The box has to say
+  // "set" rather than "change", and must not ask for one that never existed.
+  it('offers to set a first password when there is none', async () => {
+    vi.spyOn(oauthApi, 'fetchConnections').mockResolvedValue({
+      connections: [], providers: [], has_password: false,
+    });
+    await mount(AccountSection);
+
+    expect(host.textContent).toContain(t('setPassword'));
+    expect(host.textContent).not.toContain(t('currentPassword'));
+  });
+
+  it('asks for the current password when there is one', async () => {
+    vi.spyOn(oauthApi, 'fetchConnections').mockResolvedValue({
+      connections: [], providers: [], has_password: true,
+    });
+    await mount(AccountSection);
+
+    expect(host.textContent).toContain(t('currentPassword'));
+    expect(host.textContent).not.toContain(t('setPasswordHint'));
+  });
+
+  it('lists the sites this account has signed into, and removes one', async () => {
+    vi.spyOn(oauthApi, 'fetchConnections').mockResolvedValue({
+      connections: [], providers: [], has_password: true,
+    });
+    vi.mocked(consentApi.fetchAuthorizations).mockResolvedValue({
+      authorizations: [{
+        app_id: 'a1', client_id: 'c1', name: 'The Wiki',
+        scopes: ['openid', 'profile'], created_at: Date.now(), last_used_at: Date.now(),
+      }],
+    });
+    const withdraw = vi.spyOn(consentApi, 'withdrawAuthorization').mockResolvedValue();
+    await mount(AccountSection);
+
+    expect(host.textContent).toContain('The Wiki');
+    const button = [...host.querySelectorAll<HTMLButtonElement>('button')]
+      .find((node) => node.textContent?.trim() === t('withdraw'))!;
+    button.click();
+    await settle();
+    button.click();
+    await settle();
+    expect(withdraw).toHaveBeenCalledWith('a1');
+  });
+});
+
+describe('letting another site sign somebody in', () => {
+  beforeEach(() => {
+    route.path = '/oauth/consent';
+    // jsdom refuses a real navigation, and the whole answer of this screen is
+    // where it sends the browser.
+    Object.defineProperty(window, 'location', {
+      configurable: true, writable: true, value: { href: '' },
+    });
+  });
+
+  const request = {
+    application: { name: 'The Wiki', description: 'A wiki for the team.', client_id: 'c1' },
+    scopes: ['openid', 'profile', 'email'],
+    redirect_uri: 'https://wiki.example.com/oidc/callback',
+  };
+
+  it('says who is asking, what they would learn, and where you are going', async () => {
+    route.query = { request: 'a-signed-ticket' };
+    const read = vi.spyOn(consentApi, 'fetchConsent').mockResolvedValue(request);
+    await mount(ConsentView);
+
+    expect(read).toHaveBeenCalledWith('a-signed-ticket');
+    expect(host.textContent).toContain(t('consentTitle', { application: 'The Wiki' }));
+    // The operator's own description of the application, and whose account is
+    // about to be handed over. Both are on screen, not one or the other.
+    expect(host.textContent).toContain('A wiki for the team.');
+
+    const lines = [...host.querySelectorAll('.oa-consent-scopes li')].map((n) => n.textContent);
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain(t('scopeOpenID'));
+    expect(lines[2]).toContain(t('scopeEmail'));
+
+    // The host, not the whole callback: it is the part worth reading and the
+    // part an impostor cannot fake.
+    expect(host.textContent).toContain(t('consentDestination', { host: 'wiki.example.com' }));
+  });
+
+  it('sends the browser to the callback when it is allowed', async () => {
+    route.query = { request: 'a-signed-ticket' };
+    vi.spyOn(consentApi, 'fetchConsent').mockResolvedValue(request);
+    const decide = vi.spyOn(consentApi, 'decideConsent').mockResolvedValue({
+      redirect: 'https://wiki.example.com/oidc/callback?code=abc&state=s',
+    });
+    await mount(ConsentView);
+
+    const allow = [...host.querySelectorAll<HTMLButtonElement>('button')]
+      .find((node) => node.textContent?.trim() === t('consentAllow'))!;
+    allow.click();
+    await settle();
+
+    expect(decide).toHaveBeenCalledWith('a-signed-ticket', true);
+    expect(window.location.href).toBe('https://wiki.example.com/oidc/callback?code=abc&state=s');
+  });
+
+  // A refusal is something the application has to be told about: it is
+  // waiting at its own callback either way.
+  it('tells the application when the answer is no', async () => {
+    route.query = { request: 'a-signed-ticket' };
+    vi.spyOn(consentApi, 'fetchConsent').mockResolvedValue(request);
+    const decide = vi.spyOn(consentApi, 'decideConsent').mockResolvedValue({
+      redirect: 'https://wiki.example.com/oidc/callback?error=access_denied&state=s',
+    });
+    await mount(ConsentView);
+
+    const refuse = [...host.querySelectorAll<HTMLButtonElement>('button')]
+      .find((node) => node.textContent?.trim() === t('consentRefuse'))!;
+    refuse.click();
+    await settle();
+
+    expect(decide).toHaveBeenCalledWith('a-signed-ticket', false);
+    expect(window.location.href).toContain('error=access_denied');
+  });
+
+  // The server refuses to redirect anywhere an application did not register,
+  // so this screen is where that refusal is read.
+  it('explains a request that could not be started at all', async () => {
+    route.query = { error: 'bad_redirect' };
+    const read = vi.spyOn(consentApi, 'fetchConsent');
+    await mount(ConsentView);
+
+    expect(read).not.toHaveBeenCalled();
+    expect(host.textContent).toContain(t('consentProblemTitle'));
+    expect(host.textContent).toContain(t('consentBadRedirect'));
+    // Nothing to agree to, so no button to agree with.
+    expect(host.querySelector('.oa-consent-scopes')).toBeNull();
+  });
+
+  it('refuses to draw anything without a ticket', async () => {
+    route.query = {};
+    await mount(ConsentView);
+    expect(host.textContent).toContain(t('consentFailed'));
+  });
+});

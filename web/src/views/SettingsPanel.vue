@@ -50,7 +50,7 @@ const visibleGroups = computed(() => {
     appearance: visible('appearance', 'appearance'),
     wallpaper: visible('wallpaper', 'appearance'),
     chat: visible('chat', 'chat'),
-    account: (['profile', 'password', 'data'] as const).some((group) => visible(group, 'account')),
+    account: (['profile', 'connections', 'authorizations', 'password', 'data'] as const).some((group) => visible(group, 'account')),
   };
 });
 watch(query, () => {

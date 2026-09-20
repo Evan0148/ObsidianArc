@@ -216,23 +216,31 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | --- | --- | --- |
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
-| Binary (SQLite + embedded SPA) | < 30 MB | 20.0 MB (16.3 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 135 kB | 153.62 kB to open the chat (129.48 JS + 24.14 CSS) |
+| Binary (SQLite + embedded SPA) | < 30 MB | 20.4 MB (16.7 MB `-tags nosqlite`, Linux amd64) |
+| Frontend, on the wire | < 135 kB | 159.39 kB to open the chat (134.45 JS + 24.94 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
 
-The bundle and binaries were remeasured on 2026-09-19 (UTC), after the user
-feedback screens, the conversation on them, and the per-account exemption
-switch. The chat payload is 18.62 kB above the existing target; that target is
-unchanged. The first paint is 4.73 kB above the 148.89 kB recorded earlier the
-same day: the panel somebody writes a report in, the thread they read the
-answer in, their share of the stylesheet, and the English strings every one of
-those screens uses. The operator's pages stayed in the backoffice chunk, which
-grew by 2.90 kB. The Markdown renderer the threads draw with was already in
-the entry — the transcript and the announcements use it — so rendering both
-sides of a conversation cost nothing beyond the screens themselves. No
-dependency was added: the one new icon is lucide's own drawing, from the
-package the other icons already come from.
+The bundle and binaries were remeasured on 2026-09-20 (UTC), after the two
+halves of third-party sign-in: signing in here with a GitHub or Google
+account, and letting another site sign somebody in with an account from here.
+The chat payload is 24.39 kB above the existing target; that target is
+unchanged. It grew by 5.77 kB over the figure recorded the day before, and the
+whole of that is on the first paint by necessity — the provider buttons live
+on the sign-in card, the consent screen is a page somebody lands on before
+they have a session, and the strings for both are English, which is the one
+dictionary this project deliberately does not split. The backoffice chunk took
+the operator's half and grew by 2.24 kB; the Chinese dictionary grew by 1.90
+kB, which nobody reading in English fetches.
+
+The binary grew by 360 kB, all of it `crypto/rsa`, `crypto/x509` and
+`encoding/pem` from the standard library: the identity tokens are signed
+RS256, because the point of speaking OpenID Connect is that software written
+by somebody else can verify one without being configured specially. No
+dependency was added on either side. The OAuth client, the authorisation
+server, the JWT and the JWKS are all `net/http`, `crypto/*` and
+`encoding/json` — the same three direct Go dependencies as before, and the
+same four on the frontend.
 
 The earlier administrative console — the terminal section and its SSH
 transport — is also admin-only code, and all 8.35 kB of its frontend landed in the backoffice
@@ -250,7 +258,7 @@ dependency — but it is a megabyte of code that only runs when
 Binary sizes use Go 1.27.0,
 Linux amd64, `-trimpath -ldflags "-s -w"`; transfer sizes are gzip-compressed
 JS and CSS in decimal kB, with totals rounded after summing. Binary sizes
-are decimal MB (20,029,600 bytes with SQLite; 16,314,528 bytes without it).
+are decimal MB (20,394,144 bytes with SQLite; 16,687,264 bytes without it).
 
 The target moved with the interface. It was < 80 kB while the frontend was
 hand-written DOM calls, and 71.6 kB against it; adopting Vue put roughly 45 kB
@@ -267,10 +275,10 @@ What each reader actually downloads:
 
 | | gzipped |
 | --- | --- |
-| English, not an administrator | 148.89 kB |
-| Chinese, not an administrator | 172.58 kB |
-| …and a conversation containing a formula | 176.23 kB |
-| Chinese administrator, backoffice open | 236.56 kB |
+| English, not an administrator | 159.39 kB |
+| Chinese, not an administrator | 186.23 kB |
+| …and a conversation containing a formula | 189.88 kB |
+| Chinese administrator, backoffice open | 255.54 kB |
 
 Route-level splitting would shave the first paint further and is deliberately
 switched off for everything but the backoffice: /settings, /keys, /usage and

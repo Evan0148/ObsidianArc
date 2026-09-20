@@ -27,6 +27,7 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/health"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/httpx"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/id"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/idp"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/model"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/provider"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/quota"
@@ -56,9 +57,15 @@ type Handlers struct {
 	cards         *card.Store
 	health        *health.Store
 	feedback      *feedback.Store
+	apps          *idp.Store
 	// Runs the sign-up reviewer on a hypothetical account. Set by the wiring;
 	// nil where no reviewer exists.
 	TryReview func(ctx context.Context, in ReviewTrial) (string, string, error)
+	// The address this instance answers at. Set by the wiring, which resolves
+	// it the same way every other outward-facing URL is resolved; the
+	// applications screen shows it because it is what an operator has to
+	// paste into the software on the other side.
+	Origin func(*http.Request) string
 
 	// Not injected: it is two fields of state that only the resources page
 	// has any use for, and it is meaningless before the first request.
@@ -84,6 +91,7 @@ func NewHandlers(
 	cards *card.Store,
 	healthStore *health.Store,
 	feedbackStore *feedback.Store,
+	apps *idp.Store,
 ) *Handlers {
 	return &Handlers{
 		db:            db,
@@ -104,6 +112,7 @@ func NewHandlers(
 		cards:         cards,
 		health:        healthStore,
 		feedback:      feedbackStore,
+		apps:          apps,
 	}
 }
 
@@ -127,6 +136,15 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /api/admin/health/reset", protected("availability", h.resetHealth))
 	mux.Handle("POST /api/admin/security/review", protected("security", h.trialReview))
 	mux.Handle("GET /api/admin/security/events", protected("security", h.listSecurityEvents))
+	// The applications that may use this instance as a sign-in. Under the
+	// security grant rather than a page grant of their own: they are part
+	// of the same subject as the front door, and they live on the same
+	// screen as the providers this instance signs in *with*.
+	mux.Handle("GET /api/admin/applications", protected("security", h.listApps))
+	mux.Handle("POST /api/admin/applications", protected("security", h.createApp))
+	mux.Handle("PATCH /api/admin/applications/{id}", protected("security", h.updateApp))
+	mux.Handle("POST /api/admin/applications/{id}/secret", protected("security", h.rotateAppSecret))
+	mux.Handle("DELETE /api/admin/applications/{id}", protected("security", h.deleteApp))
 
 	mux.Handle("GET /api/admin/users", protected("users", h.listUsers))
 	mux.Handle("GET /api/admin/users/{id}", protected("users", h.showUser))

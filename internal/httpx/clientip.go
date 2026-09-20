@@ -141,6 +141,55 @@ func ClientIP(r *http.Request, trust ProxyTrust) string {
 	return addrString(peer, r.RemoteAddr)
 }
 
+// ClientScheme resolves the scheme the caller actually used.
+//
+// r.TLS is the scheme this process was reached with, which is http on every
+// deployment that ends TLS at a proxy — and the one thing that has to be
+// right when building a URL somebody else will redirect a browser back to.
+// The header is believed on exactly the terms ClientIP believes the address:
+// only from a peer the operator has said is a proxy of theirs.
+func ClientScheme(r *http.Request, trust ProxyTrust) string {
+	if trust.Enabled() && trust.trusts(peerAddr(r)) {
+		// Leftmost, unlike the address: each hop prepends the scheme it was
+		// reached with, so the first entry is the browser's.
+		forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
+		if comma := strings.Index(forwarded, ","); comma >= 0 {
+			forwarded = strings.TrimSpace(forwarded[:comma])
+		}
+		switch strings.ToLower(forwarded) {
+		case "https":
+			return "https"
+		case "http":
+			return "http"
+		}
+	}
+	if r.TLS != nil {
+		return "https"
+	}
+	return "http"
+}
+
+// PublicOrigin is the address a browser reaches this instance at, as a
+// scheme and a host with no trailing slash.
+//
+// One definition, because two of them drift: the identity tokens this server
+// signs name an issuer, the discovery document names the same issuer, and the
+// callback URLs pasted into somebody else's console have to agree with both.
+// A configured public URL wins where an operator set one; otherwise it is the
+// request's own host with the scheme resolved above.
+//
+// Reading it off the request sounds like trusting a header and is not. The
+// value is only ever used to build a URL that some other party has already
+// been configured with — a provider's registered callback, an application's
+// expected issuer — so a caller who tampers with Host breaks nothing but
+// their own request.
+func PublicOrigin(r *http.Request, trust ProxyTrust, configured string) string {
+	if base := strings.TrimRight(strings.TrimSpace(configured), "/"); base != "" {
+		return base
+	}
+	return ClientScheme(r, trust) + "://" + r.Host
+}
+
 func peerAddr(r *http.Request) netip.Addr {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

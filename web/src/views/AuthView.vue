@@ -6,19 +6,22 @@
 // navigation or re-render the card.
 
 import { computed, nextTick, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
+import { safeNext } from '@/lib/next';
 import { login, register, type Account } from '@/api/auth';
 import { ApiError } from '@/api/client';
+import { signInURL } from '@/api/oauth';
 import OaField from '@/components/OaField.vue';
 import OaThemeToggle from '@/components/OaThemeToggle.vue';
 import OaTurnstile from '@/components/OaTurnstile.vue';
-import { t } from '@/composables/useI18n';
-import { IconSpark } from '@/icons';
+import { t, type StringKey } from '@/composables/useI18n';
+import { IconGithub, IconGoogle, IconKey, IconSpark, type OaIcon } from '@/icons';
 import { adopt, siteInfo } from '@/stores/session';
 
 const props = defineProps<{ mode: 'login' | 'register' }>();
 
 const router = useRouter();
+const route = useRoute();
 const site = computed(() => siteInfo.value);
 
 // An instance with no accounts is being set up: the person in front of it is
@@ -65,7 +68,50 @@ const guarded = computed(() =>
     : !setup.value && !!site.value.turnstile_on_login,
 );
 
-onMounted(() => void nextTick(() => identifierField.value?.focus()));
+// The sign-ins that do not start here. Never during setup: the first account
+// is the administrator, and a provider cannot be configured before there is
+// one to configure it.
+const providers = computed(() => (setup.value ? [] : site.value.oauth ?? []));
+
+const MARKS: Record<string, OaIcon> = { github: IconGithub, google: IconGoogle };
+function mark(id: string): OaIcon {
+  return MARKS[id] ?? IconKey;
+}
+
+/**
+ * Why a provider sign-in came back without signing anybody in.
+ *
+ * The callback is a redirect, so there is no response body to read — the
+ * reason arrives as a code in the query and is worded here, in the reader's
+ * own language. Anything unrecognised gets the general sentence rather than
+ * the raw code, which would mean nothing to the person reading it.
+ */
+const OAUTH_REFUSALS: Record<string, StringKey> = {
+  denied: 'oauthDenied',
+  state: 'oauthState',
+  unavailable: 'oauthUnavailable',
+  provider: 'oauthProviderFailed',
+  address_taken: 'oauthAddressTaken',
+  signup_closed: 'oauthSignupClosed',
+  registration_closed: 'registrationClosed',
+  disabled: 'accountBanned',
+  ip_blocked: 'signupBlocked',
+  throttled: 'oauthThrottled',
+  domain: 'oauthDomain',
+  email_required: 'oauthEmailRequired',
+  qq_required: 'oauthQQRequired',
+};
+
+onMounted(() => {
+  const code = route.query['oauth_error'];
+  if (typeof code === 'string' && code) {
+    error.value = t(OAUTH_REFUSALS[code] ?? 'oauthFailed');
+    // Out of the address bar: a reload should not raise a message about a
+    // sign-in that is long over.
+    void router.replace({ path: route.path, query: {} });
+  }
+  void nextTick(() => identifierField.value?.focus());
+});
 
 async function onSubmit(): Promise<void> {
   if (busy.value) return;
@@ -115,7 +161,9 @@ async function onSubmit(): Promise<void> {
     window.clearTimeout(reviewNote);
     adopt(result.user);
     guard.value?.reset();
-    await router.replace('/');
+    // Back to whatever asked for a session — the consent screen, usually,
+    // where another site is waiting on the answer.
+    await router.replace(safeNext(route.query['next']) || '/');
   } catch (failure) {
     window.clearTimeout(reviewNote);
     // A token is good for one submission, so a refusal for any reason — a
@@ -261,6 +309,24 @@ function refusal(failure: unknown): string {
         >
           {{ buttonLabel || (registering ? t('createAccount') : t('signIn')) }}
         </button>
+
+        <!-- Links rather than buttons, because each one is a navigation to
+             somebody else's site: the server answers with a redirect, which a
+             fetch could not follow anywhere useful. -->
+        <template v-if="providers.length">
+          <p class="oa-auth-or"><span>{{ t('orContinueWith') }}</span></p>
+          <div class="oa-auth-providers">
+            <a
+              v-for="provider in providers"
+              :key="provider.id"
+              class="oa-btn oa-auth-provider"
+              :href="signInURL(provider.id, { next: safeNext(route.query['next']) })"
+            >
+              <component :is="mark(provider.id)" :size="15" />
+              <span>{{ t('continueWith', { provider: provider.name }) }}</span>
+            </a>
+          </div>
+        </template>
       </div>
 
       <p v-if="!setup" class="oa-auth-switch">

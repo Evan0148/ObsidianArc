@@ -586,6 +586,15 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (user.User, string, 
 	}
 
 	ok, needsRehash, err := s.hasher.Verify(ctx, hash, in.Password)
+	if errors.Is(err, ErrInvalidHash) {
+		// An account opened through a provider has no password, and a
+		// password is what this form checks. Answered exactly as a wrong one
+		// is, and made to cost the same, so the form cannot be used to find
+		// out which accounts sign in with GitHub.
+		s.hasher.DummyVerify(ctx, in.Password)
+		attempt.finish(attemptFailed)
+		return user.User{}, "", ErrInvalidCredentials
+	}
 	if err != nil {
 		return user.User{}, "", err
 	}
@@ -649,6 +658,13 @@ func (s *Service) VerifyCredential(ctx context.Context, identifier, password, ip
 	}
 
 	ok, needsRehash, err := s.hasher.Verify(ctx, hash, password)
+	if errors.Is(err, ErrInvalidHash) {
+		// No password on this account at all — see Login, which answers the
+		// same way for the same reason.
+		s.hasher.DummyVerify(ctx, password)
+		attempt.finish(attemptFailed)
+		return user.User{}, ErrInvalidCredentials
+	}
 	if err != nil {
 		return user.User{}, err
 	}
@@ -693,15 +709,23 @@ func (s *Service) ChangePassword(ctx context.Context, userID, currentPassword, n
 		return err
 	}
 
-	ok, _, err := s.hasher.Verify(ctx, hash, currentPassword)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return ErrCurrentPasswordWrong
-	}
-	if same, _, _ := s.hasher.Verify(ctx, hash, newPassword); same {
-		return ErrPasswordUnchanged
+	// An account opened through a provider has no password to confirm, and
+	// this is where it gets its first one. Nothing is being replaced, so
+	// there is nothing to prove but the session — which the caller already
+	// holds, and which this endpoint has already required. Without this the
+	// only way into such an account is the provider, and an operator
+	// switching that provider off would lock its owner out.
+	if hash != "" {
+		ok, _, err := s.hasher.Verify(ctx, hash, currentPassword)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrCurrentPasswordWrong
+		}
+		if same, _, _ := s.hasher.Verify(ctx, hash, newPassword); same {
+			return ErrPasswordUnchanged
+		}
 	}
 
 	updated, err := s.hasher.Hash(ctx, newPassword)

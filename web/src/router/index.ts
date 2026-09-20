@@ -23,10 +23,12 @@
 // reach it.
 
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
+import { safeNext } from '@/lib/next';
 import { currentUser, isAdmin, canAdmin, siteInfo } from '@/stores/session';
 import AboutPanel from '@/views/AboutPanel.vue';
 import ArchivePanel from '@/views/ArchivePanel.vue';
 import AuthView from '@/views/AuthView.vue';
+import ConsentView from '@/views/ConsentView.vue';
 import FeedbackPanel from '@/views/FeedbackPanel.vue';
 import ImageLabPanel from '@/views/ImageLabPanel.vue';
 import KeysPanel from '@/views/KeysPanel.vue';
@@ -43,6 +45,10 @@ const routes: RouteRecordRaw[] = [
   // Public: the link is opened out of a mail client, quite possibly in a
   // browser that has never signed in here.
   { path: '/verify', component: VerifyView },
+  // "Another site wants to sign you in with your account here." A page rather
+  // than a panel, for the reason the sign-in card is one: there is no chat
+  // behind it, and it is a decision rather than a task.
+  { path: '/oauth/consent', component: ConsentView, meta: { auth: true } },
 
   {
     path: '/',
@@ -85,7 +91,13 @@ router.beforeEach((to) => {
   const signedIn = !!currentUser.value;
   const needsSession = to.matched.some((record) => record.meta['auth']);
 
-  if (needsSession && !signedIn) return { path: '/login', replace: true };
+  // Where they were going is carried along, so that signing in lands on the
+  // page that asked rather than on the chat. It matters most for the consent
+  // screen, where the thing being lost is not a page but a request another
+  // site is waiting on.
+  if (needsSession && !signedIn) {
+    return { path: '/login', query: { next: to.fullPath }, replace: true };
+  }
 
   // The address itself. Signed in it is the chat; signed out it is whatever
   // the operator has put at the front door, which may be the sign-in card, a
@@ -96,9 +108,12 @@ router.beforeEach((to) => {
     return { path: '/login', replace: true };
   }
 
-  // Someone signed in who is already where they were being sent.
+  // Someone signed in who is already where they were being sent — unless the
+  // sign-in page was carrying somewhere to go, which is a request somebody
+  // made rather than a page they wandered onto.
   if (signedIn && (to.path === '/login' || to.path === '/register')) {
-    return { path: '/', replace: true };
+    const next = safeNext(to.query['next']);
+    return { path: next || '/', replace: true };
   }
 
   // Uptime is available to admins, and to readers only if published.

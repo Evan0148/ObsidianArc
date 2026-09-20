@@ -158,6 +158,14 @@ var writableSettings = map[string]bool{
 	settings.TurnstileOnRedeem:         true,
 	settings.TurnstileOnFeedback:       true,
 	settings.FeedbackShowStaffName:     true,
+	settings.OAuthGitHubEnabled:        true,
+	settings.OAuthGitHubID:             true,
+	settings.OAuthGitHubSecret:         true,
+	settings.OAuthGoogleEnabled:        true,
+	settings.OAuthGoogleID:             true,
+	settings.OAuthGoogleSecret:         true,
+	settings.OAuthAllowSignup:          true,
+	settings.OAuthLinkByEmail:          true,
 	settings.SignupReview:              true,
 	settings.SignupReviewModel:         true,
 	settings.SignupReviewMode:          true,
@@ -450,7 +458,11 @@ func (h *Handlers) purgeAttachments(w http.ResponseWriter, r *http.Request) erro
 
 // Settings that are credentials. They are written through this endpoint and
 // never read back out of it.
-var secretSettings = []string{settings.TurnstileSecretKey}
+var secretSettings = []string{
+	settings.TurnstileSecretKey,
+	settings.OAuthGitHubSecret,
+	settings.OAuthGoogleSecret,
+}
 
 // Enough to show a field is filled in and nothing an attacker could use. A
 // provider's API key carries a four-character hint for the same job; a

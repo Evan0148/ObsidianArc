@@ -25,7 +25,7 @@
 import { h, render, type FunctionalComponent } from 'vue';
 import {
   Archive as LucideArchive, Check as LucideCheck, ChevronDown as LucideChevronDown,
-  Download as LucideDownload, MessageSquare as LucideMessageSquare,
+  Download as LucideDownload, Github as LucideGithub, MessageSquare as LucideMessageSquare,
   MoreVertical as LucideMoreVertical, Pencil as LucidePencil,
   RefreshCw as LucideRefreshCw,
   Terminal as LucideTerminal, createLucideIcon,
@@ -58,6 +58,22 @@ function wrap(base: AnyComponent): OaIcon {
 
 function draw(name: string, paths: readonly string[]): OaIcon {
   const node: IconNode = paths.map((d, index) => ['path', { d, key: `p${index}` }]);
+  return wrap(createLucideIcon(name, node) as AnyComponent);
+}
+
+/**
+ * A glyph drawn as a filled silhouette rather than a stroked outline.
+ *
+ * Every other icon here is a line drawing, which is the whole look. A brand
+ * mark is not ours to redraw as one: a wordless G in outline is not the mark
+ * people recognise, and recognising it is the entire job of a sign-in button.
+ * So the shape is filled, and it takes `currentColor` like the rest — the
+ * accent still colours it, and no token here hardcodes a hue.
+ */
+function fill(name: string, paths: readonly string[]): OaIcon {
+  const node: IconNode = paths.map((d, index) => (
+    ['path', { d, fill: 'currentColor', stroke: 'none', key: `p${index}` }]
+  ));
   return wrap(createLucideIcon(name, node) as AnyComponent);
 }
 
@@ -97,7 +113,20 @@ export const IconRefresh = wrap(LucideRefreshCw as unknown as AnyComponent);
 // Feedback is new here too, so there is no earlier glyph to be faithful to
 // and lucide's own drawing is the one this uses.
 export const IconMessage = wrap(LucideMessageSquare as unknown as AnyComponent);
+// The two sign-in marks. GitHub's is lucide's own; Google has none, so its G
+// is drawn here as a single path in one colour rather than the four-colour
+// asset, which would be the only hardcoded hue in the interface.
+export const IconGithub = wrap(LucideGithub as unknown as AnyComponent);
+export const IconGoogle = fill('Google', [
+  'M23.04 12.26c0-.81-.07-1.6-.21-2.35H12v4.45h6.19a5.3 5.3 0 0 1-2.3 3.47v2.89h3.72c2.18-2 3.43-4.96 3.43-8.46Z',
+  'M12 23.5c3.1 0 5.7-1.03 7.61-2.78l-3.72-2.89c-1.03.69-2.35 1.1-3.89 1.1-2.99 0-5.53-2.02-6.43-4.74H1.72v2.98A11.5 11.5 0 0 0 12 23.5Z',
+  'M5.57 14.19a6.9 6.9 0 0 1 0-4.38V6.83H1.72a11.5 11.5 0 0 0 0 10.34l3.85-2.98Z',
+  'M12 4.75c1.69 0 3.2.58 4.39 1.72l3.29-3.29C17.7 1.32 15.1.5 12 .5 7.52.5 3.65 3.07 1.72 6.83l3.85 2.98C6.47 7.09 9.01 4.75 12 4.75Z',
+]);
 export const IconChevronRight = draw('ChevronRight', ['m9 6 6 6-6 6']);
+// Leaving this site. Drawn rather than taken from lucide's ExternalLink,
+// which puts the arrow inside a box — at 13px the box is noise.
+export const IconArrowUpRight = draw('ArrowUpRight', ['M7 17 17 7', 'M8 7h9v9']);
 export const IconTrash = draw('Trash', ['M3 6h18', 'M8 6V4h8v2', 'M19 6l-1 14H6L5 6', 'M10 11v6', 'M14 11v6']);
 export const IconKey = draw('Key', [
   'M15 7a5 5 0 1 1-4.5 7.2L9 15.7V18H6.5v2.5H3v-3.2l6.5-6.5A5 5 0 0 1 15 7Z',
