@@ -774,6 +774,8 @@ export const zh: Record<StringKey, string> = {
   siteNameHint: '显示在页头和登录页。',
   signInNote: '登录页说明',
   signInNoteHint: '登录卡片上的一行可选说明——这台服务器给谁用，或者去哪里申请账户。',
+  clarityId: 'Microsoft Clarity 项目 id',
+  clarityIdHint: '留空则完全不加载。只有填了值，内容安全策略才会为它放宽。',
   anyoneCanRegister: '开放注册',
   anyoneCanRegisterHint: '关闭后只有管理员能创建账户。空实例始终允许注册第一个账户。',
   newAccountsJoin: '新账户加入',

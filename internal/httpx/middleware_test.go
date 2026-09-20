@@ -16,7 +16,7 @@ func TestTheChallengeOriginIsAllowedOnlyWhileAChallengeIsConfigured(t *testing.T
 	const origin = "https://challenges.cloudflare.com"
 
 	configured := false
-	handler := SecurityHeaders(false, nil, func() bool { return configured })(
+	handler := SecurityHeaders(false, nil, func() bool { return configured }, nil)(
 		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 
 	policy := func() string {

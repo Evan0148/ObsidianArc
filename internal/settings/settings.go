@@ -53,10 +53,12 @@ const (
 	// response, the way a provider's API key is.
 	TurnstileSiteKey   = "turnstile.site_key"
 	TurnstileSecretKey = "turnstile.secret_key"
-	TurnstileOnLogin   = "turnstile.on_login"
-	TurnstileOnSignup  = "turnstile.on_signup"
-	TurnstileOnAPIKey  = "turnstile.on_api_key"
-	TurnstileOnRedeem  = "turnstile.on_redeem"
+	// Microsoft Clarity 的项目 id。空 = 完全不加载，CSP 也不放宽。
+	AnalyticsClarity  = "analytics.clarity"
+	TurnstileOnLogin  = "turnstile.on_login"
+	TurnstileOnSignup = "turnstile.on_signup"
+	TurnstileOnAPIKey = "turnstile.on_api_key"
+	TurnstileOnRedeem = "turnstile.on_redeem"
 	// Feedback is the one scene an account reaches while already signed in
 	// and with nothing to gain, so it is off by default: it earns its
 	// challenge only on an instance that has actually been spammed.
@@ -261,6 +263,7 @@ var Defaults = map[string]string{
 	// is configuring, not yet switching on, and a challenge that appeared the
 	// moment a key was saved would lock out the half-finished setup it was
 	// saved during.
+	AnalyticsClarity:      "",
 	TurnstileOnLogin:      "false",
 	TurnstileOnSignup:     "false",
 	TurnstileOnAPIKey:     "false",
