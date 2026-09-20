@@ -793,8 +793,6 @@ const en = {
   siteNameHint: 'Shown in the header and on the sign-in page.',
   signInNote: 'Sign-in note',
   signInNoteHint: 'An optional line on the sign-in card — who this server is for, or where to ask for an account.',
-  clarityId: 'Microsoft Clarity project id',
-  clarityIdHint: 'Leave empty and nothing is loaded. The content security policy only opens for it while this is set.',
   anyoneCanRegister: 'Anyone can register',
   anyoneCanRegisterHint: 'With this off, only an administrator can create accounts. An empty instance always accepts the first one.',
   newAccountsJoin: 'New accounts join',

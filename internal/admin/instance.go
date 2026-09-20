@@ -136,7 +136,6 @@ func (h *Handlers) listSettings(w http.ResponseWriter, r *http.Request) error {
 var writableSettings = map[string]bool{
 	settings.SiteName:                  true,
 	settings.SiteDescription:           true,
-	settings.AnalyticsClarity:          true,
 	settings.AboutTitle:                true,
 	settings.AboutBody:                 true,
 	settings.HomeNotice:                true,

@@ -173,49 +173,41 @@ func Logger() Middleware {
 // switching the challenge off takes the exception away with it.
 const challengeOrigin = "https://challenges.cloudflare.com"
 
-// Microsoft Clarity loads its own script and then posts what it recorded.
-// Widened on the same terms as the challenge: only while an instance has
-// actually configured it, so an instance that has not is not carrying a hole
-// for a third party it does not use.
-const clarityScript = "https://www.clarity.ms"
-const clarityConnect = "https://*.clarity.ms https://c.bing.com"
-
 // challenging reports whether a challenge is configured. Nil means never.
-func SecurityHeaders(dev bool, scriptHashes []string, challenging, analysing func() bool) Middleware {
+func SecurityHeaders(dev bool, scriptHashes []string, challenging func() bool) Middleware {
 	scriptSrc := "script-src 'self'"
 	if len(scriptHashes) > 0 {
 		scriptSrc += " " + strings.Join(scriptHashes, " ")
 	}
 
-	// Four combinations of two independent switches, built once rather than
-	// assembled per request: the hot path only picks a string.
-	build := func(challenge, analytics bool) string {
-		script := scriptSrc
-		connect := "connect-src 'self'"
-		parts := []string{"default-src 'self'"}
-		if challenge {
-			script += " " + challengeOrigin
-			connect += " " + challengeOrigin
-		}
-		if analytics {
-			script += " " + clarityScript
-			connect += " " + clarityConnect
-		}
-		parts = append(parts, script, "style-src 'self' 'unsafe-inline'",
-			"img-src 'self' data: blob:", "font-src 'self' data:", connect)
-		if challenge {
-			parts = append(parts, "frame-src "+challengeOrigin)
-		}
-		return strings.Join(append(parts,
-			"base-uri 'none'", "form-action 'self'",
-			"frame-ancestors 'none'", "object-src 'none'"), "; ")
-	}
-	policies := [2][2]string{
-		{build(false, false), build(false, true)},
-		{build(true, false), build(true, true)},
-	}
+	policy := strings.Join([]string{
+		"default-src 'self'",
+		scriptSrc,
+		"style-src 'self' 'unsafe-inline'",
+		"img-src 'self' data: blob:",
+		"font-src 'self' data:",
+		"connect-src 'self'",
+		"base-uri 'none'",
+		"form-action 'self'",
+		"frame-ancestors 'none'",
+		"object-src 'none'",
+	}, "; ")
 
-	policy := policies[0][0]
+	// Built once rather than per request: the only thing that varies is which
+	// of the two strings gets written.
+	withChallenge := strings.Join([]string{
+		"default-src 'self'",
+		scriptSrc + " " + challengeOrigin,
+		"style-src 'self' 'unsafe-inline'",
+		"img-src 'self' data: blob:",
+		"font-src 'self' data:",
+		"connect-src 'self' " + challengeOrigin,
+		"frame-src " + challengeOrigin,
+		"base-uri 'none'",
+		"form-action 'self'",
+		"frame-ancestors 'none'",
+		"object-src 'none'",
+	}, "; ")
 
 	if dev {
 		// Vite serves modules over its own origin and opens a websocket for
@@ -237,10 +229,8 @@ func SecurityHeaders(dev bool, scriptHashes []string, challenging, analysing fun
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			header := w.Header()
 			active := policy
-			if !dev {
-				challenge := challenging != nil && challenging()
-				analytics := analysing != nil && analysing()
-				active = policies[b2i(challenge)][b2i(analytics)]
+			if challenging != nil && challenging() {
+				active = withChallenge
 			}
 			header.Set("Content-Security-Policy", active)
 			header.Set("X-Content-Type-Options", "nosniff")
@@ -314,11 +304,4 @@ func SameOrigin(allowed []string) Middleware {
 			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-func b2i(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }

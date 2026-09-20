@@ -61,8 +61,6 @@ export interface Landing {
 export interface SiteInfo {
   name: string;
   description: string;
-  /** Microsoft Clarity 的项目 id。空字符串 = 这台实例没配，什么都不加载。 */
-  analytics_clarity?: string;
   registration_enabled: boolean;
   health_show_users?: boolean;
   allow_archive_conversations?: boolean;

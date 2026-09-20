@@ -74,7 +74,6 @@ const purging = ref(false);
 
 const form = ref({
   siteName: '',
-  clarityId: '',
   description: '',
   aboutHeading: '',
   aboutText: '',
@@ -120,7 +119,6 @@ function collect(): Record<string, string> {
   return {
     'site.name': form.value.siteName.trim(),
     'site.description': form.value.description.trim(),
-    'analytics.clarity': form.value.clarityId.trim(),
     'about.title': form.value.aboutHeading.trim(),
     'about.body': form.value.aboutText.trim(),
     'home.notice': form.value.homeNotice.trim(),
@@ -238,7 +236,6 @@ async function load(): Promise<void> {
     form.value = {
       siteName: values['site.name'] ?? '',
       description: values['site.description'] ?? '',
-      clarityId: values['analytics.clarity'] ?? '',
       aboutHeading: values['about.title'] ?? '',
       aboutText: values['about.body'] ?? '',
       homeNotice: values['home.notice'] ?? '',
@@ -298,7 +295,6 @@ onMounted(load);
       <AdminControlCard id="secIdentity" v-show="visible('secIdentity')" :title="t('secIdentity')" :icon="IconHome" :hint="t('controlIdentityHint')">
         <OaTextField v-model="form.siteName" :label="t('siteName')" :hint="t('siteNameHint')" :max-length="60" />
         <OaTextArea v-model="form.description" :label="t('signInNote')" :rows="2" :hint="t('signInNoteHint')" />
-        <OaTextField v-model="form.clarityId" :label="t('clarityId')" :hint="t('clarityIdHint')" :max-length="40" />
       </AdminControlCard>
       <AdminControlCard id="secAbout" v-show="visible('secAbout')" :title="t('controlAbout')" :icon="IconInfo" :hint="t('controlAboutHint')">
         <OaTextField

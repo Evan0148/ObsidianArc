@@ -144,10 +144,8 @@ func (h *Handlers) site(w http.ResponseWriter, r *http.Request) error {
 		allowArchive = h.settings.Bool(settings.AllowArchive)
 	}
 	return httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"name": h.settings.Get(settings.SiteName),
-		// 空字符串的意思是「不要加载」，前端据此决定加不加那个 script。
-		"analytics_clarity": h.settings.Get(settings.AnalyticsClarity),
-		"description":       h.settings.Get(settings.SiteDescription),
+		"name":        h.settings.Get(settings.SiteName),
+		"description": h.settings.Get(settings.SiteDescription),
 		// An empty instance always accepts the first account, whatever the
 		// setting says; that account becomes the administrator.
 		"registration_enabled":        !populated || h.settings.Bool(settings.RegistrationEnabled),

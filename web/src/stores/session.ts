@@ -8,7 +8,6 @@
 // library: three values and six functions do not need Pinia, and Vue's own
 // reactivity is what makes the header redraw when a profile is saved.
 
-import { startAnalytics } from '../lib/analytics';
 import { computed, ref, type ComputedRef, type Ref } from 'vue';
 import { ApiError } from '@/api/client';
 import { fetchMe, fetchSite, savePreferences, type Account, type Preferences, type SiteInfo } from '@/api/auth';
@@ -101,11 +100,7 @@ export async function startSession(): Promise<void> {
     console.warn('session lookup failed', me.reason);
   }
 
-  if (info.status === 'fulfilled') {
-    site.value = info.value;
-    // 实例配了才加载。没配的话这一行什么都不做，CSP 也不会为它放宽。
-    startAnalytics(info.value.analytics_clarity);
-  }
+  if (info.status === 'fulfilled') site.value = info.value;
 }
 
 // The account's stored theme and accent win over whatever this browser had,

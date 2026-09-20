@@ -918,9 +918,6 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 					settingsService.Bool(settings.TurnstileOnRedeem) ||
 					settingsService.Bool(settings.TurnstileOnFeedback) ||
 					settingsService.Int(settings.ChatChallengeRequests, 0) > 0)
-		}, func() bool {
-			// Same rule for the analytics tag: no project id, no widening.
-			return settingsService.Get(settings.AnalyticsClarity) != ""
 		}),
 		httpx.SameOrigin(cfg.AllowedOrigins),
 		// Last, so the session lookup only happens for requests that survived
