@@ -341,7 +341,7 @@ func readAnthropicTools(declared []anthropicInTool) ([]adapter.Tool, error) {
 		return nil, nil
 	}
 	if len(declared) > maxTools {
-		return nil, anthropicBadRequest("Too many tools in one request.")
+		return nil, anthropicBadRequest(tooManyToolsMessage(len(declared)))
 	}
 
 	out := make([]adapter.Tool, 0, len(declared))

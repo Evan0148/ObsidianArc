@@ -44,6 +44,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -517,6 +518,18 @@ func unauthorized(message string) apiError {
 
 func invalidKey() apiError {
 	return unauthorized("Incorrect API key provided, or it is no longer valid.")
+}
+
+// One wording for all three protocols, and it carries both numbers.
+//
+// The refusal used to be "Too many tools in one request." and nothing else,
+// which is a dead end for everyone: the person sees no way to act on it, and
+// the operator cannot tell 257 from 5000 without asking them to count. Five
+// different people hit it in a week and not one report said how many they
+// had sent.
+func tooManyToolsMessage(declared int) string {
+	return "Too many tools in one request: " + strconv.Itoa(declared) +
+		" declared, at most " + strconv.Itoa(maxTools) + "."
 }
 
 func badRequest(param, message string) apiError {

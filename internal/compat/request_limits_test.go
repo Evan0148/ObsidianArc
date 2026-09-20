@@ -3,6 +3,7 @@ package compat
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -117,5 +118,93 @@ func TestTranscriptBodySizeIsStillBounded(t *testing.T) {
 				t.Fatal("oversized request reached the provider")
 			}
 		})
+	}
+}
+
+// The tool-count ceiling, across all three protocols.
+//
+// This is the one that reached users: five different people were refused in a
+// week by a limit of 256, which a coding agent with a dozen MCP servers passes
+// without doing anything unusual. The ceiling is still here — an unbounded
+// tools array is a real way to make a body expensive — so what these pin down
+// is that it sits somewhere a normal agent does not reach, that it is the same
+// number on all three surfaces, and that the refusal says enough to act on.
+func TestToolCeilingIsTheSameOnEverySurface(t *testing.T) {
+	cases := []struct {
+		path string
+		tool string // one tool, %d for its index
+	}{
+		{"/v1/chat/completions", `{"type":"function","function":{"name":"t%d","parameters":{"type":"object"}}}`},
+		{"/v1/messages", `{"name":"t%d","input_schema":{"type":"object"}}`},
+		{"/v1/responses", `{"type":"function","name":"t%d","parameters":{"type":"object"}}`},
+	}
+	for _, c := range cases {
+		build := func(n int) string {
+			tools := make([]string, n)
+			for i := range tools {
+				tools[i] = fmt.Sprintf(c.tool, i)
+			}
+			return strings.Join(tools, ",")
+		}
+
+		t.Run(c.path+"/at_the_ceiling", func(t *testing.T) {
+			f := newFixture(t)
+			f.upstream.reply(answer)
+			body := fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"hi"}],"input":[{"role":"user","content":"hi"}],"tools":[%s]}`,
+				f.model.ID, build(maxTools))
+			w := f.do(t, http.MethodPost, c.path, f.token, body)
+			if w.Code != http.StatusOK {
+				t.Fatalf("exactly maxTools was refused: status = %d: %s", w.Code, w.Body.String())
+			}
+			sent, _ := f.upstream.received()["tools"].([]any)
+			if len(sent) != maxTools {
+				t.Fatalf("provider received %d tools, want %d", len(sent), maxTools)
+			}
+		})
+
+		t.Run(c.path+"/one_over", func(t *testing.T) {
+			f := newFixture(t)
+			f.upstream.reply(answer)
+			body := fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"hi"}],"input":[{"role":"user","content":"hi"}],"tools":[%s]}`,
+				f.model.ID, build(maxTools+1))
+			w := f.do(t, http.MethodPost, c.path, f.token, body)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", w.Code, w.Body.String())
+			}
+			// Both numbers, or the person reading it cannot tell 1025 from
+			// 5000 and the operator has to ask them to count.
+			got := w.Body.String()
+			for _, want := range []string{strconv.Itoa(maxTools + 1), strconv.Itoa(maxTools)} {
+				if !strings.Contains(got, want) {
+					t.Fatalf("refusal does not name %q: %s", want, got)
+				}
+			}
+		})
+	}
+}
+
+// Namespaces are flattened before the count, so what matters is how many
+// functions the model ends up being offered, not how many entries the client
+// typed. Codex sends its sub-agent tools this way.
+func TestResponsesCountsFlattenedToolsAgainstTheCeiling(t *testing.T) {
+	f := newFixture(t)
+	f.upstream.reply(answer)
+
+	// One namespace, maxTools+1 functions inside it: a single top-level entry
+	// that is still over the line.
+	inner := make([]string, maxTools+1)
+	for i := range inner {
+		inner[i] = fmt.Sprintf(`{"type":"function","name":"t%d","parameters":{"type":"object"}}`, i)
+	}
+	body := fmt.Sprintf(
+		`{"model":%q,"input":[{"role":"user","content":"hi"}],"tools":[{"type":"namespace","name":"agents","tools":[%s]}]}`,
+		f.model.ID, strings.Join(inner, ","))
+
+	w := f.do(t, http.MethodPost, "/v1/responses", f.token, body)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), strconv.Itoa(maxTools+1)) {
+		t.Fatalf("refusal counted the namespace rather than what is inside it: %s", w.Body.String())
 	}
 }

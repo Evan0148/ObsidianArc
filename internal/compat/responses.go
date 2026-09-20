@@ -406,7 +406,7 @@ func readResponsesTools(declared []responsesTool) ([]adapter.Tool, error) {
 		return nil, err
 	}
 	if len(out) > maxTools {
-		return nil, badRequest("tools", "Too many tools in one request.")
+		return nil, badRequest("tools", tooManyToolsMessage(len(out)))
 	}
 	return out, nil
 }

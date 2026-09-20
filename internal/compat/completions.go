@@ -24,10 +24,17 @@ const (
 	// Bound request memory by bytes: long agent sessions can carry thousands
 	// of short tool turns without filling the model's context.
 	maxBodyBytes = 12 << 20
-	// Tools in one request. An agent with a few MCP servers attached brings
-	// dozens; one that brings hundreds has a configuration problem, not a
-	// task.
-	maxTools = 256
+	// Tools in one request.
+	//
+	// This was 256, on the reasoning that an agent bringing hundreds had a
+	// configuration problem rather than a task. That stopped being true:
+	// a coding agent with a dozen MCP servers attached now brings several
+	// hundred tools as a matter of course, and five different people hit
+	// the old ceiling in a week. It is a guard against a pathological body,
+	// not a policy about how somebody should configure their agent — the
+	// provider decides what it can actually accept, and maxBodyBytes already
+	// bounds the memory.
+	maxTools = 1024
 )
 
 // completionRequest is what an OpenAI client sends.
@@ -488,7 +495,7 @@ func readTools(declared []wireTool) ([]adapter.Tool, error) {
 		return nil, nil
 	}
 	if len(declared) > maxTools {
-		return nil, badRequest("tools", "Too many tools in one request.")
+		return nil, badRequest("tools", tooManyToolsMessage(len(declared)))
 	}
 
 	out := make([]adapter.Tool, 0, len(declared))
