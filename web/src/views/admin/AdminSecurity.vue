@@ -90,18 +90,7 @@ const form = ref({
   oauthLinkByEmail: true,
 });
 
-/**
- * What to paste into the provider's own console.
- *
- * Read off the address bar rather than configured: it is the address this
- * page was opened at, which is by definition the one a browser reaches this
- * instance on — and a callback URL that differs from the registered one by a
- * scheme or a trailing slash is refused by the provider with an error that
- * names neither.
- */
-function callbackURL(provider: string): string {
-  return `${window.location.origin}/api/auth/oauth/callback/${provider}`;
-}
+
 
 // --- the applications that may sign people in with an account here -------------
 //
@@ -127,6 +116,24 @@ function copy(value: string): void {
       if (copied.value === value) copied.value = '';
     }, 1500);
   });
+}
+
+/**
+ * What to paste into the provider's own console.
+ *
+ * Built from the server's own idea of this instance's address, not from the
+ * address bar. The two can differ — a proxy chain that loses the original
+ * scheme leaves the server believing it is http where the browser knows it is
+ * https — and when they differ it is the server's value that the provider is
+ * shown at the exchange. A callback that differs from the registered one by a
+ * scheme is refused with an error that names neither, so the screen has to
+ * show the one that will actually be sent.
+ *
+ * The address bar is the fallback for the moment before the applications
+ * list has answered.
+ */
+function callbackURL(provider: string): string {
+  return `${issuer.value || window.location.origin}/api/auth/oauth/callback/${provider}`;
 }
 
 async function loadApplications(): Promise<void> {
