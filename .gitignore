@@ -23,3 +23,8 @@ docs/.vitepress/cache/
 Thumbs.db
 *.log
 .claude/settings.local.json
+
+# 代理的工作草稿和一次性审计报告，不进仓库。
+# 2026-09-20 被 `git add -A` 卷进去过一次，所以写下来而不是靠记性。
+.agents/
+docs/SECURITY_AUDIT.md
