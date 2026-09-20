@@ -649,12 +649,12 @@ const MaxImagesPerRequest = 4
 const MaxReferenceImages = 5
 
 type imageGenRequest struct {
-	ModelID string   `json:"model_id"`
-	Prompt  string   `json:"prompt"`
-	Size    string   `json:"size"`
-	Style   string   `json:"style"`
-	Quality string   `json:"quality"`
-	N       int      `json:"n"`
+	ModelID string `json:"model_id"`
+	Prompt  string `json:"prompt"`
+	Size    string `json:"size"`
+	Style   string `json:"style"`
+	Quality string `json:"quality"`
+	N       int    `json:"n"`
 	// Pictures to work from, base64 as the attachment endpoint takes them.
 	// Present turns the call into an edit rather than a generation.
 	Image  string   `json:"image"`
