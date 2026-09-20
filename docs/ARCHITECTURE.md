@@ -216,31 +216,37 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | --- | --- | --- |
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
-| Binary (SQLite + embedded SPA) | < 30 MB | 20.4 MB (16.7 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 135 kB | 160.35 kB to open the chat (135.40 JS + 24.95 CSS) |
+| Binary (SQLite + embedded SPA) | < 30 MB | 20.5 MB (16.8 MB `-tags nosqlite`, Linux amd64) |
+| Frontend, on the wire | < 135 kB | 163.57 kB to open the chat (138.31 JS + 25.26 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
 
-The bundle and binaries were remeasured on 2026-09-20 (UTC), after the two
-halves of third-party sign-in: signing in here with a GitHub or Google
-account, and letting another site sign somebody in with an account from here.
-The chat payload is 25.35 kB above the existing target; that target is
-unchanged. It grew by 6.73 kB over the figure recorded the day before, and the
-whole of that is on the first paint by necessity — the provider buttons live
-on the sign-in card, the consent screen is a page somebody lands on before
-they have a session, and the strings for both are English, which is the one
-dictionary this project deliberately does not split. The backoffice chunk took
-the operator's half and grew by 2.25 kB; the Chinese dictionary grew by 2.01
-kB, which nobody reading in English fetches.
+The bundle and binaries were remeasured on 2026-09-20 (UTC), after three
+contributions landed together: importing an API key into CC Switch in one
+click, the Image Lab's reference images and history gallery, and the two usage
+screens re-reading themselves while open. The chat payload is 28.57 kB above
+the existing target; that target is unchanged. It grew by 3.22 kB over the
+figure recorded earlier the same day — 2.91 kB of JS and 0.31 kB of CSS.
 
-The binary grew by 360 kB, all of it `crypto/rsa`, `crypto/x509` and
-`encoding/pem` from the standard library: the identity tokens are signed
-RS256, because the point of speaking OpenID Connect is that software written
-by somebody else can verify one without being configured specially. No
-dependency was added on either side. The OAuth client, the authorisation
-server, the JWT and the JWKS are all `net/http`, `crypto/*` and
-`encoding/json` — the same three direct Go dependencies as before, and the
-same four on the frontend.
+Most of that is the Image Lab. Its gallery, lightbox and reference-image
+handling sit on the first paint because the panel already did, and this is the
+screen where they belong; route-level splitting is off for everything but the
+backoffice, and turning it on for one view is the careful job named below.
+The other two are nearly free by comparison: the CC Switch link builder is one
+37-line module with no runtime of its own, and the usage refresh reuses
+`useIntervalFn`, which `@vueuse/core` was already carrying. The backoffice
+chunk grew by 0.12 kB and the Chinese dictionary by 0.51 kB, which nobody
+reading in English fetches.
+
+The binary grew by 49 kB, and by the same 49 kB with `-tags nosqlite`, which
+is how you can tell it is this project's own code rather than anything pulled
+in underneath it: the image-generation store, its migration and the multipart
+handling for reference images. No dependency was added on either side — the
+same three direct Go dependencies as before, and the same four on the
+frontend. The identity tokens are still signed RS256 with `crypto/rsa`,
+`crypto/x509` and `encoding/pem` from the standard library, because the point
+of speaking OpenID Connect is that software written by somebody else can
+verify one without being configured specially.
 
 The earlier administrative console — the terminal section and its SSH
 transport — is also admin-only code, and all 8.35 kB of its frontend landed in the backoffice
@@ -258,7 +264,7 @@ dependency — but it is a megabyte of code that only runs when
 Binary sizes use Go 1.27.0,
 Linux amd64, `-trimpath -ldflags "-s -w"`; transfer sizes are gzip-compressed
 JS and CSS in decimal kB, with totals rounded after summing. Binary sizes
-are decimal MB (20,426,912 bytes with SQLite; 16,720,032 bytes without it).
+are decimal MB (20,476,064 bytes with SQLite; 16,769,184 bytes without it).
 
 The target moved with the interface. It was < 80 kB while the frontend was
 hand-written DOM calls, and 71.6 kB against it; adopting Vue put roughly 45 kB

@@ -33,6 +33,7 @@ const CONTRIBUTORS = [
   'OnyxAxisOwO',
   'momo-mnsjtxy',
   'abloom25',
+  'Evan0148',
   'dian-ZD',
   'amnssb',
   'mnsjtxy',
