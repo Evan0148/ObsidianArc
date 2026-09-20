@@ -46,6 +46,18 @@ services:
       # proxy's own address if you know it.
       OBSIDIAN_TRUSTED_PROXIES: "${OBSIDIAN_TRUSTED_PROXIES:-172.16.0.0/12,192.168.0.0/16,10.0.0.0/8,127.0.0.1/32}"
       OBSIDIAN_COOKIE_SECURE: "${OBSIDIAN_COOKIE_SECURE:-true}"
+      # The address this instance answers at, as somebody else's software has
+      # to be configured with it: the issuer in the OpenID discovery document,
+      # the callbacks pasted into GitHub and Google, and the links in
+      # verification mail.
+      #
+      # Worth setting even though the server can work it out from a request,
+      # because working it out depends on the whole chain agreeing. A proxy in
+      # front of your proxy that reaches it over plain HTTP — Cloudflare in
+      # its "Flexible" mode is the common one — leaves the scheme as http all
+      # the way down, and every one of those URLs then says http and is
+      # refused by the other side.
+      OBSIDIAN_PUBLIC_URL: "${OBSIDIAN_PUBLIC_URL:-}"
       OBSIDIAN_ADMIN_USER: ${OBSIDIAN_ADMIN_USER:-}
       OBSIDIAN_ADMIN_PASSWORD: ${OBSIDIAN_ADMIN_PASSWORD:-}
       # The administration console over SSH — `ssh admin@host -p 2222`, which

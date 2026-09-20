@@ -18,7 +18,7 @@
 | GitHub | github.com/settings/developers → New OAuth App | `https://你的域名/api/auth/oauth/callback/github` |
 | Google | Google Cloud 控制台 → 凭据 → OAuth 客户端 ID（Web 应用） | `https://你的域名/api/auth/oauth/callback/google` |
 
-回调地址在后台那两个字段的提示里直接写着，照抄即可——它是从你当前访问的地址生成的，所以一定是对的那一个。
+回调地址在后台那两个字段的提示里直接写着，照抄即可——它是服务器自己算出来的地址，也就是令牌交换时真正会发给对方的那一个。
 
 把 Client ID 和 Client Secret 填进后台，保存，再打开对应的开关。**开关和凭据是分开的**：粘贴密钥只是在配置，还没有对外开门；两项都齐了登录页才会出现按钮。Secret 保存后不再回显，只显示打码——留空提交表示「不改」，不会把它清掉。
 
@@ -54,6 +54,11 @@
 本站实现的是 OpenID Connect。用标准协议而不是自己发明一套，图的就是对方不用为我们写代码：多数软件只要填一个 issuer，剩下的自己发现。
 
 发现地址：`https://你的域名/.well-known/openid-configuration`
+
+打开它看一眼 `issuer` 是不是 `https://` 开头。如果是 `http://`，说明服务器
+没能从请求里看出自己是 HTTPS——代理链把协议弄丢了——这时候对方会拒绝，
+在部署环境里填上 `OBSIDIAN_PUBLIC_URL=https://你的域名` 即可。回调地址那一栏
+显示的也是服务器自己算出来的地址，和这里是同一个来源。
 
 | 端点 | 路径 |
 | --- | --- |

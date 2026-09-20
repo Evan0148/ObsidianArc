@@ -85,7 +85,7 @@
 | `OBSIDIAN_SMTP_PASSWORD` | 空 | SMTP 密码 |
 | `OBSIDIAN_SMTP_FROM` | 空 | 发件人 |
 | `OBSIDIAN_SMTP_TLS` | 端口为 465 时为 `true` | 是否从连接开始就使用 TLS；否则使用 STARTTLS |
-| `OBSIDIAN_PUBLIC_URL` | 空 | 邮件链接使用的站点基础地址 |
+| `OBSIDIAN_PUBLIC_URL` | 空 | 站点对外的基础地址。邮件里的链接、第三方登录的回调地址、以及 OpenID 发现文档里的 issuer 都用它 |
 
 SMTP 凭据通过环境变量配置，不在系统设置表单中填写。启用邮箱验证前先验证邮件发送与链接地址。
 
