@@ -55,6 +55,39 @@ type state struct {
 	Expiry int64  `json:"e"`
 }
 
+// pending is a sign-in that stopped to ask something.
+//
+// The provider has already said who this is; what is missing is a QQ number or
+// an address that only the person can give. Signed and put in a cookie for the
+// same reason the state above is: it crosses a page, and a page is somewhere a
+// value can be edited — and the value here is which GitHub account is about to
+// become an account on this server.
+//
+// Nothing is written while this is outstanding. An abandoned form leaves a
+// cookie that expires, and no row anywhere.
+type pending struct {
+	Provider string `json:"p"`
+	Subject  string `json:"s"`
+	Login    string `json:"l"`
+	Name     string `json:"m"`
+	// Only ever the address the provider proved. One somebody types into the
+	// form it leads to is never kept here: it would then be signed by this
+	// server, which is the one thing that must not happen to an unproven
+	// address.
+	Email  string `json:"e"`
+	Next   string `json:"r,omitempty"`
+	Expiry int64  `json:"x"`
+}
+
+// How long somebody has to fill the form in. Long enough to go and look up a
+// QQ number, short enough that a cookie left on a shared machine is not a way
+// to open an account as somebody else.
+const pendingTTL = 20 * time.Minute
+
+// Its own cookie, and its own signature derivation, so that a state cannot be
+// presented as a pending sign-up or the other way round.
+const pendingCookie = "oa_oauth_signup"
+
 // stamp signs and reads the cookie.
 type stamp struct{ key []byte }
 
@@ -63,6 +96,41 @@ func newStamp(secret []byte) *stamp {
 	// else the same instance secret signs.
 	sum := sha256.Sum256(append([]byte("obsidian-arc/oauth-state\x00"), secret...))
 	return &stamp{key: sum[:]}
+}
+
+// newPendingStamp derives the other key. Same secret, different purpose, so a
+// state cannot be presented as a half-finished sign-up or the other way round.
+func newPendingStamp(secret []byte) *stamp {
+	sum := sha256.Sum256(append([]byte("obsidian-arc/oauth-signup\x00"), secret...))
+	return &stamp{key: sum[:]}
+}
+
+func (s *stamp) issuePending(value pending) (string, error) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(body)
+	return encoded + "." + s.tag(encoded), nil
+}
+
+func (s *stamp) readPending(cookie string) (pending, error) {
+	encoded, tag, ok := strings.Cut(strings.TrimSpace(cookie), ".")
+	if !ok || !hmac.Equal([]byte(tag), []byte(s.tag(encoded))) {
+		return pending{}, ErrState
+	}
+	body, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return pending{}, ErrState
+	}
+	var value pending
+	if err := json.Unmarshal(body, &value); err != nil {
+		return pending{}, ErrState
+	}
+	if time.Now().UnixMilli() > value.Expiry {
+		return pending{}, ErrState
+	}
+	return value, nil
 }
 
 func (s *stamp) issue(value state) (string, error) {
@@ -116,6 +184,30 @@ func (h *Handlers) setState(w http.ResponseWriter, value string) {
 		// navigation — the one request it exists for.
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(stateTTL.Seconds()),
+	})
+}
+
+func (h *Handlers) setPending(w http.ResponseWriter, value string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     pendingCookie,
+		Value:    value,
+		Path:     statePath,
+		HttpOnly: true,
+		Secure:   h.SecureCookie,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(pendingTTL.Seconds()),
+	})
+}
+
+func (h *Handlers) clearPending(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     pendingCookie,
+		Value:    "",
+		Path:     statePath,
+		HttpOnly: true,
+		Secure:   h.SecureCookie,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
 	})
 }
 

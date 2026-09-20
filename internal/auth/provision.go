@@ -40,14 +40,53 @@ type ProvisionInput struct {
 	// pressing "continue with GitHub" chose a username here, so there is
 	// nobody to tell that theirs is unavailable.
 	Username string
-	// Empty unless the provider states the address is verified. An address
-	// this instance has not seen proof of is not written to an account, which
-	// is why nothing below asks for a confirmation link: there is either a
-	// proven address or none at all.
-	Email    string
+	// The address, from whichever of the two places it came: proved by the
+	// provider, or typed by the person when this instance asked for one the
+	// provider could not supply.
+	Email string
+	// Whether that address arrived proved. A provider's verified address is
+	// as good as a link this server posted itself; one somebody typed into
+	// the completion form is exactly as unproven as one typed into the
+	// sign-up form, and is held back the same way.
+	EmailVerified bool
+	// Likewise: a provider has no QQ number to offer, so this is empty unless
+	// the person was asked for one.
+	QQ       string
 	Nickname string
 	IP       string
 	UA       string
+}
+
+// Missing is what an instance requires that a provider cannot answer.
+//
+// It exists so the caller can ask before it starts rather than discover it by
+// being refused: a sign-in that needs a QQ number should end at a form asking
+// for one, not at an apology.
+type Missing struct {
+	QQ    bool
+	Email bool
+}
+
+func (m Missing) Any() bool { return m.QQ || m.Email }
+
+// MissingFor reports what has to be asked of somebody arriving with this
+// identity before an account can be opened for them.
+//
+// The first account is exempt, for the same reason it is exempt from every
+// other registration control: it is the one that turns an empty instance into
+// an administered one, and there is nobody yet to have configured these rules.
+func (s *Service) MissingFor(ctx context.Context, q database.Queryer, email string) (Missing, error) {
+	populated, err := s.users.Any(ctx, q)
+	if err != nil {
+		return Missing{}, err
+	}
+	if !populated {
+		return Missing{}, nil
+	}
+	return Missing{
+		QQ:    s.settings.Get(settings.QQRequirement) == settings.QQRequired,
+		Email: strings.TrimSpace(email) == "" && s.settings.Bool(settings.RequireEmail),
+	}, nil
 }
 
 // Provision creates the account.
@@ -83,20 +122,12 @@ func (s *Service) Provision(ctx context.Context, tx *database.Tx, in ProvisionIn
 		if err := checkEmail(s.settings, in.Email); err != nil {
 			return user.User{}, err
 		}
-		// A provider has no QQ number to offer and never will, so an instance
-		// that requires one has a choice to make: either these accounts are
-		// exempt, or this way in is closed on that instance. The exemption is
-		// the default and the setting is what closes it — refusing every
-		// provider sign-up is a front door that looks broken, and an operator
-		// who really wants the number from everybody should be choosing that
-		// rather than discovering it.
-		//
-		// Read here with the other registration controls rather than by the
-		// caller, because this is one of them: a second place that decides
-		// who may hold an account is a second set of rules.
-		if s.settings.Get(settings.QQRequirement) == settings.QQRequired &&
-			s.settings.Bool(settings.OAuthRequireQQ) {
-			return user.User{}, user.ErrQQRequired
+		// The same check the sign-up form makes. A provider has none of this
+		// to offer, so by the time a caller reaches here it has either asked
+		// the person or it is about to be refused — and being refused is the
+		// right answer for a caller that did not ask.
+		if err := checkQQ(s.settings, in.QQ); err != nil {
+			return user.User{}, err
 		}
 		if allowed, retryAfter := s.signups.allow(
 			s.settings.Int(settings.SignupsPerMinute, 0),
@@ -113,17 +144,20 @@ func (s *Service) Provision(ctx context.Context, tx *database.Tx, in ProvisionIn
 	if err != nil {
 		return user.User{}, err
 	}
-	// The address is the one thing here somebody else may already hold. The
-	// caller looks first and links instead where it does, so reaching this
-	// with a taken address means the two accounts are not the same person —
-	// the provider's proof is for an address this instance gave away.
-	if strings.TrimSpace(in.Email) != "" {
-		_, emailTaken, _, err := s.users.Exists(ctx, tx, username, in.Email, "")
+	// The address and the number are the two things here somebody else may
+	// already hold. For an address the caller looks first and links instead
+	// where it does, so reaching this with a taken one means the two accounts
+	// are not the same person; a number is simply taken.
+	if strings.TrimSpace(in.Email) != "" || strings.TrimSpace(in.QQ) != "" {
+		_, emailTaken, qqTaken, err := s.users.Exists(ctx, tx, username, in.Email, in.QQ)
 		if err != nil {
 			return user.User{}, err
 		}
 		if emailTaken {
 			return user.User{}, user.ErrEmailTaken
+		}
+		if qqTaken {
+			return user.User{}, user.ErrQQTaken
 		}
 	}
 
@@ -139,6 +173,7 @@ func (s *Service) Provision(ctx context.Context, tx *database.Tx, in ProvisionIn
 	created, err := s.users.Create(ctx, tx, user.CreateInput{
 		Username: username,
 		Email:    in.Email,
+		QQ:       in.QQ,
 		Nickname: in.Nickname,
 		// No password. Not a placeholder and not a random one nobody knows: a
 		// credential that exists is a credential that can be guessed at, and
@@ -149,8 +184,10 @@ func (s *Service) Provision(ctx context.Context, tx *database.Tx, in ProvisionIn
 		Role:         role,
 		GroupID:      groupID,
 		Status:       user.StatusActive,
-		// Nothing to confirm: the address arrived proven or not at all.
-		Unverified:      false,
+		// An address the provider proved needs no link. One somebody typed
+		// into the completion form is held back exactly as the sign-up form
+		// holds one back, because it is exactly as unproven.
+		Unverified:      !first && !in.EmailVerified && s.VerificationRequired(),
 		SignupIP:        in.IP,
 		SignupUserAgent: in.UA,
 	})

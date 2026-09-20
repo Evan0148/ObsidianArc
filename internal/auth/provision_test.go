@@ -197,10 +197,10 @@ func TestProvisionObeysTheRegistrationControls(t *testing.T) {
 	})
 
 	// A provider has no QQ number to offer, so an instance that requires one
-	// either exempts these accounts or closes this way in. Which of the two is
-	// the operator's, and the default is the exemption: refusing every
-	// provider sign-up is a front door that looks broken.
-	t.Run("a required QQ number is exempted unless the operator says otherwise", func(t *testing.T) {
+	// has to ask the person — which is the caller's job, and MissingFor is how
+	// it is told to. Provision itself refuses a caller that did not ask, so
+	// that the rule holds even where somebody forgets.
+	t.Run("a required QQ number", func(t *testing.T) {
 		f := newFixture(t)
 		if _, _, err := f.auth.Register(ctx, RegisterInput{
 			Username: "founder", Password: "a-good-password", QQ: "12345678",
@@ -211,26 +211,86 @@ func TestProvisionObeysTheRegistrationControls(t *testing.T) {
 			t.Fatalf("require qq: %v", err)
 		}
 
-		account, err := provision(t, f, ProvisionInput{Username: "octocat"})
+		missing, err := f.auth.MissingFor(ctx, nil, "cat@example.com")
 		if err != nil {
-			t.Fatalf("provision with the default exemption: %v", err)
+			t.Fatalf("missing: %v", err)
 		}
-		if account.QQ != "" {
-			t.Errorf("qq = %q, want none: a provider has none to give", account.QQ)
-		}
-		// And the form is unaffected — the exemption is about this route, not
-		// about the requirement.
-		if _, _, err := f.auth.Register(ctx, RegisterInput{
-			Username: "typed", Password: "a-good-password",
-		}); !errors.Is(err, user.ErrQQRequired) {
-			t.Errorf("the sign-up form = %v, want it still asking for a QQ number", err)
+		if !missing.QQ || missing.Email || !missing.Any() {
+			t.Errorf("missing = %+v, want the QQ number and nothing else", missing)
 		}
 
-		if err := f.settings.Set(ctx, settings.OAuthRequireQQ, "true"); err != nil {
-			t.Fatalf("close the exemption: %v", err)
+		if _, err := provision(t, f, ProvisionInput{Username: "octocat"}); !errors.Is(err, user.ErrQQRequired) {
+			t.Errorf("provision without asking = %v, want it refused", err)
 		}
-		if _, err := provision(t, f, ProvisionInput{Username: "another"}); !errors.Is(err, user.ErrQQRequired) {
-			t.Errorf("provision = %v, want it refused once the exemption is closed", err)
+		account, err := provision(t, f, ProvisionInput{Username: "octocat", QQ: "87654321"})
+		if err != nil {
+			t.Fatalf("provision with the answer: %v", err)
+		}
+		if account.QQ != "87654321" {
+			t.Errorf("qq = %q, want the one that was given", account.QQ)
+		}
+		// And it is a real number, held to the same rules the form holds one
+		// to: the shape, and nobody else already having it.
+		if _, err := provision(t, f, ProvisionInput{Username: "other", QQ: "87654321"}); !errors.Is(err, user.ErrQQTaken) {
+			t.Errorf("provision with a taken number = %v, want it refused", err)
+		}
+		if _, err := provision(t, f, ProvisionInput{Username: "third", QQ: "nonsense"}); !errors.Is(err, user.ErrInvalidQQ) {
+			t.Errorf("provision with a malformed number = %v, want it refused", err)
+		}
+	})
+
+	// Likewise an address: the provider proved one or it did not, and an
+	// instance that requires one has to ask when it did not.
+	t.Run("a required address", func(t *testing.T) {
+		f := newFixture(t)
+		if _, _, err := f.auth.Register(ctx, RegisterInput{
+			Username: "founder", Email: "founder@example.com", Password: "a-good-password",
+		}); err != nil {
+			t.Fatalf("register: %v", err)
+		}
+		if err := f.settings.Set(ctx, settings.RequireEmail, "true"); err != nil {
+			t.Fatalf("require email: %v", err)
+		}
+
+		missing, err := f.auth.MissingFor(ctx, nil, "")
+		if err != nil {
+			t.Fatalf("missing: %v", err)
+		}
+		if !missing.Email {
+			t.Errorf("missing = %+v, want the address asked for", missing)
+		}
+		// An address the provider proved is not asked for again.
+		if missing, _ := f.auth.MissingFor(ctx, nil, "cat@example.com"); missing.Any() {
+			t.Errorf("missing = %+v, want nothing asked when the provider proved an address", missing)
+		}
+
+		if _, err := provision(t, f, ProvisionInput{Username: "octocat"}); !errors.Is(err, ErrEmailRequired) {
+			t.Errorf("provision without an address = %v, want it refused", err)
+		}
+		if _, err := provision(t, f, ProvisionInput{
+			Username: "octocat", Email: "typed@example.com",
+		}); err != nil {
+			t.Errorf("provision with a typed address: %v", err)
+		}
+	})
+
+	// Nothing is asked of the first account, for the same reason nothing else
+	// applies to it: it is the one that turns an empty instance into an
+	// administered one.
+	t.Run("the first account is asked for nothing", func(t *testing.T) {
+		f := newFixture(t)
+		if err := f.settings.Set(ctx, settings.QQRequirement, settings.QQRequired); err != nil {
+			t.Fatalf("require qq: %v", err)
+		}
+		missing, err := f.auth.MissingFor(ctx, nil, "")
+		if err != nil {
+			t.Fatalf("missing: %v", err)
+		}
+		if missing.Any() {
+			t.Errorf("missing = %+v, want nothing asked of the first account", missing)
+		}
+		if _, err := provision(t, f, ProvisionInput{Username: "founder"}); err != nil {
+			t.Errorf("the first account was refused: %v", err)
 		}
 	})
 

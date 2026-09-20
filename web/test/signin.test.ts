@@ -9,6 +9,7 @@ import { changeLanguage, t } from '../src/composables/useI18n';
 import { safeNext } from '../src/lib/next';
 import { adopt, forget, site, siteInfo } from '../src/stores/session';
 import AuthView from '../src/views/AuthView.vue';
+import CompleteSignupView from '../src/views/CompleteSignupView.vue';
 import ConsentView from '../src/views/ConsentView.vue';
 import AccountSection from '../src/views/settings/AccountSection.vue';
 
@@ -49,6 +50,18 @@ afterEach(() => {
 async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
   await nextTick();
+}
+
+function button(root: ParentNode, label: string): HTMLButtonElement {
+  const found = [...root.querySelectorAll<HTMLButtonElement>('button')]
+    .find((node) => node.textContent?.trim() === label);
+  if (!found) throw new Error(`Button not found: ${label}`);
+  return found;
+}
+
+function type(node: HTMLInputElement, value: string): void {
+  node.value = value;
+  node.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 async function mount(component: Component, props: Record<string, unknown> = {}): Promise<void> {
@@ -356,5 +369,115 @@ describe('letting another site sign somebody in', () => {
     route.query = {};
     await mount(ConsentView);
     expect(host.textContent).toContain(t('consentFailed'));
+  });
+});
+
+// The step a provider sign-in stops at when this server wants something the
+// provider had no way to supply. Nothing exists on the server while this is on
+// screen, which is what makes walking away from it free.
+describe('finishing a sign-up the provider could not', () => {
+  const pending = {
+    provider: 'github',
+    provider_name: 'GitHub',
+    login: 'octocat',
+    email: '',
+    needs: { qq: true, email: false },
+    email_domains: [] as string[],
+    verify_email: false,
+  };
+
+  beforeEach(() => {
+    route.path = '/oauth/complete';
+    Object.defineProperty(window, 'location', {
+      configurable: true, writable: true, value: { href: '' },
+    });
+  });
+
+  it('asks only for what is missing, and says whose sign-in it is', async () => {
+    vi.spyOn(oauthApi, 'fetchPendingSignup').mockResolvedValue(pending);
+    await mount(CompleteSignupView);
+
+    expect(host.textContent).toContain(t('signupCompleteBody', { provider: 'GitHub' }));
+    // Whose it is: without this the page is a stranger asking for a QQ number.
+    expect(host.querySelector('.oa-signup-who')!.textContent).toContain('octocat');
+
+    const labels = [...host.querySelectorAll('.oa-field-label')].map((node) => node.textContent);
+    expect(labels).toContain(t('qq'));
+    expect(labels).not.toContain(t('email'));
+  });
+
+  it('asks for an address instead when that is the missing one', async () => {
+    vi.spyOn(oauthApi, 'fetchPendingSignup').mockResolvedValue({
+      ...pending,
+      needs: { qq: false, email: true },
+      email_domains: ['company.com'],
+    });
+    await mount(CompleteSignupView);
+
+    const labels = [...host.querySelectorAll('.oa-field-label')].map((node) => node.textContent);
+    expect(labels).toContain(t('email'));
+    expect(labels).not.toContain(t('qq'));
+    // And which addresses would be accepted, before it is typed rather than
+    // after it is refused.
+    expect(host.textContent).toContain(t('emailAccepted', { domains: 'company.com' }));
+  });
+
+  it('opens the account and leaves for wherever the server says', async () => {
+    vi.spyOn(oauthApi, 'fetchPendingSignup').mockResolvedValue(pending);
+    const complete = vi.spyOn(oauthApi, 'completeSignup')
+      .mockResolvedValue({ redirect: '/oauth/consent?request=abc' });
+    await mount(CompleteSignupView);
+
+    type(host.querySelector<HTMLInputElement>('input[type="text"]')!, '87654321');
+    button(host, t('signupCompleteSubmit')).click();
+    await settle();
+
+    expect(complete).toHaveBeenCalledWith({ qq: '87654321', email: '' });
+    // A whole navigation, not a route change: the session cookie has just been
+    // set and the application reads the account once, at boot.
+    expect(window.location.href).toBe('/oauth/consent?request=abc');
+  });
+
+  it('refuses to send a number that is not one, without asking the server', async () => {
+    vi.spyOn(oauthApi, 'fetchPendingSignup').mockResolvedValue(pending);
+    const complete = vi.spyOn(oauthApi, 'completeSignup');
+    await mount(CompleteSignupView);
+
+    button(host, t('signupCompleteSubmit')).click();
+    await settle();
+    expect(complete).not.toHaveBeenCalled();
+    expect(host.querySelector('.oa-auth-error')!.textContent).toBe(t('qqRequiredHere'));
+
+    type(host.querySelector<HTMLInputElement>('input[type="text"]')!, 'nonsense');
+    button(host, t('signupCompleteSubmit')).click();
+    await settle();
+    expect(complete).not.toHaveBeenCalled();
+    expect(host.querySelector('.oa-auth-error')!.textContent).toBe(t('qqInvalid'));
+  });
+
+  it('words the server\'s refusal in the reader\'s own language', async () => {
+    const { ApiError } = await import('../src/api/client');
+    vi.spyOn(oauthApi, 'fetchPendingSignup').mockResolvedValue(pending);
+    vi.spyOn(oauthApi, 'completeSignup')
+      .mockRejectedValue(new ApiError(409, 'qq_taken', 'That QQ number is already registered.', {}));
+    await mount(CompleteSignupView);
+
+    type(host.querySelector<HTMLInputElement>('input[type="text"]')!, '87654321');
+    button(host, t('signupCompleteSubmit')).click();
+    await settle();
+
+    expect(host.querySelector('.oa-auth-error')!.textContent).toBe(t('qqTaken'));
+    // Still on the form, with what was typed still in it.
+    expect(host.querySelector<HTMLInputElement>('input[type="text"]')!.value).toBe('87654321');
+  });
+
+  it('says so when the sign-in is no longer in progress', async () => {
+    const { ApiError } = await import('../src/api/client');
+    vi.spyOn(oauthApi, 'fetchPendingSignup')
+      .mockRejectedValue(new ApiError(400, 'bad_request', 'gone', {}));
+    await mount(CompleteSignupView);
+
+    expect(host.textContent).toContain(t('signupCompleteGoneTitle'));
+    expect(host.querySelector('input')).toBeNull();
   });
 });

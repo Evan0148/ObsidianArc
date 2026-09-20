@@ -35,6 +35,28 @@ var (
 	ErrNotConnected = errors.New("oauth: that provider is not connected to this account")
 )
 
+// MoreDetailsNeeded says the sign-in stopped one step short.
+//
+// The instance requires something no provider has to give — a QQ number, or an
+// address where the provider proved none — so the person has to be asked
+// before an account can be opened for them. Nothing has been written when this
+// is returned: the answer is a form, not an apology, and the account is opened
+// by Complete once it comes back.
+type MoreDetailsNeeded struct {
+	Identity Identity
+	Missing  auth.Missing
+}
+
+func (e *MoreDetailsNeeded) Error() string {
+	return "oauth: this sign-in needs details the provider could not supply"
+}
+
+// Details are those answers.
+type Details struct {
+	QQ    string
+	Email string
+}
+
 // credentials names the three settings each provider is configured with.
 //
 // A map rather than a key built out of the provider id, so that the strings
@@ -84,7 +106,33 @@ func (s *Service) Credentials(providerID string) Credentials {
 
 // SignIn resolves a provider's answer to an account, opening one if this
 // instance allows it.
+//
+// It returns MoreDetailsNeeded rather than opening an account that would break
+// one of this instance's registration rules. See resolve.
 func (s *Service) SignIn(ctx context.Context, identity Identity, ip, ua string) (user.User, error) {
+	return s.resolve(ctx, identity, Details{}, true, ip, ua)
+}
+
+// Complete opens the account SignIn stopped short of, with the answers the
+// person has since given.
+//
+// The same resolution runs again from the top rather than picking up where it
+// left off: minutes have passed while a form was being filled in, and in that
+// time the identity may have been connected in another tab, the instance may
+// have closed registration, or somebody else may have taken the address. What
+// was true when the question was asked is not what decides.
+func (s *Service) Complete(
+	ctx context.Context, identity Identity, details Details, ip, ua string,
+) (user.User, error) {
+	return s.resolve(ctx, identity, details, false, ip, ua)
+}
+
+// resolve is both of the above. `ask` is what separates them: the first pass
+// may stop and ask, the second has the answers and must either open the
+// account or be refused.
+func (s *Service) resolve(
+	ctx context.Context, identity Identity, details Details, ask bool, ip, ua string,
+) (user.User, error) {
 	var account user.User
 
 	err := s.db.Tx(ctx, func(tx *database.Tx) error {
@@ -169,12 +217,35 @@ func (s *Service) SignIn(ctx context.Context, identity Identity, ip, ua string) 
 			}
 		}
 
+		// What this instance requires that the provider could not supply. On
+		// the first pass that is a question to go and ask; on the second the
+		// answers are in hand and Provision checks them itself.
+		if ask {
+			missing, err := s.auth.MissingFor(ctx, tx, identity.Email)
+			if err != nil {
+				return err
+			}
+			if missing.Any() {
+				return &MoreDetailsNeeded{Identity: identity, Missing: missing}
+			}
+		}
+
+		// The provider's address when it proved one, and the typed one
+		// otherwise. Which of the two it is decides whether the account
+		// arrives confirmed: a provider's verified address is as good as a
+		// link this server posted, and a typed one is not.
+		address := identity.Email
+		if address == "" {
+			address = strings.TrimSpace(details.Email)
+		}
 		created, err := s.auth.Provision(ctx, tx, auth.ProvisionInput{
-			Username: identity.Login,
-			Email:    identity.Email,
-			Nickname: strings.TrimSpace(identity.Name),
-			IP:       ip,
-			UA:       ua,
+			Username:      identity.Login,
+			Email:         address,
+			EmailVerified: identity.Email != "",
+			QQ:            strings.TrimSpace(details.QQ),
+			Nickname:      strings.TrimSpace(identity.Name),
+			IP:            ip,
+			UA:            ua,
 		})
 		if err != nil {
 			return err
@@ -188,8 +259,26 @@ func (s *Service) SignIn(ctx context.Context, identity Identity, ip, ua string) 
 	if err != nil {
 		return user.User{}, err
 	}
+
+	// An address somebody typed is unconfirmed, and this is the instance that
+	// asked for it — so the link goes out the way it does for the sign-up
+	// form. Best effort: the account exists either way, and there is a resend
+	// button behind the banner.
+	if !account.EmailVerified && account.Email != "" {
+		_ = s.auth.Resend(ctx, s.settings.Get(settings.SiteName), account.ID)
+	}
 	return account, nil
 }
+
+// The two things the completion form says about an address, for the same
+// reason the sign-up form says them: which addresses would be accepted, and
+// whether a link is coming. Read from the settings here rather than by the
+// handler, so there is one place that knows where they live.
+func (s *Service) emailDomains() []string {
+	return auth.ParseDomains(s.settings.Get(settings.EmailDomains))
+}
+
+func (s *Service) verificationRequired() bool { return s.auth.VerificationRequired() }
 
 // Connect adds a provider to an account that is already signed in.
 func (s *Service) Connect(ctx context.Context, userID string, identity Identity) error {

@@ -26,6 +26,9 @@ const statePath = "/api/auth/oauth"
 type Handlers struct {
 	service *Service
 	stamp   *stamp
+	// A second signature for the half-finished sign-ups, derived separately
+	// so one kind of ticket can never be presented as the other.
+	pending *stamp
 
 	// Whether the state cookie is marked Secure. Follows the session
 	// cookie's own setting, so a plain-HTTP development instance still works
@@ -44,7 +47,11 @@ type Handlers struct {
 }
 
 func NewHandlers(service *Service, secret []byte) *Handlers {
-	return &Handlers{service: service, stamp: newStamp(secret)}
+	return &Handlers{
+		service: service,
+		stamp:   newStamp(secret),
+		pending: newPendingStamp(secret),
+	}
 }
 
 func (h *Handlers) Routes(mux *http.ServeMux) {
@@ -58,6 +65,11 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 			auth.RequireUser(httpx.Wrap(handler)).ServeHTTP(w, r)
 		}
 	}
+	// Public, and necessarily so: the person filling this in has no account
+	// yet — that is the whole point of the form. What stands in for a session
+	// is the signed cookie the callback left behind.
+	mux.HandleFunc("GET /api/auth/oauth/signup", httpx.Wrap(h.pendingSignup))
+	mux.HandleFunc("POST /api/auth/oauth/signup", httpx.Wrap(h.completeSignup))
 	mux.HandleFunc("GET /api/auth/oauth/connections", protected(h.connections))
 	mux.HandleFunc("DELETE /api/auth/oauth/connections/{provider}", protected(h.disconnect))
 }
@@ -170,6 +182,14 @@ func (h *Handlers) callback(w http.ResponseWriter, r *http.Request) {
 
 	account, err := h.service.SignIn(r.Context(), identity, h.address(r), r.UserAgent())
 	if err != nil {
+		// This instance wants something the provider had no way to supply.
+		// Nothing has been written; the person is sent to a form and the
+		// account is opened when it comes back.
+		var more *MoreDetailsNeeded
+		if errors.As(err, &more) {
+			h.askForDetails(w, r, more.Identity, value.Next)
+			return
+		}
 		h.fail(w, r, false, signInFailure(err))
 		return
 	}
@@ -185,6 +205,111 @@ func (h *Handlers) callback(w http.ResponseWriter, r *http.Request) {
 		next = "/"
 	}
 	http.Redirect(w, r, next, http.StatusFound)
+}
+
+// askForDetails parks the sign-in and sends the browser to the form.
+func (h *Handlers) askForDetails(w http.ResponseWriter, r *http.Request, identity Identity, next string) {
+	ticket, err := h.pending.issuePending(pending{
+		Provider: identity.Provider,
+		Subject:  identity.Subject,
+		Login:    identity.Login,
+		Name:     identity.Name,
+		Email:    identity.Email,
+		Next:     safeNext(next),
+		Expiry:   time.Now().Add(pendingTTL).UnixMilli(),
+	})
+	if err != nil {
+		h.fail(w, r, false, "failed")
+		return
+	}
+	h.setPending(w, ticket)
+	http.Redirect(w, r, "/oauth/complete", http.StatusFound)
+}
+
+// pendingSignup is what the form reads before it draws: who the provider said
+// this is, and what this instance still wants.
+func (h *Handlers) pendingSignup(w http.ResponseWriter, r *http.Request) error {
+	held, err := h.heldSignup(r)
+	if err != nil {
+		return err
+	}
+	missing, err := h.service.auth.MissingFor(r.Context(), nil, held.Email)
+	if err != nil {
+		return httpx.Internal(err)
+	}
+
+	name := ""
+	if provider := ByID(held.Provider); provider != nil {
+		name = provider.Name
+	}
+	return httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"provider":      held.Provider,
+		"provider_name": name,
+		// What the provider calls them, so the form can say whose sign-in
+		// this is finishing rather than asking a stranger for their QQ number.
+		"login": held.Login,
+		"email": held.Email,
+		"needs": map[string]any{"qq": missing.QQ, "email": missing.Email},
+		// The same two things the sign-up form says about an address, for the
+		// same reason: they are worth knowing before typing rather than after.
+		"email_domains": h.service.emailDomains(),
+		"verify_email":  h.service.verificationRequired(),
+	})
+}
+
+func (h *Handlers) completeSignup(w http.ResponseWriter, r *http.Request) error {
+	held, err := h.heldSignup(r)
+	if err != nil {
+		return err
+	}
+
+	var body struct {
+		QQ    string `json:"qq"`
+		Email string `json:"email"`
+	}
+	if err := httpx.DecodeJSON(w, r, &body, 8*1024); err != nil {
+		return err
+	}
+
+	account, err := h.service.Complete(r.Context(), Identity{
+		Provider: held.Provider,
+		Subject:  held.Subject,
+		Login:    held.Login,
+		Name:     held.Name,
+		Email:    held.Email,
+	}, Details{QQ: body.QQ, Email: body.Email}, h.address(r), r.UserAgent())
+	if err != nil {
+		return completionError(err)
+	}
+
+	token, err := h.service.auth.StartSession(r.Context(), account, h.address(r), r.UserAgent())
+	if err != nil {
+		return httpx.Internal(err)
+	}
+	h.clearPending(w)
+	h.service.auth.SetCookie(w, token)
+
+	next := held.Next
+	if next == "" {
+		next = "/"
+	}
+	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"redirect": next})
+}
+
+// heldSignup reads the cookie the callback left behind. An absent or expired
+// one is the ordinary case of somebody opening the page later, not an error
+// worth a stack trace.
+func (h *Handlers) heldSignup(r *http.Request) (pending, error) {
+	stale := httpx.BadRequest("That sign-in is no longer in progress. Start again from the sign-in page.")
+	cookie, err := r.Cookie(pendingCookie)
+	if err != nil {
+		return pending{}, stale
+	}
+	held, err := h.pending.readPending(cookie.Value)
+	if err != nil {
+		return pending{}, stale
+	}
+	return held, nil
 }
 
 // finishLink attaches a provider to the account that started the flow.
@@ -231,6 +356,53 @@ func providerFailure(err error) string {
 		return "unavailable"
 	default:
 		return "provider"
+	}
+}
+
+// completionError words the refusals the form can do something about. They
+// are the sign-up form's own refusals, because this is the sign-up form with
+// the parts a provider already answered taken out.
+func completionError(err error) error {
+	var throttled *auth.SignupThrottleError
+	if errors.As(err, &throttled) {
+		return httpx.TooManyRequests("signups_throttled",
+			"Too many accounts have been created just now. Try again shortly.").
+			WithDetails(map[string]any{
+				"retry_after_seconds": int(throttled.RetryAfter.Seconds()) + 1,
+			})
+	}
+	var domain *auth.EmailDomainError
+	if errors.As(err, &domain) {
+		return httpx.BadRequestCode("email_domain", "%s", domain.Error()).
+			WithDetails(map[string]any{"allowed_domains": domain.Allowed})
+	}
+	switch {
+	case errors.Is(err, user.ErrQQRequired):
+		return httpx.BadRequestCode("qq_required", "A QQ number is required on this server.")
+	case errors.Is(err, user.ErrInvalidQQ):
+		return httpx.BadRequestCode("invalid_qq", "That QQ number is not valid.")
+	case errors.Is(err, user.ErrQQTaken):
+		return httpx.Conflict("qq_taken", "That QQ number is already registered.")
+	case errors.Is(err, user.ErrEmailTaken):
+		return httpx.Conflict("email_taken", "That email address is already registered.")
+	case errors.Is(err, user.ErrInvalidEmail):
+		return httpx.BadRequestCode("invalid_email", "That email address is not valid.")
+	case errors.Is(err, auth.ErrEmailRequired):
+		return httpx.BadRequestCode("email_required", "An email address is required on this server.")
+	case errors.Is(err, auth.ErrRegistrationClosed):
+		return httpx.ForbiddenCode("registration_closed", "Registration is closed on this server.")
+	case errors.Is(err, ErrSignupClosed):
+		return httpx.ForbiddenCode("signup_closed",
+			"This server does not open accounts from a provider sign-in.")
+	case errors.Is(err, ErrAddressTaken):
+		return httpx.Conflict("address_taken", "An account here already uses that address.")
+	case errors.Is(err, auth.ErrSignupIPBlocked):
+		return httpx.ForbiddenCode("signup_ip_blocked", "You have been blocked from registering.")
+	case errors.Is(err, auth.ErrAccountDisabled):
+		return httpx.ForbiddenCode("account_banned",
+			"This account has been banned. Contact an administrator.")
+	default:
+		return httpx.Internal(err)
 	}
 }
 

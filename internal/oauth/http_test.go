@@ -2,6 +2,8 @@ package oauth
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/auth"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/settings"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/user"
 )
 
@@ -333,4 +336,246 @@ func TestTheAccountsOwnScreenNeedsASession(t *testing.T) {
 	if recorder.Code != http.StatusUnauthorized {
 		t.Errorf("disconnect without a session = %d, want 401", recorder.Code)
 	}
+}
+
+// --- the step where this server asks for what the provider could not give ------
+
+// populate registers the first account, so that the registration controls
+// apply to everything after it — none of them apply to the first.
+func populate(t *testing.T, f *fixture) {
+	t.Helper()
+	if _, _, err := f.auth.Register(context.Background(), auth.RegisterInput{
+		Username: "founder", Email: "founder@example.com", QQ: "12345678",
+		Password: "a-good-password",
+	}); err != nil {
+		t.Fatalf("register the first account: %v", err)
+	}
+}
+
+func require(t *testing.T, f *fixture, key, value string) {
+	t.Helper()
+	if err := f.settings.Set(context.Background(), key, value); err != nil {
+		t.Fatalf("set %s: %v", key, err)
+	}
+}
+
+// A GitHub account has no QQ number and never will. An instance that requires
+// one used to be a wall; now it is a question, and nothing is written until it
+// is answered.
+func TestASignInThatNeedsMoreStopsAndAsksRatherThanRefusing(t *testing.T) {
+	f := newFixture(t)
+	populate(t, f)
+	require(t, f, settings.QQRequirement, settings.QQRequired)
+	f.configure(t, "github")
+
+	stub(t, "github", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"access_token":"a-token"}`))
+	}, Identity{Subject: "4218", Login: "octocat", Name: "The Octocat"})
+	_, mux := handlers(t, f)
+
+	start := get(mux, "/api/auth/oauth/start/github", nil, nil)
+	state := start.Result().Cookies()[0]
+	target, _ := url.Parse(start.Header().Get("Location"))
+	nonce := target.Query().Get("state")
+
+	back := get(mux, "/api/auth/oauth/callback/github?code=c&state="+nonce,
+		[]*http.Cookie{state}, nil)
+	if location := back.Header().Get("Location"); location != "/oauth/complete" {
+		t.Fatalf("callback = %q, want the form that asks", location)
+	}
+	// Nothing was written, and nobody was signed in.
+	if total, _ := f.users.Count(context.Background(), nil); total != 1 {
+		t.Fatalf("accounts = %d, want only the one that existed", total)
+	}
+	for _, cookie := range back.Result().Cookies() {
+		if cookie.Name == "obsidian_session" && cookie.Value != "" {
+			t.Error("a session was issued before the account existed")
+		}
+	}
+
+	var ticket *http.Cookie
+	for _, cookie := range back.Result().Cookies() {
+		if cookie.Name == pendingCookie {
+			ticket = cookie
+		}
+	}
+	if ticket == nil || !ticket.HttpOnly {
+		t.Fatalf("pending cookie = %+v, want one the page cannot read", ticket)
+	}
+
+	// The form reads what is being asked for, and whose sign-in it is.
+	asked := get(mux, "/api/auth/oauth/signup", []*http.Cookie{ticket}, nil)
+	if asked.Code != http.StatusOK {
+		t.Fatalf("signup = %d %s", asked.Code, asked.Body.String())
+	}
+	body := asked.Body.String()
+	for _, want := range []string{`"qq":true`, `"email":false`, `"login":"octocat"`, `"provider":"github"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("signup = %s, want %s in it", body, want)
+		}
+	}
+
+	// Answered: the account is opened and signed in.
+	done := postJSON(mux, "/api/auth/oauth/signup",
+		map[string]any{"qq": "87654321", "email": ""}, []*http.Cookie{ticket})
+	if done.Code != http.StatusOK {
+		t.Fatalf("complete = %d %s", done.Code, done.Body.String())
+	}
+	if !strings.Contains(done.Body.String(), `"redirect":"/"`) {
+		t.Errorf("complete = %s, want somewhere to go", done.Body.String())
+	}
+
+	var session *http.Cookie
+	for _, cookie := range done.Result().Cookies() {
+		if cookie.Name == "obsidian_session" {
+			session = cookie
+		}
+		if cookie.Name == pendingCookie && cookie.MaxAge >= 0 {
+			t.Error("the pending cookie was left behind for a second use")
+		}
+	}
+	if session == nil || session.Value == "" {
+		t.Fatal("no session was issued")
+	}
+	account, _, err := f.auth.Authenticate(context.Background(), session.Value)
+	if err != nil {
+		t.Fatalf("the session does not resolve: %v", err)
+	}
+	if account.Username != "octocat" || account.QQ != "87654321" {
+		t.Errorf("account = %+v, want the provider's name and the number that was typed", account)
+	}
+	// And the provider is connected to it, so the next sign-in asks nothing.
+	if linked, err := f.store.Account(context.Background(), nil, "github", "4218"); err != nil || linked != account.ID {
+		t.Errorf("identity = %q (%v), want it connected to the new account", linked, err)
+	}
+}
+
+// The cookie is the only thing standing in for a session here, so it has to be
+// worth exactly as much as one.
+func TestTheHeldSignUpIsOnlyBelievedWhenThisServerSignedIt(t *testing.T) {
+	f := newFixture(t)
+	populate(t, f)
+	require(t, f, settings.QQRequirement, settings.QQRequired)
+	_, mux := handlers(t, f)
+
+	cases := map[string][]*http.Cookie{
+		"no cookie at all": nil,
+		"a forged one":     {{Name: pendingCookie, Value: "forged.value"}},
+		"an empty one":     {{Name: pendingCookie, Value: ""}},
+		"one from nowhere": {{Name: pendingCookie, Value: base64.RawURLEncoding.EncodeToString([]byte(`{"p":"github","s":"4218"}`)) + ".tag"}},
+	}
+	for name, cookies := range cases {
+		if asked := get(mux, "/api/auth/oauth/signup", cookies, nil); asked.Code != http.StatusBadRequest {
+			t.Errorf("%s: read = %d, want it refused", name, asked.Code)
+		}
+		done := postJSON(mux, "/api/auth/oauth/signup", map[string]any{"qq": "87654321"}, cookies)
+		if done.Code != http.StatusBadRequest {
+			t.Errorf("%s: complete = %d, want it refused", name, done.Code)
+		}
+	}
+	if total, _ := f.users.Count(context.Background(), nil); total != 1 {
+		t.Errorf("accounts = %d, want none opened by an unsigned ticket", total)
+	}
+}
+
+// The form is the sign-up form's last field, so it is refused by the sign-up
+// form's rules — and each refusal is coded, because the screen says these in
+// the reader's own language.
+func TestTheCompletionFormIsHeldToTheSignUpRules(t *testing.T) {
+	f := newFixture(t)
+	populate(t, f)
+	require(t, f, settings.QQRequirement, settings.QQRequired)
+	f.configure(t, "github")
+	stub(t, "github", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"access_token":"a-token"}`))
+	}, Identity{Subject: "4218", Login: "octocat"})
+	_, mux := handlers(t, f)
+
+	ticket := pendingTicket(t, mux)
+	for _, testCase := range []struct {
+		name   string
+		qq     string
+		status int
+		code   string
+	}{
+		{"nothing at all", "", http.StatusBadRequest, "qq_required"},
+		{"not a number", "nonsense", http.StatusBadRequest, "invalid_qq"},
+		{"somebody else's", "12345678", http.StatusConflict, "qq_taken"},
+	} {
+		done := postJSON(mux, "/api/auth/oauth/signup",
+			map[string]any{"qq": testCase.qq}, []*http.Cookie{ticket})
+		if done.Code != testCase.status || !strings.Contains(done.Body.String(), testCase.code) {
+			t.Errorf("%s = %d %s, want %d %s",
+				testCase.name, done.Code, done.Body.String(), testCase.status, testCase.code)
+		}
+	}
+	if total, _ := f.users.Count(context.Background(), nil); total != 1 {
+		t.Errorf("accounts = %d, want none opened by a refused form", total)
+	}
+}
+
+// An address is the other thing a provider may not have. The one typed here is
+// unproven — the provider vouched for nothing — so it must not adopt an
+// account that already holds it.
+func TestATypedAddressIsNotProofOfAnything(t *testing.T) {
+	f := newFixture(t)
+	populate(t, f)
+	require(t, f, settings.RequireEmail, "true")
+	f.configure(t, "github")
+	stub(t, "github", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"access_token":"a-token"}`))
+	}, Identity{Subject: "4218", Login: "impostor"})
+	_, mux := handlers(t, f)
+
+	ticket := pendingTicket(t, mux)
+	asked := get(mux, "/api/auth/oauth/signup", []*http.Cookie{ticket}, nil)
+	if !strings.Contains(asked.Body.String(), `"email":true`) {
+		t.Fatalf("signup = %s, want the address asked for", asked.Body.String())
+	}
+
+	// The founder's address, typed by somebody who is not the founder.
+	done := postJSON(mux, "/api/auth/oauth/signup",
+		map[string]any{"email": "founder@example.com"}, []*http.Cookie{ticket})
+	if done.Code != http.StatusConflict || !strings.Contains(done.Body.String(), "email_taken") {
+		t.Fatalf("complete = %d %s, want it refused", done.Code, done.Body.String())
+	}
+	// And the account it belongs to is untouched: no identity was connected.
+	if _, err := f.store.Account(context.Background(), nil, "github", "4218"); err != ErrNoIdentity {
+		t.Error("a typed address connected an identity to somebody else's account")
+	}
+
+	if fresh := postJSON(mux, "/api/auth/oauth/signup",
+		map[string]any{"email": "mine@example.com"}, []*http.Cookie{ticket}); fresh.Code != http.StatusOK {
+		t.Fatalf("complete with an address of their own = %d %s", fresh.Code, fresh.Body.String())
+	}
+}
+
+// pendingTicket runs a sign-in as far as the question and hands back the
+// cookie it parked.
+func pendingTicket(t *testing.T, mux *http.ServeMux) *http.Cookie {
+	t.Helper()
+	start := get(mux, "/api/auth/oauth/start/github", nil, nil)
+	state := start.Result().Cookies()[0]
+	target, _ := url.Parse(start.Header().Get("Location"))
+	back := get(mux, "/api/auth/oauth/callback/github?code=c&state="+target.Query().Get("state"),
+		[]*http.Cookie{state}, nil)
+	for _, cookie := range back.Result().Cookies() {
+		if cookie.Name == pendingCookie {
+			return cookie
+		}
+	}
+	t.Fatalf("the callback parked no sign-up: %q", back.Header().Get("Location"))
+	return nil
+}
+
+func postJSON(mux *http.ServeMux, path string, body any, cookies []*http.Cookie) *httptest.ResponseRecorder {
+	encoded, _ := json.Marshal(body)
+	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(string(encoded)))
+	request.Header.Set("Content-Type", "application/json")
+	for _, cookie := range cookies {
+		request.AddCookie(cookie)
+	}
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+	return recorder
 }

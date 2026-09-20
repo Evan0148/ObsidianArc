@@ -129,6 +129,14 @@
   text-decoration: none;
 }
 
+/* Whose sign-in the completion form is finishing. The connection row from the
+   settings screen, reused: it is the same object — a provider account beside
+   an account here — and the only difference is that this one does not exist
+   yet. */
+.oa-signup-who {
+  margin-bottom: 18px;
+}
+
 /* --- the consent screen ------------------------------------------------------
 
    Somebody who has never seen this interface lands here from another site and

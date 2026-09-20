@@ -53,6 +53,38 @@ export function signInURL(provider: string, options: { link?: boolean; next?: st
   return `/api/auth/oauth/start/${encodeURIComponent(provider)}${suffix ? `?${suffix}` : ''}`;
 }
 
+/**
+ * A sign-in that stopped to ask something.
+ *
+ * The provider has said who this is; what is missing is a QQ number or an
+ * address it could not supply. Nothing exists on the server yet — the identity
+ * is held in a signed cookie, and the account is opened by completeSignup.
+ */
+export interface PendingSignup {
+  provider: string;
+  provider_name: string;
+  /** What the provider calls them, so the form can say whose sign-in this is. */
+  login: string;
+  /** Only ever an address the provider proved. Empty otherwise. */
+  email: string;
+  needs: { qq: boolean; email: boolean };
+  email_domains: string[];
+  /** Whether a typed address will be sent a confirmation link. */
+  verify_email: boolean;
+}
+
+export function fetchPendingSignup(): Promise<PendingSignup> {
+  return api.get<PendingSignup>('/api/auth/oauth/signup');
+}
+
+/** Opens the account, and answers with where to go next. */
+export function completeSignup(details: { qq?: string; email?: string }): Promise<{ redirect: string }> {
+  return api.post<{ redirect: string }>('/api/auth/oauth/signup', {
+    qq: details.qq ?? '',
+    email: details.email ?? '',
+  });
+}
+
 export function fetchConnections(): Promise<OAuthConnections> {
   return api.get<OAuthConnections>('/api/auth/oauth/connections');
 }

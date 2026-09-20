@@ -9,12 +9,12 @@ import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { safeNext } from '@/lib/next';
 import { login, register, type Account } from '@/api/auth';
-import { ApiError } from '@/api/client';
 import { signInURL } from '@/api/oauth';
 import OaField from '@/components/OaField.vue';
 import OaThemeToggle from '@/components/OaThemeToggle.vue';
 import OaTurnstile from '@/components/OaTurnstile.vue';
 import { t, type StringKey } from '@/composables/useI18n';
+import { refusalText } from '@/lib/refusal';
 import { IconGithub, IconGoogle, IconKey, IconSpark, type OaIcon } from '@/icons';
 import { adopt, siteInfo } from '@/stores/session';
 
@@ -170,54 +170,12 @@ async function onSubmit(): Promise<void> {
     // taken username as much as a failed challenge — leaves a spent token
     // behind that would fail the next attempt on its own.
     guard.value?.reset();
-    error.value = refusal(failure);
+    error.value = refusalText(failure, domains.value);
     busy.value = false;
     buttonLabel.value = '';
     await nextTick();
     passwordField.value?.focus();
     passwordField.value?.select();
-  }
-}
-
-/**
- * The refusals worth saying in the reader's own language. Everything else is
- * a server message with nothing to add.
- */
-function refusal(failure: unknown): string {
-  if (!(failure instanceof ApiError)) return String(failure);
-  switch (failure.code) {
-    case 'account_banned':
-      return t('accountBanned');
-    case 'signup_ip_blocked':
-      return t('signupBlocked');
-    case 'signup_refused': {
-      // The operator's own words when they wrote any — a way to appeal is the
-      // whole reason to write them — and a plain sentence otherwise.
-      const notice = failure.details['notice'];
-      return typeof notice === 'string' && notice.trim() ? notice : t('signupRefused');
-    }
-    case 'challenge_failed':
-      return t('challengeFailed');
-    case 'challenge_unavailable':
-      return t('challengeUnavailable');
-    case 'qq_required':
-      return t('qqRequiredHere');
-    case 'invalid_qq':
-      return t('qqInvalid');
-    case 'qq_taken':
-      return t('qqTaken');
-    case 'signups_throttled':
-      return t('signupsThrottled', { count: Number(failure.details['retry_after_seconds'] ?? 60) });
-    default: {
-      const allowed = failure.details['allowed_domains'];
-      if (Array.isArray(allowed) && allowed.length) {
-        return t('emailDomainRejected', { domains: allowed.join(', ') });
-      }
-      if (domains.value.length && failure.status === 400 && /email/i.test(failure.message)) {
-        return t('emailDomainRejected', { domains: domains.value.join(', ') });
-      }
-      return failure.message;
-    }
   }
 }
 </script>

@@ -217,20 +217,20 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
 | Binary (SQLite + embedded SPA) | < 30 MB | 20.4 MB (16.7 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 135 kB | 159.47 kB to open the chat (134.53 JS + 24.94 CSS) |
+| Frontend, on the wire | < 135 kB | 160.35 kB to open the chat (135.40 JS + 24.95 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
 
 The bundle and binaries were remeasured on 2026-09-20 (UTC), after the two
 halves of third-party sign-in: signing in here with a GitHub or Google
 account, and letting another site sign somebody in with an account from here.
-The chat payload is 24.47 kB above the existing target; that target is
-unchanged. It grew by 5.85 kB over the figure recorded the day before, and the
+The chat payload is 25.35 kB above the existing target; that target is
+unchanged. It grew by 6.73 kB over the figure recorded the day before, and the
 whole of that is on the first paint by necessity — the provider buttons live
 on the sign-in card, the consent screen is a page somebody lands on before
 they have a session, and the strings for both are English, which is the one
 dictionary this project deliberately does not split. The backoffice chunk took
-the operator's half and grew by 2.33 kB; the Chinese dictionary grew by 1.98
+the operator's half and grew by 2.25 kB; the Chinese dictionary grew by 2.01
 kB, which nobody reading in English fetches.
 
 The binary grew by 360 kB, all of it `crypto/rsa`, `crypto/x509` and
@@ -258,7 +258,7 @@ dependency — but it is a megabyte of code that only runs when
 Binary sizes use Go 1.27.0,
 Linux amd64, `-trimpath -ldflags "-s -w"`; transfer sizes are gzip-compressed
 JS and CSS in decimal kB, with totals rounded after summing. Binary sizes
-are decimal MB (20,398,240 bytes with SQLite; 16,687,264 bytes without it).
+are decimal MB (20,426,912 bytes with SQLite; 16,720,032 bytes without it).
 
 The target moved with the interface. It was < 80 kB while the frontend was
 hand-written DOM calls, and 71.6 kB against it; adopting Vue put roughly 45 kB
@@ -275,10 +275,10 @@ What each reader actually downloads:
 
 | | gzipped |
 | --- | --- |
-| English, not an administrator | 159.47 kB |
-| Chinese, not an administrator | 186.39 kB |
-| …and a conversation containing a formula | 190.04 kB |
-| Chinese administrator, backoffice open | 255.79 kB |
+| English, not an administrator | 160.35 kB |
+| Chinese, not an administrator | 187.30 kB |
+| …and a conversation containing a formula | 190.95 kB |
+| Chinese administrator, backoffice open | 256.62 kB |
 
 Route-level splitting would shave the first paint further and is deliberately
 switched off for everything but the backoffice: /settings, /keys, /usage and

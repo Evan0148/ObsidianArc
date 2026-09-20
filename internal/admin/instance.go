@@ -166,7 +166,6 @@ var writableSettings = map[string]bool{
 	settings.OAuthGoogleSecret:         true,
 	settings.OAuthAllowSignup:          true,
 	settings.OAuthLinkByEmail:          true,
-	settings.OAuthRequireQQ:            true,
 	settings.SignupReview:              true,
 	settings.SignupReviewModel:         true,
 	settings.SignupReviewMode:          true,

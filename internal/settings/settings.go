@@ -87,14 +87,6 @@ const (
 	// makes "sign in with Google" work for the people who registered with a
 	// password months ago, and the address is proven before it is believed.
 	OAuthLinkByEmail = "oauth.link_by_email"
-	// Whether an account opened through a provider must supply a QQ number on
-	// an instance that requires one. Off, because a provider has no QQ number
-	// to offer and never will: with it on, every provider sign-up on such an
-	// instance is refused, which is a front door that looks broken rather than
-	// a rule being enforced. An operator who wants the number from everybody
-	// turns it on and those sign-ups stop, which is the honest version of the
-	// same policy.
-	OAuthRequireQQ = "oauth.require_qq"
 
 	// Whether a reader is told which operator answered their report. On by
 	// default: an answer signed by a person reads as one, and the people
@@ -286,7 +278,6 @@ var Defaults = map[string]string{
 	OAuthGoogleSecret:  "",
 	OAuthAllowSignup:   "true",
 	OAuthLinkByEmail:   "true",
-	OAuthRequireQQ:     "false",
 	SignupReview:       "false",
 	SignupReviewModel:  "",
 	// Loose, normal or strict. Normal refuses what reads as generated and

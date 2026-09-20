@@ -28,6 +28,7 @@ import { currentUser, isAdmin, canAdmin, siteInfo } from '@/stores/session';
 import AboutPanel from '@/views/AboutPanel.vue';
 import ArchivePanel from '@/views/ArchivePanel.vue';
 import AuthView from '@/views/AuthView.vue';
+import CompleteSignupView from '@/views/CompleteSignupView.vue';
 import ConsentView from '@/views/ConsentView.vue';
 import FeedbackPanel from '@/views/FeedbackPanel.vue';
 import ImageLabPanel from '@/views/ImageLabPanel.vue';
@@ -49,6 +50,11 @@ const routes: RouteRecordRaw[] = [
   // than a panel, for the reason the sign-in card is one: there is no chat
   // behind it, and it is a decision rather than a task.
   { path: '/oauth/consent', component: ConsentView, meta: { auth: true } },
+  // The step a provider sign-in stops at when this server wants something the
+  // provider could not supply. Public by necessity: the person filling it in
+  // has no account yet, which is the whole point of the form. What stands in
+  // for a session is the signed cookie the callback left behind.
+  { path: '/oauth/complete', component: CompleteSignupView },
 
   {
     path: '/',

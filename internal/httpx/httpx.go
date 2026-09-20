@@ -67,6 +67,16 @@ func BadRequest(format string, args ...any) *Error {
 	return newError(http.StatusBadRequest, "bad_request", fmt.Sprintf(format, args...))
 }
 
+// BadRequestCode is BadRequest with a code the client can switch on.
+//
+// The plain one carries "bad_request", which is true and useless: a refusal
+// the interface has to word in the reader's own language needs to be told
+// apart from the others, and a sentence written here is English on a Chinese
+// screen.
+func BadRequestCode(code, format string, args ...any) *Error {
+	return newError(http.StatusBadRequest, code, fmt.Sprintf(format, args...))
+}
+
 func Unauthorized(message string) *Error {
 	return newError(http.StatusUnauthorized, "unauthorized", message)
 }
