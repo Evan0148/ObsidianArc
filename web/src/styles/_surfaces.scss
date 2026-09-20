@@ -2046,6 +2046,15 @@
   outline: none;
 }
 
+/* Keep import choices together without making a second panel or crowding
+   the one-time secret; a single column also fits the narrow keys drawer. */
+.oa-key-import {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-block: 8px;
+}
+
 .oa-key-edit-actions {
   display: flex;
   justify-content: flex-end;

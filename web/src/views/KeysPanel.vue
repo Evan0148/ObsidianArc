@@ -10,7 +10,7 @@
 // restrictions, revoking — is housekeeping on rows that no longer contain a
 // secret.
 
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ApiError, api } from '@/api/client';
 import { createKey, deleteKey, listKeys, updateKey, type ApiKey } from '@/api/keys';
@@ -26,6 +26,7 @@ import OaTurnstile from '@/components/OaTurnstile.vue';
 import type { ListItem } from '@/components/list-items';
 import { t, type StringKey } from '@/composables/useI18n';
 import { IconCheck, IconCopy, IconGear, IconPause, IconPlay, IconTrash } from '@/icons';
+import { openCCSwitch, type CCSwitchApp } from '@/lib/cc-switch';
 import { absoluteTime, relativeTime } from '@/lib/format';
 import { currentUser, siteInfo } from '@/stores/session';
 
@@ -93,6 +94,81 @@ const endpoint = `${window.location.origin}/v1`;
 const usableModels = computed(() => models.value.filter((model) => model.usable !== false));
 const modelItems = computed<ListItem[]>(() =>
   usableModels.value.map((model) => ({ value: model.id, label: model.display_name || model.id })));
+
+const importApp = ref<CCSwitchApp>('claude');
+const importModel = ref('');
+const importError = ref(false);
+const editToken = ref('');
+const importKey = computed(() => issued.value?.key ?? editing.value);
+const editDirty = computed(() => {
+  const row = editing.value;
+  if (!row) return false;
+  const savedModels = modelIDsFor(row);
+  return editName.value.trim() !== row.name || editLifetime.value !== 'keep' ||
+    (editStatus.value === 'paused') !== row.disabled ||
+    editModels.value.length !== savedModels.length ||
+    editModels.value.some((id) => !savedModels.includes(id));
+});
+const editTokenValid = computed(() => {
+  const token = editToken.value.trim();
+  return /^sk-oa-[A-Za-z0-9_-]{43}$/.test(token) && !!editing.value &&
+    token.startsWith(editing.value.prefix);
+});
+const importBlocked = computed(() => {
+  const row = importKey.value;
+  if (!row) return '';
+  if (editing.value && editDirty.value) return t('keyCCSwitchSaveFirst');
+  if (!enabled.value || row.disabled || expired(row)) return t('keyCCSwitchInactive');
+  return '';
+});
+const importChoices = computed(() => {
+  if (!importKey.value) return [];
+  const allowed = modelIDsFor(importKey.value);
+  return usableModels.value
+    .filter((model) => !allowed.length || allowed.includes(model.id))
+    .map((model) => ({ value: model.id, label: model.display_name || model.id }));
+});
+
+// Synchronous, because the token belongs to the row that was open: an async
+// flush would leave one key's secret sitting in the field while the next key's
+// form is already on screen.
+watch(editing, () => {
+  editToken.value = '';
+  importApp.value = 'claude';
+  importModel.value = importChoices.value[0]?.value ?? '';
+  importError.value = false;
+}, { flush: 'sync' });
+
+watch(importChoices, (choices) => {
+  if (!choices.some((choice) => choice.value === importModel.value)) {
+    importModel.value = choices[0]?.value ?? '';
+  }
+});
+
+function importToCCSwitch(): void {
+  const row = importKey.value;
+  if (!row || importBlocked.value || !importChoices.value.some((choice) => choice.value === importModel.value)) return;
+  if (editing.value && !editTokenValid.value) return;
+  importError.value = false;
+  try {
+    openCCSwitch({
+      app: importApp.value,
+      origin: window.location.origin,
+      name: `${siteInfo.value.name} · ${row.name}`,
+      token: issued.value?.token ?? editToken.value.trim(),
+      model: importModel.value,
+    });
+  } catch {
+    // Browser errors can include the URL, which contains the secret.
+    importError.value = true;
+  }
+}
+
+function dismissIssued(): void {
+  issued.value = null;
+  importApp.value = 'claude';
+  importError.value = false;
+}
 
 function itemsFor(selected: string[]): ListItem[] {
   const items = [...modelItems.value];
@@ -269,87 +345,134 @@ onMounted(() => void refresh());
     :error="error"
     @close="router.push('/')"
   >
-    <!-- The one moment the token exists. -->
-    <section v-if="issued" class="oa-key-issued oa-key-issued-animated">
-      <h3 class="oa-panel-section-title">{{ t('keyCreated', { name: issued.key.name }) }}</h3>
-      <p class="oa-key-warning">{{ t('keyShownOnce') }}</p>
+    <!-- Issuing and editing both end in the same import section: one offers
+         the token as it was just created, the other asks for the copy the
+         owner kept. -->
+    <template v-if="issued || editing">
+      <section v-if="issued" class="oa-key-issued oa-key-issued-animated">
+        <h3 class="oa-panel-section-title">{{ t('keyCreated', { name: issued.key.name }) }}</h3>
+        <p class="oa-key-warning">{{ t('keyShownOnce') }}</p>
 
-      <!-- An input rather than a block of text: it can be selected with one
-           gesture, and copied by a keyboard on a browser whose clipboard API
-           is unavailable or refused. -->
-      <div class="oa-key-token oa-key-token-pulse">
-        <input
-          class="oa-key-token-input"
-          type="text"
-          readonly
-          :value="issued.token"
-          @focus="($event.target as HTMLInputElement).select()"
-        >
-        <OaIconButton
-          class="oa-icon-btn oa-key-copy-btn"
-          :class="{ copied }"
-          :label="t('copy')"
-          @click="copyToken"
-        >
-          <IconCheck v-if="copied" :size="15" />
-          <IconCopy v-else :size="15" />
-        </OaIconButton>
-      </div>
-
-      <div class="oa-key-endpoint">
-        <div class="oa-key-endpoint-text">
-          <span class="oa-field-label">{{ t('apiBaseUrl') }}</span>
-          <code>{{ endpoint }}</code>
+        <!-- An input rather than a block of text: it can be selected with one
+             gesture, and copied by a keyboard on a browser whose clipboard API
+             is unavailable or refused. -->
+        <div class="oa-key-token oa-key-token-pulse">
+          <input
+            class="oa-key-token-input"
+            type="text"
+            readonly
+            :value="issued.token"
+            @focus="($event.target as HTMLInputElement).select()"
+          >
+          <OaIconButton
+            class="oa-icon-btn oa-key-copy-btn"
+            :class="{ copied }"
+            :label="t('copy')"
+            @click="copyToken"
+          >
+            <IconCheck v-if="copied" :size="15" />
+            <IconCopy v-else :size="15" />
+          </OaIconButton>
         </div>
-        <OaIconButton
-          class="oa-icon-btn"
-          :label="endpointCopied ? t('copied') : t('copy')"
-          @click="copyEndpoint"
-        ><IconCopy :size="15" /></OaIconButton>
-      </div>
 
-      <button type="button" class="oa-btn primary" @click="issued = null">{{ t('keyCopied') }}</button>
-    </section>
+        <div class="oa-key-endpoint">
+          <div class="oa-key-endpoint-text">
+            <span class="oa-field-label">{{ t('apiBaseUrl') }}</span>
+            <code>{{ endpoint }}</code>
+          </div>
+          <OaIconButton
+            class="oa-icon-btn"
+            :label="endpointCopied ? t('copied') : t('copy')"
+            @click="copyEndpoint"
+          ><IconCopy :size="15" /></OaIconButton>
+        </div>
+      </section>
+      <!-- Editing one row replaces the panel's contents rather than opening a
+           second column: it is the same record, being looked at more closely. -->
+      <section v-else-if="editing" class="oa-keys-create oa-keys-edit-animated">
+        <h3 class="oa-panel-section-title">{{ t('keyEdit') }}</h3>
+        <OaTextField v-model="editName" :label="t('keyName')" :max-length="60" />
+        <OaSelectField
+          v-model="editStatus"
+          :label="t('keyStatus')"
+          :options="[
+            { value: 'active', label: t('keyStatusActive') },
+            { value: 'paused', label: t('keyStatusPaused') },
+          ]"
+        />
+        <!-- "Leave as it is" is a real choice here, and the only one that does
+             not silently move an expiry the owner set deliberately. -->
+        <OaSelectField
+          v-model="editLifetime"
+          :label="t('keyExpires')"
+          :options="[
+            { value: 'keep', label: t('keyKeepExpiry', { when: expiryLabel(editing) }) },
+            ...lifetimeChoices,
+          ]"
+        />
+        <OaCheckList
+          v-model="editModels"
+          :label="t('keyModel')"
+          :hint="t('keyModelHint')"
+          :items="itemsFor(modelIDsFor(editing))"
+          :empty-text="t('keyNoModels')"
+        />
+      </section>
+      <section class="oa-key-import" :aria-label="t('keyCCSwitchImport')">
+        <h3 class="oa-panel-section-title">{{ t('keyCCSwitchImport') }}</h3>
+        <!-- A stored row is a digest, so the owner's own copy of the token is
+             the only thing that can fill a client in. It is read here and
+             passed straight to the launcher: nothing sends or stores it. -->
+        <OaTextField
+          v-if="editing"
+          v-model="editToken"
+          class="oa-key-import-token"
+          type="password"
+          autocomplete="off"
+          :label="t('keyCCSwitchToken')"
+          :hint="t('keyCCSwitchPaste')"
+          placeholder="sk-oa-…"
+        />
+        <p v-if="editing && editToken.trim() && !editTokenValid" class="oa-field-hint" role="status">
+          {{ t('keyCCSwitchInvalidToken') }}
+        </p>
+        <OaSelectField
+          v-model="importApp"
+          :label="t('keyCCSwitchClient')"
+          :searchable="false"
+          :options="[
+            { value: 'claude', label: t('keyCCSwitchClaude') },
+            { value: 'codex', label: t('keyCCSwitchCodex') },
+          ]"
+        />
+        <OaSelectField
+          v-if="importChoices.length"
+          v-model="importModel"
+          :label="t('keyCCSwitchModel')"
+          :options="importChoices"
+        />
+        <p v-else class="oa-field-hint">{{ t('keyCCSwitchNoModels') }}</p>
+        <p v-if="importBlocked" class="oa-field-hint" role="status">{{ importBlocked }}</p>
+        <button
+          type="button"
+          class="oa-btn primary oa-key-import-btn"
+          :disabled="busy || !importModel || !!importBlocked || (!!editing && !editTokenValid)"
+          @click="importToCCSwitch"
+        >{{ t('keyCCSwitchImport') }}</button>
+        <p class="oa-field-hint">{{ t('keyCCSwitchHint') }}</p>
+        <p v-if="importError" class="oa-key-warning" role="alert">{{ t('keyCCSwitchFailed') }}</p>
+      </section>
 
-    <p v-else-if="!loaded" class="oa-menu-empty">{{ t('loading') }}</p>
-
-    <!-- Editing one row replaces the panel's contents rather than opening a
-         second column: it is the same record, being looked at more closely. -->
-    <section v-else-if="editing" class="oa-keys-create oa-keys-edit-animated">
-      <h3 class="oa-panel-section-title">{{ t('keyEdit') }}</h3>
-      <OaTextField v-model="editName" :label="t('keyName')" :max-length="60" />
-      <OaSelectField
-        v-model="editStatus"
-        :label="t('keyStatus')"
-        :options="[
-          { value: 'active', label: t('keyStatusActive') },
-          { value: 'paused', label: t('keyStatusPaused') },
-        ]"
-      />
-      <!-- "Leave as it is" is a real choice here, and the only one that does
-           not silently move an expiry the owner set deliberately. -->
-      <OaSelectField
-        v-model="editLifetime"
-        :label="t('keyExpires')"
-        :options="[
-          { value: 'keep', label: t('keyKeepExpiry', { when: expiryLabel(editing) }) },
-          ...lifetimeChoices,
-        ]"
-      />
-      <OaCheckList
-        v-model="editModels"
-        :label="t('keyModel')"
-        :hint="t('keyModelHint')"
-        :items="itemsFor(modelIDsFor(editing))"
-        :empty-text="t('keyNoModels')"
-      />
-      <div class="oa-key-edit-actions">
+      <button v-if="issued" type="button" class="oa-btn" @click="dismissIssued">{{ t('keyCopied') }}</button>
+      <div v-else class="oa-key-edit-actions">
         <button type="button" class="oa-btn" @click="editing = null">{{ t('cancel') }}</button>
         <button type="button" class="oa-btn primary" :disabled="busy" @click="saveEdit">
           {{ t('save') }}
         </button>
       </div>
-    </section>
+    </template>
+
+    <p v-else-if="!loaded" class="oa-menu-empty">{{ t('loading') }}</p>
 
     <template v-else>
       <section class="oa-keys-intro">
@@ -399,6 +522,7 @@ onMounted(() => void refresh());
             ref="guard"
             :site-key="siteInfo.turnstile_site_key ?? ''"
           />
+          <p class="oa-field-hint">{{ t('keyCCSwitchAvailable') }}</p>
           <button type="button" class="oa-btn primary" :disabled="busy" @click="create">
             {{ t('keyCreate') }}
           </button>
