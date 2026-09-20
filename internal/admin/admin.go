@@ -150,6 +150,7 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/admin/users/{id}", protected("users", h.showUser))
 	mux.Handle("PATCH /api/admin/users/{id}", protected("users", h.updateUser))
 	mux.Handle("DELETE /api/admin/users/{id}", protected("users", h.deleteUser))
+	mux.Handle("POST /api/admin/users", protected("users", h.createUser))
 	mux.Handle("POST /api/admin/users/{id}/password", protected("users", h.resetPassword))
 	mux.Handle("GET /api/admin/users/{id}/keys", protected("users", h.userKeys))
 	mux.Handle("DELETE /api/admin/users/{id}/keys/{key}", protected("users", h.revokeUserKey))

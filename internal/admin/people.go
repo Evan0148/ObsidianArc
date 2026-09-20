@@ -146,6 +146,162 @@ type userRequest struct {
 	APIRestrictionHours *int  `json:"api_restriction_hours"`
 }
 
+// createUser is the operator making an account directly, for the cases
+// registration cannot serve: a service account for something that talks to
+// this instance, or a person the operator is onboarding while signups are
+// closed. It therefore skips the registration switch, the per-address limit
+// and the signup throttle — those exist to govern strangers arriving on their
+// own, and an administrator typing a username is not that.
+//
+// What it does not skip is the escalation guard. A delegated operator with
+// "users" could otherwise mint themselves a super administrator, which is a
+// shorter path to owning the instance than anything else on this page.
+func (h *Handlers) createUser(w http.ResponseWriter, r *http.Request) error {
+	actor := auth.MustUser(r.Context())
+
+	var body struct {
+		Username         string      `json:"username"`
+		Password         string      `json:"password"`
+		Email            string      `json:"email"`
+		QQ               string      `json:"qq"`
+		Nickname         string      `json:"nickname"`
+		Role             user.Role   `json:"role"`
+		AdminPermissions []string    `json:"admin_permissions"`
+		GroupID          string      `json:"group_id"`
+		Status           user.Status `json:"status"`
+	}
+	if err := httpx.DecodeJSON(w, r, &body, 16*1024); err != nil {
+		return err
+	}
+
+	// Shape first, outside the transaction and before hashing: a malformed
+	// request should not take the population lock, and it should not pay for
+	// an Argon2 hash either.
+	if body.Role == "" {
+		body.Role = user.RoleUser
+	}
+	if body.Role != user.RoleUser && body.Role != user.RoleAdmin && body.Role != user.RoleSuperAdmin {
+		return httpx.BadRequest("Role must be user, admin or super_admin.")
+	}
+	if body.Status == "" {
+		body.Status = user.StatusActive
+	}
+	if body.Status != user.StatusActive && body.Status != user.StatusDisabled {
+		return httpx.BadRequest("Status must be active or disabled.")
+	}
+	for _, permission := range body.AdminPermissions {
+		if !user.ValidPermission(permission) {
+			return httpx.BadRequest("Unknown permission %q.", permission)
+		}
+	}
+	// Grants only mean anything on an administrator, and leaving them on a
+	// plain account is a trap for whoever promotes it later.
+	if body.Role != user.RoleAdmin {
+		body.AdminPermissions = nil
+	}
+	if body.GroupID != "" {
+		if !isValidID(body.GroupID) {
+			return httpx.BadRequest("Malformed group id.")
+		}
+		if _, err := h.groups.ByID(r.Context(), nil, body.GroupID); err != nil {
+			return translateGroupError(err)
+		}
+	}
+	// An account with no password cannot be signed into with one. That is a
+	// legitimate shape here — a service account that only ever arrives through
+	// a provider — so it is allowed, but never by accident: it takes an
+	// explicit empty string rather than a missing field.
+	if body.Password != "" {
+		if err := auth.ValidatePassword(body.Password); err != nil {
+			return httpx.BadRequest("%s", err.Error())
+		}
+	}
+
+	hash := ""
+	if body.Password != "" {
+		var err error
+		if hash, err = h.auth.Hasher().Hash(r.Context(), body.Password); err != nil {
+			return httpx.Internal(err)
+		}
+	}
+
+	var created user.User
+	err := h.db.Tx(r.Context(), func(tx *database.Tx) error {
+		// The same lock every change to the administrator population takes:
+		// the actor's own grants may be revoked while this is in flight.
+		if err := lockAdminPopulation(r.Context(), tx); err != nil {
+			return err
+		}
+		fresh, err := h.users.ByID(r.Context(), tx, actor.ID)
+		if err != nil {
+			return err
+		}
+		if !fresh.CanAdmin("users") {
+			return permissionDenied()
+		}
+		if body.Role == user.RoleAdmin || body.Role == user.RoleSuperAdmin {
+			// CanManageAdmin wants the account being managed; the one about to
+			// exist is described by what was asked for.
+			wanted := user.User{Role: body.Role, AdminPermissions: body.AdminPermissions}
+			if !fresh.CanManageAdmin(wanted) {
+				return permissionDenied()
+			}
+		}
+		if !fresh.IsSuperAdmin() {
+			if body.Role == user.RoleSuperAdmin {
+				return permissionDenied()
+			}
+			// Nobody may hand out a key they do not hold themselves.
+			for _, permission := range body.AdminPermissions {
+				if !fresh.CanAdmin(permission) {
+					return permissionDenied()
+				}
+			}
+		}
+
+		created, err = h.users.Create(r.Context(), tx, user.CreateInput{
+			Username:     body.Username,
+			Email:        body.Email,
+			QQ:           body.QQ,
+			Nickname:     body.Nickname,
+			PasswordHash: hash,
+			Role:         body.Role,
+			GroupID:      body.GroupID,
+			Status:       body.Status,
+			// Nothing to confirm: an operator typed this address, and no mail
+			// was sent asking anyone to prove it.
+			Unverified: false,
+		})
+		if err != nil {
+			return err
+		}
+		// Create has no grant list of its own, so the second write is how an
+		// administrator gets one. Same transaction: an account that exists as
+		// an administrator with nobody's permissions is a worse halfway state
+		// than not existing at all.
+		if len(body.AdminPermissions) > 0 {
+			created, err = h.users.UpdateAdminFields(r.Context(), tx, created.ID, user.AdminUpdate{
+				AdminPermissions: &body.AdminPermissions,
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		var response *httpx.Error
+		if errors.As(err, &response) {
+			return response
+		}
+		return translateUserError(err)
+	}
+
+	slog.InfoContext(r.Context(), "administrator created an account",
+		"actor", actor.ID, "created", created.ID, "role", created.Role)
+	return httpx.WriteJSON(w, http.StatusCreated, map[string]any{"user": created})
+}
+
 func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) error {
 	actor := auth.MustUser(r.Context())
 	userID, err := pathID(r, "id")

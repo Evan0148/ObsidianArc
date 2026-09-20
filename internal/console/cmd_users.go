@@ -855,14 +855,85 @@ func init() {
 	})
 
 	registerCommand(Command{
+		Name:    "user create",
+		Group:   "accounts",
+		Summary: Text{EN: "Create an account", ZH: "新建账户"},
+		Usage:   "user create <username> [--password P] [--email E] [--qq Q] [--nickname N] [--role ROLE] [--permissions LIST] [--group REF]",
+		Help: Text{
+			EN: "For the cases registration cannot serve: a service account, or onboarding someone " +
+				"while signups are closed. The registration switch, the per-address limit and the " +
+				"signup throttle do not apply. Without --password the account has none and cannot " +
+				"be signed into with one, which is what a service account wants. " +
+				"--permissions only means anything with --role admin.",
+			ZH: "用于注册流程覆盖不到的情况：给程序用的账户，或者注册关闭时手工开号。" +
+				"注册开关、每地址上限和注册频率限制都不适用。不给 --password 就是没有密码、" +
+				"不能用密码登录，给程序用的账户通常就要这样。--permissions 只在 --role admin 时有意义。",
+		},
+		Args: []Arg{{Name: "username", Hint: Text{EN: "the new account's name", ZH: "新账户的用户名"}, Required: true}},
+		Flags: []Flag{
+			{Name: "--password", Hint: Text{EN: "login password; omit for an account without one", ZH: "登录密码；不给则该账户没有密码"}, Value: "TEXT", Sensitive: true},
+			{Name: "--email", Hint: Text{EN: "email address", ZH: "邮箱地址"}, Value: "EMAIL"},
+			{Name: "--qq", Hint: Text{EN: "QQ number", ZH: "QQ 号"}, Value: "QQ"},
+			{Name: "--nickname", Hint: Text{EN: "display nickname, ≤32 chars", ZH: "昵称，≤32 字符"}, Value: "TEXT"},
+			{Name: "--role", Hint: Text{EN: "user, admin or super_admin; default user", ZH: "user、admin 或 super_admin，默认 user"}, Value: "ROLE", Default: "user"},
+			{Name: "--permissions", Hint: Text{EN: "comma-separated grant list, admins only", ZH: "逗号分隔的权限列表，仅对管理员有效"}, Value: "LIST"},
+			{Name: "--group", Hint: Text{EN: "group name or id", ZH: "分组名称或 id"}, Value: "REF"},
+			{Name: "--status", Hint: Text{EN: "active or disabled; default active", ZH: "active 或 disabled，默认 active"}, Value: "STATUS", Default: "active"},
+		},
+		Examples: []string{
+			"user create station-bot --password '…' --role admin --permissions users",
+			"user create alice --password '…' --email alice@example.com",
+		},
+		Permission: "users",
+		Endpoints:  []string{"POST /api/admin/users"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			name, err := requireRef(rt, "the new account's name")
+			if err != nil {
+				return err
+			}
+			body := bodyBuilder{"username": name}
+			body.str(rt, "password", "password")
+			body.str(rt, "email", "email")
+			body.str(rt, "qq", "qq")
+			body.str(rt, "nickname", "nickname")
+			body.str(rt, "role", "role")
+			body.str(rt, "status", "status")
+			if rt.Present("permissions") {
+				body["admin_permissions"] = splitCSV(rt.String("permissions"))
+			}
+			if rt.Present("group") {
+				gid, err := resolveGroupRef(rt, rt.String("group"))
+				if err != nil {
+					return err
+				}
+				body["group_id"] = gid
+			}
+
+			data, _, err := rt.Call(http.MethodPost, "/api/admin/users", map[string]any(body))
+			if err != nil {
+				return err
+			}
+			created := asMap(asMap(data)["user"])
+			return rt.Table(
+				[]string{"id", "username", "role", "status"},
+				[][]string{{asStr(created["id"]), asStr(created["username"]), asStr(created["role"]), asStr(created["status"])}},
+			)
+		},
+	})
+
+	registerCommand(Command{
 		Name:    "user cards",
 		Group:   "accounts",
 		Summary: Text{EN: "Grant an account trial cards", ZH: "向账户发放体验卡"},
 		Usage:   "user cards <id|username> [--cards N] [--card-days D] [--expires-at MS]",
+		// Said "never expires" until 2026-09: card.clampDays turns 0 into 30, so
+		// every grant without --card-days is a 30-day card. An operator who read
+		// this and handed out a batch believed they were permanent.
 		Help: Text{
-			EN: "--expires-at, when given, wins over --card-days. Neither given means the default of " +
-				"one card that never expires.",
-			ZH: "若给出 --expires-at，则优先于 --card-days。两者都不给时，默认发放一张永不过期的卡。",
+			EN: "--expires-at, when given, wins over --card-days. Neither given means one card " +
+				"expiring in 30 days; there is no way to grant one that never expires.",
+			ZH: "若给出 --expires-at，则优先于 --card-days。两者都不给时，发放一张 30 天后过期的卡；" +
+				"没有「永不过期」这个选项。",
 		},
 		Args: []Arg{{Name: "id|username", Hint: Text{EN: "account id or username", ZH: "账户 id 或用户名"}, Required: true}},
 		Flags: []Flag{

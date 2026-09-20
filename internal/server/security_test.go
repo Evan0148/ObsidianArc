@@ -167,6 +167,7 @@ func TestAdminRoutesRequireAnAdministrator(t *testing.T) {
 		{http.MethodPost, "/api/admin/security/review", map[string]any{"username": "x"}},
 		{http.MethodGet, "/api/admin/security/events", nil},
 		{http.MethodGet, "/api/admin/users", nil},
+		{http.MethodPost, "/api/admin/users", map[string]any{"username": "someone-new"}},
 		{http.MethodGet, "/api/admin/users/01ARZ3NDEKTSV4RRFFQ69G5FAV", nil},
 		{http.MethodPatch, "/api/admin/users/01ARZ3NDEKTSV4RRFFQ69G5FAV", map[string]any{"nickname": "x"}},
 		{http.MethodDelete, "/api/admin/users/01ARZ3NDEKTSV4RRFFQ69G5FAV", nil},
