@@ -196,7 +196,11 @@ func TestProvisionObeysTheRegistrationControls(t *testing.T) {
 		}
 	})
 
-	t.Run("a required QQ number cannot be supplied", func(t *testing.T) {
+	// A provider has no QQ number to offer, so an instance that requires one
+	// either exempts these accounts or closes this way in. Which of the two is
+	// the operator's, and the default is the exemption: refusing every
+	// provider sign-up is a front door that looks broken.
+	t.Run("a required QQ number is exempted unless the operator says otherwise", func(t *testing.T) {
 		f := newFixture(t)
 		if _, _, err := f.auth.Register(ctx, RegisterInput{
 			Username: "founder", Password: "a-good-password", QQ: "12345678",
@@ -206,8 +210,27 @@ func TestProvisionObeysTheRegistrationControls(t *testing.T) {
 		if err := f.settings.Set(ctx, settings.QQRequirement, settings.QQRequired); err != nil {
 			t.Fatalf("require qq: %v", err)
 		}
-		if _, err := provision(t, f, ProvisionInput{Username: "octocat"}); !errors.Is(err, user.ErrQQRequired) {
-			t.Errorf("provision = %v, want it refused rather than opening an account that breaks the rule", err)
+
+		account, err := provision(t, f, ProvisionInput{Username: "octocat"})
+		if err != nil {
+			t.Fatalf("provision with the default exemption: %v", err)
+		}
+		if account.QQ != "" {
+			t.Errorf("qq = %q, want none: a provider has none to give", account.QQ)
+		}
+		// And the form is unaffected — the exemption is about this route, not
+		// about the requirement.
+		if _, _, err := f.auth.Register(ctx, RegisterInput{
+			Username: "typed", Password: "a-good-password",
+		}); !errors.Is(err, user.ErrQQRequired) {
+			t.Errorf("the sign-up form = %v, want it still asking for a QQ number", err)
+		}
+
+		if err := f.settings.Set(ctx, settings.OAuthRequireQQ, "true"); err != nil {
+			t.Fatalf("close the exemption: %v", err)
+		}
+		if _, err := provision(t, f, ProvisionInput{Username: "another"}); !errors.Is(err, user.ErrQQRequired) {
+			t.Errorf("provision = %v, want it refused once the exemption is closed", err)
 		}
 	})
 

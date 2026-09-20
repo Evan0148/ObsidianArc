@@ -445,7 +445,7 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     pageSlug: 'security',
     titleKey: 'secOAuth',
     searchKeys: ['oauthHint', 'oauthGitHub', 'oauthGoogle', 'oauthClientID', 'oauthClientSecret',
-      'oauthAllowSignup', 'oauthLinkByEmail'],
+      'oauthAllowSignup', 'oauthLinkByEmail', 'oauthRequireQQ'],
     keywords: ['第三方登录', 'GitHub 登录', '谷歌登录', 'Google 登录', '社交登录', '单点登录',
       'oauth', 'social login', 'sign in with github', 'sign in with google', 'sso'],
   },

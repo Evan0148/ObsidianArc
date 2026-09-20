@@ -1488,6 +1488,8 @@ export const zh: Record<StringKey, string> = {
   applicationPublicHint: '用于没有地方存放密钥的软件，例如纯前端应用。它必须改用 PKCE。',
   applicationTrustedField: '跳过授权确认页',
   applicationTrustedHint: '用于运营方自己的服务。用户不会被询问就会把身份告诉它。',
+  oauthRequireQQ: '第三方登录也要求填 QQ 号',
+  oauthRequireQQHint: '关闭时，用 GitHub 或 Google 开的账号不受本站 QQ 号要求的限制——对方平台没有 QQ 号可以给。开启后，这类注册会直接被拒绝。',
   enable: '启用',
   disable: '停用',
   feedbackStatusOpen: '待处理',

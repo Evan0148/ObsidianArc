@@ -1519,6 +1519,8 @@ const en = {
   applicationPublicHint: 'For software with nowhere to keep one, such as a single-page app. It must use PKCE instead.',
   applicationTrustedField: 'Skip the consent screen',
   applicationTrustedHint: 'For your own services. Nobody will be asked before it is told who they are.',
+  oauthRequireQQ: 'Ask a provider sign-in for a QQ number too',
+  oauthRequireQQHint: 'Off, an account opened through GitHub or Google is exempt from the QQ number this server requires — a provider has none to give. On, those sign-ups are refused instead.',
   enable: 'Enable',
   disable: 'Disable',
   feedbackStatusOpen: 'Open',

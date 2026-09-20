@@ -88,6 +88,7 @@ const form = ref({
   googleSecretHint: '',
   oauthAllowSignup: true,
   oauthLinkByEmail: true,
+  oauthRequireQQ: false,
 });
 
 
@@ -253,6 +254,7 @@ function collect(): Record<string, string> {
     'oauth.google_client_secret': form.value.googleSecret.trim(),
     'oauth.allow_signup': String(form.value.oauthAllowSignup),
     'oauth.link_by_email': String(form.value.oauthLinkByEmail),
+    'oauth.require_qq': String(form.value.oauthRequireQQ),
   };
 }
 
@@ -399,6 +401,7 @@ async function load(): Promise<void> {
       googleSecretHint: values['oauth.google_client_secret'] ?? '',
       oauthAllowSignup: (values['oauth.allow_signup'] ?? 'true') === 'true',
       oauthLinkByEmail: (values['oauth.link_by_email'] ?? 'true') === 'true',
+      oauthRequireQQ: values['oauth.require_qq'] === 'true',
     };
     accept();
   } catch (failure) {
@@ -667,6 +670,15 @@ onMounted(load);
           v-model="form.oauthLinkByEmail"
           :label="t('oauthLinkByEmail')"
           :hint="t('oauthLinkByEmailHint')"
+        />
+        <!-- Only worth showing where it would change anything: an instance
+             that does not ask for a QQ number has nothing to exempt anybody
+             from. -->
+        <OaSwitchField
+          v-if="form.qqRequirement === 'required'"
+          v-model="form.oauthRequireQQ"
+          :label="t('oauthRequireQQ')"
+          :hint="t('oauthRequireQQHint')"
         />
       </AdminControlCard>
       <AdminControlCard id="secApplications" v-show="visible('secApplications')" :title="t('secApplications')" :icon="IconKey" :hint="t('applicationsHint')" class="oa-control-card-wide">

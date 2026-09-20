@@ -83,10 +83,19 @@ func (s *Service) Provision(ctx context.Context, tx *database.Tx, in ProvisionIn
 		if err := checkEmail(s.settings, in.Email); err != nil {
 			return user.User{}, err
 		}
-		// A provider has no QQ number to offer and never will. An instance
-		// that requires one is asking for something this route cannot supply,
-		// so it says so rather than opening an account that breaks the rule.
-		if s.settings.Get(settings.QQRequirement) == settings.QQRequired {
+		// A provider has no QQ number to offer and never will, so an instance
+		// that requires one has a choice to make: either these accounts are
+		// exempt, or this way in is closed on that instance. The exemption is
+		// the default and the setting is what closes it — refusing every
+		// provider sign-up is a front door that looks broken, and an operator
+		// who really wants the number from everybody should be choosing that
+		// rather than discovering it.
+		//
+		// Read here with the other registration controls rather than by the
+		// caller, because this is one of them: a second place that decides
+		// who may hold an account is a second set of rules.
+		if s.settings.Get(settings.QQRequirement) == settings.QQRequired &&
+			s.settings.Bool(settings.OAuthRequireQQ) {
 			return user.User{}, user.ErrQQRequired
 		}
 		if allowed, retryAfter := s.signups.allow(
