@@ -489,6 +489,31 @@ async function reschedule(cardIDs?: string[]): Promise<void> {
   }
 }
 
+/**
+ * Takes one card off this account.
+ *
+ * Silent, like every other thing that happens to cards here: they are granted
+ * without a message and an operator undoing a mis-typed grant should not be
+ * announcing it. The row goes when the server says it went, not optimistically
+ * — a card being spent in another tab at that moment stays.
+ */
+async function revoke(cardID: string): Promise<void> {
+  const row = account.value;
+  if (!row) return;
+  rescheduling.value = cardID;
+  try {
+    await adminApi.revokeCard(row.id, cardID);
+    rescheduleLabel.value = t('cardRevoked');
+    const detail = await adminApi.user(row.id);
+    cards.value = detail.cards;
+  } catch (failure) {
+    rescheduleLabel.value = '';
+    panelError.value = failure instanceof ApiError ? failure.message : String(failure);
+  } finally {
+    rescheduling.value = '';
+  }
+}
+
 function revokeKey(key: ApiKey): void {
   const row = account.value;
   if (!row) return;
@@ -712,6 +737,18 @@ const state = { q: '', role: '', status: '', group: '' };
                 :disabled="!!rescheduling"
                 @click="reschedule([card.id])"
               >{{ t('rescheduleOne') }}</button>
+              <!-- Never window.confirm: it answers false on its own in some
+                   browsers, which would turn this into a button that silently
+                   does nothing. -->
+              <OaConfirmButton
+                class="oa-btn oa-card-move oa-card-drop"
+                :label="t('revokeCard')"
+                :armed-label="t('revokeCardConfirm')"
+                :armed-title="t('revokeCardConfirm')"
+                :resting-title="t('revokeCard')"
+                :disabled="!!rescheduling"
+                @confirm="revoke(card.id)"
+              />
             </div>
           </div>
         </template>

@@ -110,3 +110,66 @@ func readerCards(t *testing.T, in *instance, as *session) []struct {
 		} `json:"cards"`
 	}](t, in.do(http.MethodGet, "/api/usage/cards", nil, as)).Cards
 }
+
+// Withdrawing a card, and the part that is a decision rather than a
+// mechanism: the account is told nothing.
+//
+// Cards arrive without a message, so they leave without one. An operator
+// correcting a grant they typed wrong is not making an announcement, and the
+// assertion is here rather than in a comment because a notice is exactly the
+// sort of thing somebody adds later meaning well.
+func TestWithdrawingACardIsSilent(t *testing.T) {
+	in := newInstance(t)
+	admin := in.register("drop-admin", "a-good-password")
+	reader := in.register("drop-reader", "a-good-password")
+
+	expires := time.Now().Add(30 * 24 * time.Hour).UnixMilli()
+	if res := in.do(http.MethodPost, "/api/admin/users/"+reader.userID+"/cards",
+		map[string]any{"cards": 2, "expires_at": expires}, admin); res.Code != http.StatusCreated {
+		t.Fatalf("grant cards: %d %s", res.Code, res.Body.String())
+	}
+
+	mine := readerCards(t, in, reader)
+	if len(mine) != 2 {
+		t.Fatalf("the owner sees %d cards, want 2", len(mine))
+	}
+	doomed := mine[0].ID
+
+	dropped := in.do(http.MethodDelete,
+		"/api/admin/users/"+reader.userID+"/cards/"+doomed, nil, admin)
+	if dropped.Code != http.StatusNoContent {
+		t.Fatalf("withdraw: %d %s", dropped.Code, dropped.Body.String())
+	}
+
+	left := readerCards(t, in, reader)
+	if len(left) != 1 || left[0].ID == doomed {
+		t.Fatalf("the owner still sees %+v", left)
+	}
+	if spent := in.do(http.MethodPost, "/api/usage/cards/"+doomed+"/use",
+		map[string]any{}, reader); spent.Code != http.StatusNotFound {
+		t.Fatalf("a withdrawn card was still spendable: %d %s", spent.Code, spent.Body.String())
+	}
+
+	// Nothing was posted to the one channel this product has for telling an
+	// account something happened.
+	feed := decode[struct {
+		Announcements []struct {
+			ID string `json:"id"`
+		} `json:"announcements"`
+	}](t, in.do(http.MethodGet, "/api/announcements", nil, reader))
+	if len(feed.Announcements) != 0 {
+		t.Errorf("withdrawing a card announced something: %+v", feed.Announcements)
+	}
+
+	// A spent card is a record, not a permission, and stays.
+	remaining := readerCards(t, in, reader)[0].ID
+	if used := in.do(http.MethodPost, "/api/usage/cards/"+remaining+"/use",
+		map[string]any{}, reader); used.Code != http.StatusNoContent {
+		t.Fatalf("spend the other card: %d %s", used.Code, used.Body.String())
+	}
+	refused := in.do(http.MethodDelete,
+		"/api/admin/users/"+reader.userID+"/cards/"+remaining, nil, admin)
+	if refused.Code != http.StatusConflict {
+		t.Fatalf("withdrawing a spent card: %d %s", refused.Code, refused.Body.String())
+	}
+}

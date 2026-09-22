@@ -195,6 +195,7 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.Handle("DELETE /api/admin/codes/{id}", protected("codes", h.deleteCode))
 	mux.Handle("POST /api/admin/users/{id}/cards", protected("users", h.grantCards))
 	mux.Handle("PATCH /api/admin/users/{id}/cards", protected("users", h.rescheduleCards))
+	mux.Handle("DELETE /api/admin/users/{id}/cards/{card}", protected("users", h.revokeCard))
 
 	mux.Handle("GET /api/admin/quota/policies", protected("users,groups,usage", h.listPolicies))
 	mux.Handle("PUT /api/admin/quota/policies", protected("users,groups,usage", h.savePolicy))

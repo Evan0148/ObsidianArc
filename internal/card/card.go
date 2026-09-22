@@ -305,6 +305,39 @@ func (s *Store) grant(ctx context.Context, userID string, count int, expires, no
 	return out, nil
 }
 
+// Revoke takes one card back.
+//
+// Unused only, the same rule Reschedule follows: a spent card is the record
+// of a reset that already happened, and deleting it would leave an account
+// whose allowance was restored by nothing. The condition is in the DELETE so
+// a card being spent in another tab at that moment survives rather than
+// vanishing after it has already paid for a reset.
+func (s *Store) Revoke(ctx context.Context, userID, cardID string) error {
+	result, err := s.db.Exec(ctx,
+		`DELETE FROM usage_cards WHERE id = ? AND user_id = ? AND used_at = ?`,
+		cardID, userID, 0)
+	if err != nil {
+		return fmt.Errorf("card: revoke: %w", err)
+	}
+	if affected, _ := result.RowsAffected(); affected == 1 {
+		return nil
+	}
+
+	// Nothing went. Say which of the two reasons it was, because "that card
+	// is not this account's" and "it has already been spent" are different
+	// answers to somebody looking at a list that shows neither.
+	var used int64
+	err = s.db.QueryRow(ctx,
+		`SELECT used_at FROM usage_cards WHERE id = ? AND user_id = ?`, cardID, userID).Scan(&used)
+	if err != nil {
+		if database.IsNotFound(err) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("card: revoke: %w", err)
+	}
+	return ErrUsed
+}
+
 // --- codes ---------------------------------------------------------------------
 
 type CodeInput struct {

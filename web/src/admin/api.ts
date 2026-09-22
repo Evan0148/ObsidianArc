@@ -540,6 +540,10 @@ export const adminApi = {
   // for and what granting another one would get wrong.
   rescheduleCards: (userID: string, body: { expires_at: number; card_ids?: string[] }) =>
     api.patch<{ moved: number }>(`/api/admin/users/${userID}/cards`, body),
+  // Takes one unused card back. Nothing is sent to the account: cards arrive
+  // without a message and they leave the same way.
+  revokeCard: (userID: string, cardID: string) =>
+    api.delete<void>(`/api/admin/users/${userID}/cards/${encodeURIComponent(cardID)}`),
   reorderModels: (ids: string[]) =>
     api.put<void>('/api/admin/models/order', { ids }),
   resetQuota: (body: { scope: 'all' | 'group' | 'user'; id?: string }) =>

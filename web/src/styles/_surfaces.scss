@@ -2700,6 +2700,14 @@
   font-size: 11.5px;
 }
 
+/* Only once it is armed. At rest it is one more thing in a row of eleven
+   near-identical ones, and a red button on every line reads as a warning
+   about the list rather than about the press. */
+.oa-card-drop.armed {
+  background: color-mix(in srgb, var(--ai-danger) 18%, transparent);
+  color: var(--ai-danger);
+}
+
 /* Issue and move, side by side under one date picker, because they are two
    answers to the same request and the field above belongs to both. They wrap
    rather than shrink: a truncated verb is a button nobody presses. */

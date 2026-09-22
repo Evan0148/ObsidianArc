@@ -257,6 +257,23 @@ describe('moving the expiry on cards an account already holds', () => {
     });
   });
 
+  // Two presses, not one. The first only arms it, which is the whole reason
+  // this is an OaConfirmButton and not a plain button beside "Move" — the two
+  // sit next to each other and one of them cannot be undone.
+  it('needs a second press before it deletes a card', async () => {
+    await openHolder();
+    const drop = vi.spyOn(adminApi, 'revokeCard').mockResolvedValue(undefined);
+
+    const button = panels.querySelector<HTMLButtonElement>('.oa-card-row .oa-card-drop')!;
+    button.click();
+    await settle();
+    expect(drop).not.toHaveBeenCalled();
+
+    button.click();
+    await settle();
+    expect(drop).toHaveBeenCalledWith(holder.id, 'card-a');
+  });
+
   it('refuses a date in the past rather than sending it', async () => {
     await openHolder();
     const move = vi.spyOn(adminApi, 'rescheduleCards').mockResolvedValue({ moved: 0 });

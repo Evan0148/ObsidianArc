@@ -144,3 +144,26 @@ func (h *Handlers) rescheduleCards(w http.ResponseWriter, r *http.Request) error
 	}
 	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"moved": moved})
 }
+
+// revokeCard takes one unused card back off an account.
+//
+// No notice reaches the account: cards arrive without one and the whole
+// feature has never had a message attached to it in either direction. An
+// operator correcting a mis-typed grant should not be announcing it.
+func (h *Handlers) revokeCard(w http.ResponseWriter, r *http.Request) error {
+	userID, err := pathID(r, "id")
+	if err != nil {
+		return err
+	}
+	cardID, err := pathID(r, "card")
+	if err != nil {
+		return err
+	}
+	if _, err := h.users.ByID(r.Context(), nil, userID); err != nil {
+		return translateUserError(err)
+	}
+	if err := h.cards.Revoke(r.Context(), userID, cardID); err != nil {
+		return card.TranslateError(err)
+	}
+	return httpx.NoContent(w)
+}

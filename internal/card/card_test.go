@@ -602,3 +602,69 @@ func cardRow(t *testing.T, f *fixture, cardID string) Card {
 	}
 	return record
 }
+
+// Taking a card back. The rule is the same one rescheduling follows: an
+// unused card is an unspent permission and may be withdrawn; a spent one is
+// the record of a reset that already happened, and deleting it would leave an
+// account whose allowance was restored by nothing.
+func TestRevokingTakesBackOnlyUnspentCards(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	person := f.reader(t, "withdrawn")
+
+	granted, err := f.store.Grant(ctx, person.ID, 3, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.Spend(ctx, person.ID, granted[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	// One lapsed, to prove revoking reaches past the available list the same
+	// way rescheduling does.
+	if _, err := f.db.Exec(ctx, `UPDATE usage_cards SET expires_at = ? WHERE id = ?`,
+		time.Now().Add(-time.Hour).UnixMilli(), granted[1].ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.store.Revoke(ctx, person.ID, granted[1].ID); err != nil {
+		t.Errorf("revoking a lapsed card gave %v", err)
+	}
+	if err := f.store.Revoke(ctx, person.ID, granted[2].ID); err != nil {
+		t.Errorf("revoking an available card gave %v", err)
+	}
+	if err := f.store.Revoke(ctx, person.ID, granted[0].ID); !errors.Is(err, ErrUsed) {
+		t.Errorf("revoking a spent card gave %v, want ErrUsed", err)
+	}
+
+	held, err := f.store.Held(ctx, person.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held.Total != 1 || held.Used != 1 || held.Available != 0 {
+		t.Errorf("held = %+v, want only the spent card left", held)
+	}
+}
+
+// Naming somebody else's card id does not delete it, and an id that was
+// never a card says so rather than reporting success.
+func TestRevokingCannotReachAnotherAccount(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	mine := f.reader(t, "holder-a")
+	theirs := f.reader(t, "holder-b")
+
+	others, err := f.store.Grant(ctx, theirs.ID, 1, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.store.Revoke(ctx, mine.ID, others[0].ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("revoking across accounts gave %v, want ErrNotFound", err)
+	}
+	if err := f.store.Revoke(ctx, mine.ID, "01ARZ3NDEKTSV4RRFFQ69G5FAV"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("revoking an unknown id gave %v, want ErrNotFound", err)
+	}
+	if cardRow(t, f, others[0].ID).ID != others[0].ID {
+		t.Error("the other account's card is gone")
+	}
+}

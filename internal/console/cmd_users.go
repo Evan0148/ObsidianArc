@@ -1024,6 +1024,48 @@ func init() {
 			return rt.Table([]string{"moved"}, [][]string{{asStr(asMap(data)["moved"])}})
 		},
 	})
+
+	registerCommand(Command{
+		Name:    "user cards drop",
+		Group:   "accounts",
+		Summary: Text{EN: "Take one unused card back off an account", ZH: "收回账户手上的一张未使用重置卡"},
+		Usage:   "user cards drop <id|username> <card-id>",
+		Help: Text{
+			EN: "Deletes the card outright. Only an unused one: a spent card is the record of a " +
+				"reset that already happened. The account is not told.",
+			ZH: "直接删掉这张卡。只能删还没用掉的——已经用掉的卡是那次重置的记录。不会通知用户。",
+		},
+		Args: []Arg{
+			{Name: "id|username", Hint: Text{EN: "account id or username", ZH: "账户 id 或用户名"}, Required: true},
+			{Name: "card-id", Hint: Text{EN: "the card to delete", ZH: "要删掉的卡 id"}, Required: true},
+		},
+		Examples: []string{
+			"user cards drop alice 01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			"user cards drop 01M1VG5FEB5GSSPAYG0PGRWN6F 01ARZ3NDEKTSV4RRFFQ69G5FAV",
+		},
+		Permission: "users",
+		Endpoints:  []string{"DELETE /api/admin/users/{id}/cards/{card}"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			ref, err := requireRef(rt, "account id or username")
+			if err != nil {
+				return err
+			}
+			uid, err := resolveUserRef(rt, ref)
+			if err != nil {
+				return err
+			}
+			cardID := rt.Arg(1)
+			if cardID == "" {
+				if rt.Session.Lang == "zh" {
+					return fmt.Errorf("需要一个卡 id")
+				}
+				return fmt.Errorf("a card id is required")
+			}
+			_, _, err = rt.Call(http.MethodDelete,
+				"/api/admin/users/"+url.PathEscape(uid)+"/cards/"+url.PathEscape(cardID), nil)
+			return err
+		},
+	})
 }
 
 // truncateForTable clips display text by rune before it ever reaches
