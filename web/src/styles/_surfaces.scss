@@ -679,6 +679,25 @@
   font-weight: 600;
 }
 
+/* The multiplier on a stacked row. Lighter than the name it follows, because
+   it is a quantity and not part of what the card is called. Not italic
+   despite the tag: `em` is the meaning here, and a slanted numeral beside an
+   upright one reads as a different figure. */
+.oa-card-times {
+  margin-left: 4px;
+  color: var(--ai-text-secondary);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Beside the section name rather than over the list: it is the answer to the
+   question that opened the section, so it belongs in the heading. */
+.oa-card-total {
+  margin-left: 8px;
+  color: var(--ai-text-secondary);
+  font-size: 12px;
+}
+
 .oa-card-sub {
   display: block;
   margin-top: 2px;
@@ -2671,6 +2690,24 @@
 
 .oa-card-expiry {
   color: var(--ai-text-secondary);
+}
+
+/* Small enough that the row still reads as a fact with an action on it rather
+   than as a control: an operator is here to see what somebody holds, and the
+   move is the second thought, not the first. */
+.oa-card-move {
+  padding: 3px 10px;
+  font-size: 11.5px;
+}
+
+/* Issue and move, side by side under one date picker, because they are two
+   answers to the same request and the field above belongs to both. They wrap
+   rather than shrink: a truncated verb is a button nobody presses. */
+.oa-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 
 /* The challenge widget's own iframe carries its size and its look; all this

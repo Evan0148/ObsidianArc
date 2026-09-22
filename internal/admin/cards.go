@@ -112,3 +112,35 @@ func (h *Handlers) grantCards(w http.ResponseWriter, r *http.Request) error {
 	}
 	return httpx.WriteJSON(w, http.StatusCreated, map[string]any{"cards": granted})
 }
+
+// rescheduleCards moves the expiry on cards an account already holds.
+//
+// Separate from granting rather than a flag on it: "here is another card" and
+// "the one you have lasts longer" are different answers to the same request,
+// and an operator who meant the second should not be able to produce the
+// first by mistyping a field.
+func (h *Handlers) rescheduleCards(w http.ResponseWriter, r *http.Request) error {
+	userID, err := pathID(r, "id")
+	if err != nil {
+		return err
+	}
+	if _, err := h.users.ByID(r.Context(), nil, userID); err != nil {
+		return translateUserError(err)
+	}
+
+	var body struct {
+		ExpiresAt int64 `json:"expires_at"`
+		// Which cards to move. Absent means every unused one this account
+		// holds, expired included — the bulk spelling.
+		CardIDs []string `json:"card_ids"`
+	}
+	if err := httpx.DecodeJSON(w, r, &body, 64*1024); err != nil {
+		return err
+	}
+
+	moved, err := h.cards.Reschedule(r.Context(), userID, body.CardIDs, body.ExpiresAt)
+	if err != nil {
+		return card.TranslateError(err)
+	}
+	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"moved": moved})
+}

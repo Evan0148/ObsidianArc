@@ -480,3 +480,125 @@ func TestCodeSymbolsSkipTheSkewedTailOfTheByteRange(t *testing.T) {
 		t.Fatalf("picked %v, want %v — the rejected bytes were not skipped", picked, want)
 	}
 }
+
+// An expired card is the one an operator is most often asked to move, so
+// rescheduling has to reach past the "available" list rather than only over
+// it. A spent card is not moved: the reset it paid for already happened, and
+// giving it a future date would hand it back.
+func TestReschedulingMovesUnusedCardsIncludingLapsedOnes(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	person := f.reader(t, "extended")
+
+	granted, err := f.store.Grant(ctx, person.ID, 3, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.Spend(ctx, person.ID, granted[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	spentAt := cardRow(t, f, granted[0].ID).ExpiresAt
+	if _, err := f.db.Exec(ctx, `UPDATE usage_cards SET expires_at = ? WHERE id = ?`,
+		time.Now().Add(-time.Hour).UnixMilli(), granted[1].ID); err != nil {
+		t.Fatal(err)
+	}
+
+	target := time.Now().Add(60 * 24 * time.Hour).Truncate(time.Second).UnixMilli()
+	moved, err := f.store.Reschedule(ctx, person.ID, nil, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved != 2 {
+		t.Errorf("moved %d cards, want the 2 unused ones", moved)
+	}
+	for _, record := range granted[1:] {
+		if got := cardRow(t, f, record.ID).ExpiresAt; got != target {
+			t.Errorf("card %s expires at %d, want %d", record.ID, got, target)
+		}
+	}
+	if got := cardRow(t, f, granted[0].ID).ExpiresAt; got != spentAt {
+		t.Errorf("a spent card was moved to %d, want it left at %d", got, spentAt)
+	}
+
+	// The lapsed one is spendable again, which is the entire point of the
+	// request that brings an operator here.
+	left, err := f.store.Available(ctx, person.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 2 {
+		t.Errorf("%d cards available after the move, want 2", len(left))
+	}
+}
+
+// Naming cards moves those and leaves the rest, and no account can move
+// another account's cards by naming their ids.
+func TestReschedulingNamedCardsStaysInsideOneAccount(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	mine := f.reader(t, "owner")
+	theirs := f.reader(t, "stranger")
+
+	ours, err := f.store.Grant(ctx, mine.ID, 2, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	others, err := f.store.Grant(ctx, theirs.ID, 1, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	untouched := cardRow(t, f, others[0].ID).ExpiresAt
+
+	target := time.Now().Add(90 * 24 * time.Hour).Truncate(time.Second).UnixMilli()
+	moved, err := f.store.Reschedule(ctx, mine.ID, []string{ours[0].ID, others[0].ID}, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved != 1 {
+		t.Errorf("moved %d cards, want only the one that belongs to this account", moved)
+	}
+	if got := cardRow(t, f, ours[0].ID).ExpiresAt; got != target {
+		t.Errorf("the named card expires at %d, want %d", got, target)
+	}
+	if got := cardRow(t, f, ours[1].ID).ExpiresAt; got == target {
+		t.Error("a card that was not named was moved as well")
+	}
+	if got := cardRow(t, f, others[0].ID).ExpiresAt; got != untouched {
+		t.Errorf("another account's card moved to %d, want it left at %d", got, untouched)
+	}
+}
+
+// The same window a hand-issued card is held to: a date in the past would
+// retire every card it touched, and one a decade out is a typo nobody can
+// undo a row at a time.
+func TestReschedulingRefusesADateOutsideTheWindow(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	person := f.reader(t, "misdated")
+	if _, err := f.store.Grant(ctx, person.ID, 1, 30); err != nil {
+		t.Fatal(err)
+	}
+
+	past := time.Now().Add(-time.Minute).UnixMilli()
+	if _, err := f.store.Reschedule(ctx, person.ID, nil, past); !errors.Is(err, ErrInvalidExpiry) {
+		t.Errorf("a past date gave %v, want ErrInvalidExpiry", err)
+	}
+	far := time.Now().Add(time.Duration(MaxDays+1) * 24 * time.Hour).UnixMilli()
+	if _, err := f.store.Reschedule(ctx, person.ID, nil, far); !errors.Is(err, ErrInvalidExpiry) {
+		t.Errorf("a date past the ceiling gave %v, want ErrInvalidExpiry", err)
+	}
+}
+
+// Reads one card straight from the table, including the ones Available and
+// Held deliberately hide.
+func cardRow(t *testing.T, f *fixture, cardID string) Card {
+	t.Helper()
+	var record Card
+	err := f.db.QueryRow(context.Background(),
+		`SELECT id, source, expires_at, used_at, created_at FROM usage_cards WHERE id = ?`, cardID).
+		Scan(&record.ID, &record.Source, &record.ExpiresAt, &record.UsedAt, &record.CreatedAt)
+	if err != nil {
+		t.Fatalf("read card %s: %v", cardID, err)
+	}
+	return record
+}

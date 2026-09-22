@@ -969,6 +969,61 @@ func init() {
 			return rt.Table([]string{"id", "source", "expires", "created"}, rows)
 		},
 	})
+
+	registerCommand(Command{
+		Name:    "user cards move",
+		Group:   "accounts",
+		Summary: Text{EN: "Move the expiry on cards an account holds", ZH: "改掉账户手上重置卡的到期时间"},
+		Usage:   "user cards move <id|username> --expires-at MS [--ids ID,ID]",
+		// Granting and moving are one request apart and opposite in effect, so
+		// the help says which one this is before an operator finds out.
+		Help: Text{
+			EN: "Moves cards this account has not spent, expired ones included, onto --expires-at. " +
+				"Nothing new is issued and a spent card is never moved. Without --ids, every unused card moves.",
+			ZH: "把这个账户还没用掉的卡（包括已经过期的）改到 --expires-at，不会新发卡，也不会动已经用掉的卡。" +
+				"不给 --ids 时，未使用的卡全部改期。",
+		},
+		Args: []Arg{{Name: "id|username", Hint: Text{EN: "account id or username", ZH: "账户 id 或用户名"}, Required: true}},
+		Flags: []Flag{
+			{Name: "--expires-at", Hint: Text{EN: "new expiry, epoch ms, within 3650 days", ZH: "新的到期时间（毫秒时间戳），不超过 3650 天"}, Value: "MS"},
+			{Name: "--ids", Hint: Text{EN: "only these card ids, comma separated", ZH: "只改这些卡 id，逗号分隔"}, Value: "ID,ID"},
+		},
+		Examples: []string{
+			"user cards move alice --expires-at 1790000000000",
+			"user cards move alice --expires-at 1790000000000 --ids 01ARZ3NDEKTSV4RRFFQ69G5FAV",
+		},
+		Permission: "users",
+		Endpoints:  []string{"PATCH /api/admin/users/{id}/cards"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			ref, err := requireRef(rt, "account id or username")
+			if err != nil {
+				return err
+			}
+			uid, err := resolveUserRef(rt, ref)
+			if err != nil {
+				return err
+			}
+			// Refused here rather than sent: there is no sensible default
+			// date to move cards to, and an omitted flag would otherwise
+			// reach the server as a zero it reads as "in 1970".
+			if !rt.Present("expires-at") {
+				if rt.Session.Lang == "zh" {
+					return fmt.Errorf("需要 --expires-at：改期没有默认日期")
+				}
+				return fmt.Errorf("--expires-at is required: there is no default date to move cards to")
+			}
+			body := bodyBuilder{}
+			body.int64v(rt, "expires-at", "expires_at")
+			if rt.Present("ids") {
+				body["card_ids"] = splitCSV(rt.String("ids"))
+			}
+			data, _, err := rt.Call(http.MethodPatch, "/api/admin/users/"+url.PathEscape(uid)+"/cards", map[string]any(body))
+			if err != nil {
+				return err
+			}
+			return rt.Table([]string{"moved"}, [][]string{{asStr(asMap(data)["moved"])}})
+		},
+	})
 }
 
 // truncateForTable clips display text by rune before it ever reaches

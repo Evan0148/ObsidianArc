@@ -115,8 +115,8 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     id: 'secHeldCards',
     pageSlug: 'users',
     titleKey: 'secHeldCards',
-    searchKeys: ['grantCards', 'cardFullReset'],
-    keywords: ['重置卡', '额度重置卡', '赠送重置卡', 'cards', 'reset allowance'],
+    searchKeys: ['grantCards', 'cardFullReset', 'rescheduleCards'],
+    keywords: ['重置卡', '额度重置卡', '赠送重置卡', '改期', '延长有效期', '卡过期', '续期', 'cards', 'reset allowance', 'expiry', 'extend'],
   },
   {
     id: 'secConversations',

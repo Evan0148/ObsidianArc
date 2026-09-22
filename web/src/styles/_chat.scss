@@ -1390,7 +1390,10 @@
 .ai-chat-input {
   box-sizing: border-box;
   flex: 1;
-  min-width: 0;
+  /* A floor, not zero: with a flex basis of 0 this is the only thing standing
+     between the box you type in and the controls beside it. Below about this
+     width the caret has nowhere to go and the field looks broken. */
+  min-width: 110px;
   min-height: 34px;
   max-height: 160px;
   padding: 6px 12px;
@@ -1768,9 +1771,15 @@
 
 /* --- the model + effort control ------------------------------------------------ */
 
+/* Shrinkable, with a floor. It used to refuse to shrink at all, which on a
+   phone was the whole composer: 34px of menu, 34px of send and a 200px chip
+   left a textarea about two characters wide, and a long model name filled the
+   chip every time. Giving way here is what keeps the input usable; the floor
+   is what keeps the chip a target you can still hit. */
 .ai-model-control {
   position: relative;
-  flex-shrink: 0;
+  min-width: 72px;
+  max-width: 200px;
 }
 
 /* Sits in the composer beside send, so it is sized to that row rather than to
@@ -1780,7 +1789,10 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  max-width: 200px;
+  /* The ceiling is on the control, because a cap set here cannot bound the
+     box that sizes itself around this one. Filling it is what makes a name
+     that overruns ellipsise rather than push out of the row. */
+  max-width: 100%;
   height: 34px;
   padding: 0 9px 0 11px;
   border: none;

@@ -231,6 +231,51 @@ func (s *Store) GrantUntil(ctx context.Context, userID string, count int, expire
 	return s.grant(ctx, userID, count, expiresAt, now)
 }
 
+// Reschedule moves the expiry of the cards one account is still holding.
+//
+// Unused cards only, but expired ones included, because the request that
+// brings an operator here is "their card ran out, give them longer" — and a
+// card that has already been spent is not a card any more, so moving its date
+// would hand back a reset somebody already took.
+//
+// An empty cardIDs means every unused card that account holds. That is the
+// bulk spelling, and it is the one an operator asks for: somebody with eleven
+// cards wants all eleven moved, not eleven requests.
+func (s *Store) Reschedule(ctx context.Context, userID string, cardIDs []string, expiresAt int64) (int, error) {
+	now := time.Now().UnixMilli()
+	if expiresAt <= now || expiresAt > now+int64(MaxDays)*24*3600*1000 {
+		return 0, ErrInvalidExpiry
+	}
+
+	query := `UPDATE usage_cards SET expires_at = ? WHERE user_id = ? AND used_at = ?`
+	args := []any{expiresAt, userID, 0}
+
+	if len(cardIDs) > 0 {
+		if len(cardIDs) > MaxCards {
+			cardIDs = cardIDs[:MaxCards]
+		}
+		placeholders := make([]byte, 0, len(cardIDs)*2)
+		for i, cardID := range cardIDs {
+			if i > 0 {
+				placeholders = append(placeholders, ',')
+			}
+			placeholders = append(placeholders, '?')
+			args = append(args, cardID)
+		}
+		query += ` AND id IN (` + string(placeholders) + `)`
+	}
+
+	result, err := s.db.Exec(ctx, query, args...)
+	if err != nil {
+		return 0, fmt.Errorf("card: reschedule: %w", err)
+	}
+	moved, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("card: reschedule: %w", err)
+	}
+	return int(moved), nil
+}
+
 func (s *Store) grant(ctx context.Context, userID string, count int, expires, now int64) ([]Card, error) {
 	if count < 1 {
 		return nil, ErrInvalidCount

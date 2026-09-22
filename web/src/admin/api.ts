@@ -535,6 +535,11 @@ export const adminApi = {
   deleteCode: (id: string) => api.delete<void>(`/api/admin/codes/${id}`),
   grantCards: (userID: string, body: { cards: number; expires_at: number }) =>
     api.post<void>(`/api/admin/users/${userID}/cards`, body),
+  // Moves cards the account already holds. Omitting card_ids means every
+  // unused one, expired included — which is what "their card ran out" asks
+  // for and what granting another one would get wrong.
+  rescheduleCards: (userID: string, body: { expires_at: number; card_ids?: string[] }) =>
+    api.patch<{ moved: number }>(`/api/admin/users/${userID}/cards`, body),
   reorderModels: (ids: string[]) =>
     api.put<void>('/api/admin/models/order', { ids }),
   resetQuota: (body: { scope: 'all' | 'group' | 'user'; id?: string }) =>

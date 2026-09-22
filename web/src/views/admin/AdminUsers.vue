@@ -137,6 +137,13 @@ const apiRestrictionTouched = ref(false);
 const grantCount = ref<number | null>(1);
 const grantExpiresAt = ref(defaultGrantExpiry());
 const grantLabel = ref('');
+const rescheduleLabel = ref('');
+const rescheduling = ref('');
+
+// Unused cards, expired ones included: those are what a reschedule reaches,
+// and the count beside the button has to say the same thing the request does
+// or the operator will read the result as a failure.
+const movableCards = computed(() => (cards.value?.available ?? 0) + (cards.value?.expired ?? 0));
 
 function dateTimeLocal(at: number): string {
   const date = new Date(at);
@@ -278,6 +285,8 @@ async function open(id: string): Promise<void> {
   conversationPage.value.page = 1;
   keys.value = null;
   grantLabel.value = '';
+  rescheduleLabel.value = '';
+  rescheduling.value = '';
   grantCount.value = 1;
   grantExpiresAt.value = defaultGrantExpiry();
 
@@ -441,6 +450,43 @@ function grant(): void {
       grantLabel.value = '';
       panelError.value = failure instanceof ApiError ? failure.message : String(failure);
     });
+}
+
+/**
+ * Moves cards this account already holds onto the date in the field above.
+ *
+ * The same picker the grant uses, because an operator asked for a date once
+ * and should not have to type it twice to decide which of the two things they
+ * meant. Naming one card moves that one; naming none moves every unused card,
+ * which is the request that actually arrives.
+ */
+async function reschedule(cardIDs?: string[]): Promise<void> {
+  const row = account.value;
+  if (!row) return;
+  const expiresAt = new Date(grantExpiresAt.value).getTime();
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    panelError.value = t('grantCardExpiryInvalid');
+    return;
+  }
+
+  rescheduling.value = cardIDs?.length ? cardIDs[0]! : 'all';
+  rescheduleLabel.value = '…';
+  try {
+    const result = await adminApi.rescheduleCards(row.id, {
+      expires_at: expiresAt,
+      ...(cardIDs?.length ? { card_ids: cardIDs } : {}),
+    });
+    rescheduleLabel.value = t('cardsMoved', { count: result.moved });
+    // Re-read rather than patch the list in place: a lapsed card that was
+    // moved forward is spendable again, and the counts above it move with it.
+    const detail = await adminApi.user(row.id);
+    cards.value = detail.cards;
+  } catch (failure) {
+    rescheduleLabel.value = '';
+    panelError.value = failure instanceof ApiError ? failure.message : String(failure);
+  } finally {
+    rescheduling.value = '';
+  }
 }
 
 function revokeKey(key: ApiKey): void {
@@ -656,6 +702,16 @@ const state = { q: '', role: '', status: '', group: '' };
               <span class="oa-card-expiry">
                 {{ card.expires_at > 0 ? t('cardExpires', { when: relativeTime(card.expires_at) }) : t('noLimit') }}
               </span>
+              <span class="oa-header-spacer" />
+              <!-- Moves this one onto the date below. One card at a time is
+                   the "this one runs out tomorrow" case; the button under the
+                   picker is the one that catches the expired ones too. -->
+              <button
+                type="button"
+                class="oa-btn oa-card-move"
+                :disabled="!!rescheduling"
+                @click="reschedule([card.id])"
+              >{{ t('rescheduleOne') }}</button>
             </div>
           </div>
         </template>
@@ -681,9 +737,18 @@ const state = { q: '', role: '', status: '', group: '' };
         <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="grantExpiresAt = computeExpiryPreset('6m')">{{ t('expiryHalfYear') }}</button>
         <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="grantExpiresAt = computeExpiryPreset('1y')">{{ t('expiry1Year') }}</button>
       </div>
-      <button type="button" class="oa-btn" :disabled="!!grantLabel" @click="grant">
-        {{ grantLabel || t('grantCards') }}
-      </button>
+      <div class="oa-card-actions">
+        <button type="button" class="oa-btn" :disabled="!!grantLabel" @click="grant">
+          {{ grantLabel || t('grantCards') }}
+        </button>
+        <button
+          type="button"
+          class="oa-btn"
+          :disabled="!movableCards || !!rescheduling"
+          @click="reschedule()"
+        >{{ rescheduleLabel || t('rescheduleCards', { count: movableCards }) }}</button>
+      </div>
+      <p class="oa-field-hint">{{ t('rescheduleCardsHint') }}</p>
 
       <OaFormSection :title="t('secProfile')" />
       <OaTextField v-model="form.nickname" :label="t('nickname')" :max-length="32" />

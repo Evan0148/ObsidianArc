@@ -156,6 +156,44 @@ function expiry(at: number): string {
   });
 }
 
+function expiryDay(at: number): string {
+  return new Date(at).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
+}
+
+/** A day's worth of cards, as one row. */
+interface CardStack {
+  key: string;
+  count: number;
+  /** The one a press spends: the soonest to expire, as the server would pick. */
+  first: Card;
+}
+
+/**
+ * Cards that run out on the same day, stacked into one row.
+ *
+ * Somebody holding twenty of these was reading twenty near-identical lines to
+ * answer "how many do I have" — a question the list was the worst possible
+ * shape for. They are grouped by day rather than by the exact millisecond
+ * because that is the difference a reader acts on, and cards earned one at a
+ * time carry timestamps minutes apart that would never collapse otherwise.
+ */
+const cardStacks = computed<CardStack[]>(() => {
+  const byDay = new Map<string, CardStack>();
+  for (const card of cards.value) {
+    const key = new Date(card.expires_at).toDateString();
+    const stack = byDay.get(key);
+    if (!stack) {
+      byDay.set(key, { key, count: 1, first: card });
+      continue;
+    }
+    stack.count += 1;
+    if (card.expires_at < stack.first.expires_at) stack.first = card;
+  }
+  return [...byDay.values()].sort((a, b) => a.first.expires_at - b.first.expires_at);
+});
+
+const cardsLeft = computed(() => cards.value.length);
+
 async function loadAllowance(): Promise<void> {
   try {
     summary.value = await fetchUsage();
@@ -167,11 +205,15 @@ async function loadAllowance(): Promise<void> {
 
 const refreshingAllowance = ref(false);
 
+// The button refreshes the screen, not the bars it sits above. Somebody who
+// presses it has just spent something and wants to see it land; leaving the
+// totals and the turn list at the figure they opened with made the refresh
+// look like it had done nothing.
 async function refreshAllowance(): Promise<void> {
   if (refreshingAllowance.value) return;
   refreshingAllowance.value = true;
   try {
-    await loadAllowance();
+    await Promise.all([loadAllowance(), loadHistory(), loadCards()]);
   } finally {
     refreshingAllowance.value = false;
   }
@@ -367,6 +409,10 @@ useIntervalFn(refreshQuietly, REFRESH_MS);
            somebody with a code in their hand is looking at this screen. -->
       <div class="oa-card-head">
         <h3 class="oa-drawer-subhead">{{ t('secCards') }}</h3>
+        <!-- The total beside the name, because "how many do I have" is the
+             question this section is opened with and the list below only
+             answered it by counting. -->
+        <span v-if="cardsLeft" class="oa-card-total">{{ t('cardsHeldCount', { count: cardsLeft }) }}</span>
         <span class="oa-header-spacer" />
         <OaIconButton class="oa-icon-btn" :label="t('redeemAdd')" @click="toggleRedeem">
           <IconPlus :size="15" />
@@ -392,17 +438,29 @@ useIntervalFn(refreshQuietly, REFRESH_MS);
       <div class="oa-card-list">
         <p v-if="cardsError" class="oa-field-hint">{{ cardsError }}</p>
         <p v-else-if="!cards.length" class="oa-field-hint">{{ t('cardNone') }}</p>
-        <div v-for="card in cards" v-else :key="card.id" class="oa-card-row">
+        <div v-for="stack in cardStacks" v-else :key="stack.key" class="oa-card-row">
           <div>
-            <span class="oa-card-title">{{ t('cardFullReset') }}</span>
-            <span class="oa-card-sub">{{ t('cardExpires', { when: expiry(card.expires_at) }) }}</span>
+            <span class="oa-card-title">
+              {{ t('cardFullReset') }}
+              <!-- Only when there is more than one. "× 1" is noise on the
+                   row it was added to make legible. -->
+              <em v-if="stack.count > 1" class="oa-card-times">&times; {{ stack.count }}</em>
+            </span>
+            <!-- A stack spans a day, so it is dated to the day. A lone card
+                 keeps its time: that is the one somebody is deciding whether
+                 to spend before it runs out this evening. -->
+            <span class="oa-card-sub">{{
+              stack.count > 1
+                ? t('cardExpires', { when: expiryDay(stack.first.expires_at) })
+                : t('cardExpires', { when: expiry(stack.first.expires_at) })
+            }}</span>
           </div>
           <span class="oa-header-spacer" />
           <button
             type="button"
             class="oa-btn"
-            :disabled="spending === card.id"
-            @click="spend(card)"
+            :disabled="spending === stack.first.id"
+            @click="spend(stack.first)"
           >{{ t('cardUse') }}</button>
         </div>
       </div>
