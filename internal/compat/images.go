@@ -2,26 +2,34 @@ package compat
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
+	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/adapter"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/chat"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/conversation"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/httpx"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/id"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/model"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/reqlog"
 )
 
 type imageGenerationRequest struct {
-	Prompt         string `json:"prompt"`
-	Model          string `json:"model"`
-	N              *int   `json:"n"`
-	Quality        string `json:"quality"`
-	ResponseFormat string `json:"response_format"`
-	Size           string `json:"size"`
-	Style          string `json:"style"`
-	User           string `json:"user"`
+	Prompt         string   `json:"prompt"`
+	Model          string   `json:"model"`
+	N              *int     `json:"n"`
+	Quality        string   `json:"quality"`
+	ResponseFormat string   `json:"response_format"`
+	Size           string   `json:"size"`
+	Style          string   `json:"style"`
+	User           string   `json:"user"`
+	Image          string   `json:"image"`
+	Images         []string `json:"images"`
 }
 
 type openAIImageData struct {
@@ -36,9 +44,109 @@ type openAIImageResponse struct {
 }
 
 func (h *Handlers) imagesGenerations(w http.ResponseWriter, r *http.Request, who caller) error {
-	var body imageGenerationRequest
-	if err := decode(w, r, &body); err != nil {
-		return err
+	var (
+		body  imageGenerationRequest
+		parts []adapter.ImagePart
+	)
+
+	ceiling := int64(conversation.MaxAttachmentBytes)
+
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		maxMultipartBytes := (ceiling*4/3+16*1024)*int64(chat.MaxReferenceImages) + 64*1024
+		if err := r.ParseMultipartForm(maxMultipartBytes); err != nil {
+			return badRequest("body", "Could not parse multipart form.")
+		}
+		defer func() {
+			if r.MultipartForm != nil {
+				_ = r.MultipartForm.RemoveAll()
+			}
+		}()
+		body.Prompt = strings.TrimSpace(r.FormValue("prompt"))
+		body.Model = strings.TrimSpace(r.FormValue("model"))
+		body.Size = strings.TrimSpace(r.FormValue("size"))
+		body.Style = strings.TrimSpace(r.FormValue("style"))
+		body.Quality = strings.TrimSpace(r.FormValue("quality"))
+		body.User = strings.TrimSpace(r.FormValue("user"))
+		if nStr := strings.TrimSpace(r.FormValue("n")); nStr != "" {
+			if nVal, err := strconv.Atoi(nStr); err == nil && nVal > 0 {
+				body.N = &nVal
+			}
+		}
+
+		fileHeaders := append(r.MultipartForm.File["image"], r.MultipartForm.File["images"]...)
+		if len(fileHeaders) > chat.MaxReferenceImages {
+			return badRequest("image", "At most "+strconv.Itoa(chat.MaxReferenceImages)+" reference images may be provided.")
+		}
+		for _, fh := range fileHeaders {
+			f, err := fh.Open()
+			if err != nil {
+				return badRequest("image", "Could not read reference image.")
+			}
+			data, err := io.ReadAll(io.LimitReader(f, ceiling+1))
+			_ = f.Close()
+			if err != nil {
+				return badRequest("image", "Could not read reference image.")
+			}
+			checked, mime, err := chat.CheckImage(data, ceiling)
+			if err != nil {
+				if errors.Is(err, chat.ErrImageSize) {
+					return badRequest("image", "The reference image is larger than this instance allows.")
+				}
+				return badRequest("image", "The reference image is not an image this instance accepts.")
+			}
+			parts = append(parts, adapter.ImagePart{
+				Data: checked,
+				Mime: mime,
+			})
+		}
+	} else {
+		maxBodyBytes := (ceiling*4/3+16*1024)*int64(chat.MaxReferenceImages) + 64*1024
+		if err := httpx.DecodeJSONLenient(w, r, &body, maxBodyBytes); err != nil {
+			var decided *httpx.Error
+			if errors.As(err, &decided) {
+				return apiError{
+					status:  decided.Status,
+					kind:    "invalid_request_error",
+					code:    "invalid_body",
+					message: decided.Message,
+				}
+			}
+			return internalError(err)
+		}
+
+		var rawImages []string
+		if len(body.Images) > 0 {
+			rawImages = body.Images
+		} else if body.Image != "" {
+			rawImages = []string{body.Image}
+		}
+		if len(rawImages) > chat.MaxReferenceImages {
+			return badRequest("images", "At most "+strconv.Itoa(chat.MaxReferenceImages)+" reference images may be provided.")
+		}
+		for _, raw := range rawImages {
+			raw = strings.TrimSpace(raw)
+			if raw == "" {
+				continue
+			}
+			if idx := strings.Index(raw, ";base64,"); idx != -1 {
+				raw = raw[idx+8:]
+			}
+			data, err := base64.StdEncoding.DecodeString(raw)
+			if err != nil {
+				return badRequest("image", "The reference image could not be read.")
+			}
+			checked, mime, err := chat.CheckImage(data, ceiling)
+			if err != nil {
+				if errors.Is(err, chat.ErrImageSize) {
+					return badRequest("image", "The reference image is larger than this instance allows.")
+				}
+				return badRequest("image", "The reference image is not an image this instance accepts.")
+			}
+			parts = append(parts, adapter.ImagePart{
+				Data: checked,
+				Mime: mime,
+			})
+		}
 	}
 
 	body.Prompt = strings.TrimSpace(body.Prompt)
@@ -90,6 +198,11 @@ func (h *Handlers) imagesGenerations(w http.ResponseWriter, r *http.Request, who
 		ResponseFormat: "b64_json",
 		Size:           body.Size,
 		Style:          body.Style,
+		Images:         parts,
+	}
+	if len(parts) > 0 {
+		req.Image = parts[0].Data
+		req.ImageMime = parts[0].Mime
 	}
 
 	result, err := h.registry.GenerateImage(r.Context(), resolved.Provider, req)

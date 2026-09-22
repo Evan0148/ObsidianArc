@@ -3124,6 +3124,32 @@
   gap: 12px;
 }
 
+/* The reference upload drop zone. Highlights with dashed border and container
+   tint when dragging image files so the drop target is visually distinct. */
+.oa-reference-zone {
+  position: relative;
+  border: 2px dashed transparent;
+  border-radius: 14px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.oa-reference-zone.dragging {
+  border-color: var(--ai-primary);
+  background: var(--ai-surface-container);
+  padding: 8px;
+}
+
+.oa-reference-drop-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  color: var(--ai-primary);
+  font-size: 12.5px;
+  font-weight: 500;
+  pointer-events: none;
+}
+
 /* The picture a prompt works from. The thumbnail is the composer's
    attachment at the panel's scale — same shape, same corner control — because
    it is the same idea and a second one would only be a second thing to learn. */
