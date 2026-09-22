@@ -184,6 +184,92 @@ describe('administrator roles on the user detail panel', () => {
   });
 });
 
+// Granting and moving share one date field and sit next to each other, which
+// is the whole risk: an operator who meant "their card lasts longer" must not
+// be able to mint a new one by pressing the wrong button, and the two must
+// not be able to disagree about which date they read.
+describe('moving the expiry on cards an account already holds', () => {
+  const holder: Account = {
+    id: 'holder', username: 'holder', nickname: 'Holder', email: '', qq: '', bio: '', avatar: '',
+    role: 'user', status: 'active', group_id: '', group_expires_at: 0, admin_permissions: [],
+    created_at: Date.now(), updated_at: Date.now(), last_login_at: 0, group_name: '',
+    email_verified: true, allow_stats: true, allow_delete_conversations: true,
+    api_restricted: false, api_restricted_until: 0, api_restriction_source: '',
+  };
+
+  // Two spendable, one already lapsed — the lapsed one is invisible in the
+  // list and still has to be counted by the button that would move it.
+  const holding = {
+    total: 3, available: 2, used: 0, expired: 1,
+    cards: [
+      { id: 'card-a', source: 'grant' as const, expires_at: Date.now() + 86_400_000, used_at: 0, created_at: 0 },
+      { id: 'card-b', source: 'code' as const, expires_at: Date.now() + 172_800_000, used_at: 0, created_at: 0 },
+    ],
+  };
+
+  async function openHolder(): Promise<void> {
+    adopt({ ...holder, id: 'operator', role: 'admin', admin_permissions: ['users'] });
+    const policy = emptyPolicy('user', holder.id);
+    vi.spyOn(adminApi, 'groupOptions').mockResolvedValue({ groups: [] });
+    vi.spyOn(adminApi, 'users').mockResolvedValue({ users: [holder], total: 1 });
+    vi.spyOn(adminApi, 'user').mockResolvedValue({
+      user: holder, policy, usage: { windows: [], unlimited: true },
+      lifetime: { requests: 0, input_tokens: 0, output_tokens: 0, reasoning_tokens: 0, total_tokens: 0, credits: 0, errors: 0 },
+      cards: holding,
+    });
+    vi.spyOn(adminApi, 'userKeys').mockResolvedValue({ keys: [] });
+    await mount(AdminUsers);
+    host.querySelector<HTMLTableRowElement>('tbody tr')!.click();
+    await settle();
+  }
+
+  /** The shared expiry picker, set to a fixed local date and time. */
+  function pickDate(value: string): void {
+    const field = panels.querySelector<HTMLInputElement>('input[type="datetime-local"]')!;
+    input(field, value);
+  }
+
+  it('moves every unused card, counting the expired one the list does not show', async () => {
+    await openHolder();
+    const move = vi.spyOn(adminApi, 'rescheduleCards').mockResolvedValue({ moved: 3 });
+    const grant = vi.spyOn(adminApi, 'grantCards').mockResolvedValue(undefined);
+
+    pickDate('2030-01-02T03:04');
+    button(panels, t('rescheduleCards', { count: 3 })).click();
+    await settle();
+
+    expect(grant).not.toHaveBeenCalled();
+    expect(move).toHaveBeenCalledWith(holder.id, { expires_at: new Date('2030-01-02T03:04').getTime() });
+    expect(panels.textContent).toContain(t('cardsMoved', { count: 3 }));
+  });
+
+  it('moves one named card from its own row', async () => {
+    await openHolder();
+    const move = vi.spyOn(adminApi, 'rescheduleCards').mockResolvedValue({ moved: 1 });
+
+    pickDate('2030-01-02T03:04');
+    panels.querySelector<HTMLButtonElement>('.oa-card-row .oa-card-move')!.click();
+    await settle();
+
+    expect(move).toHaveBeenCalledWith(holder.id, {
+      expires_at: new Date('2030-01-02T03:04').getTime(),
+      card_ids: ['card-a'],
+    });
+  });
+
+  it('refuses a date in the past rather than sending it', async () => {
+    await openHolder();
+    const move = vi.spyOn(adminApi, 'rescheduleCards').mockResolvedValue({ moved: 0 });
+
+    pickDate('2020-01-02T03:04');
+    button(panels, t('rescheduleCards', { count: 3 })).click();
+    await settle();
+
+    expect(move).not.toHaveBeenCalled();
+    expect(panels.textContent).toContain(t('grantCardExpiryInvalid'));
+  });
+});
+
 describe('redemption code export', () => {
   const records = [
     code('BEFORE', '2026-09-13T11:59:59'),
