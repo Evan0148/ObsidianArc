@@ -98,6 +98,104 @@ func TestExplicitDisableBeatsInheritedEnable(t *testing.T) {
 	}
 }
 
+// Tightening one account below the group it shares with everybody else —
+// the shape an operator reaches for when one person is burning an allowance
+// the rest of the group is fine on. The two halves that matter are that the
+// smaller number is the one enforced, and that nobody else in the group
+// moves.
+func TestAUserOverrideCanBeStricterThanItsGroup(t *testing.T) {
+	service, _ := newService(t)
+	ctx := context.Background()
+
+	if _, err := service.Policies().Save(ctx, Policy{
+		Scope: ScopeGroup, ScopeID: "shared",
+		Windows: map[Window]Limits{Window5H: limits(true, ptrInt(10), nil, nil)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Policies().Save(ctx, Policy{
+		Scope: ScopeUser, ScopeID: "watched",
+		Windows: map[Window]Limits{Window5H: {Requests: ptrInt(2)}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	watched := account("watched", "shared")
+	for attempt := 1; attempt <= 2; attempt++ {
+		if _, err := service.Reserve(ctx, watched, Estimate{}); err != nil {
+			t.Fatalf("request %d was refused: %v", attempt, err)
+		}
+	}
+	_, err := service.Reserve(ctx, watched, Estimate{})
+	exceeded, ok := AsExceeded(err)
+	if !ok {
+		t.Fatalf("the third request got past a limit of two: %v", err)
+	}
+	if exceeded.Limit != 2 {
+		t.Errorf("refused against a limit of %v, want the override's 2", exceeded.Limit)
+	}
+
+	// The group everybody else is in did not move.
+	ordinary := account("ordinary", "shared")
+	for attempt := 1; attempt <= 3; attempt++ {
+		if _, err := service.Reserve(ctx, ordinary, Estimate{}); err != nil {
+			t.Fatalf("another member of the same group was refused at %d: %v", attempt, err)
+		}
+	}
+}
+
+// A number typed into a window the group never switched on does nothing.
+//
+// `enabled` is nil at both levels, and isOn() wants an explicit true, so the
+// limit is inert however small it is. This is the trap in the administrative
+// form: the field accepts the number and saves it, and the account carries on
+// unlimited.
+func TestANumberAloneDoesNotTurnAWindowOn(t *testing.T) {
+	service, _ := newService(t)
+	ctx := context.Background()
+
+	if _, err := service.Policies().Save(ctx, Policy{
+		Scope: ScopeGroup, ScopeID: "no-five-hour",
+		// Deliberately not limits(...): the window is left unset, which is how
+		// a group that only caps the week is stored.
+		Windows: map[Window]Limits{WindowWeek: limits(true, ptrInt(100), nil, nil)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Policies().Save(ctx, Policy{
+		Scope: ScopeUser, ScopeID: "typed-a-number",
+		Windows: map[Window]Limits{Window5H: {Requests: ptrInt(1)}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	person := account("typed-a-number", "no-five-hour")
+	for attempt := 1; attempt <= 5; attempt++ {
+		if _, err := service.Reserve(ctx, person, Estimate{}); err != nil {
+			t.Fatalf("request %d was refused by a window nothing switched on: %v", attempt, err)
+		}
+	}
+
+	// Flipping it on is what makes the same number bite — and the window
+	// starts counting from zero, not from the five requests already made.
+	// Somebody capped part-way through a window gets that whole window over
+	// again, which is the opposite of what "they have had enough for today"
+	// means.
+	if _, err := service.Policies().Save(ctx, Policy{
+		Scope: ScopeUser, ScopeID: "typed-a-number",
+		Windows: map[Window]Limits{Window5H: limits(true, ptrInt(1), nil, nil)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Reserve(ctx, person, Estimate{}); err != nil {
+		t.Fatalf("a freshly switched-on window counted the requests made before it: %v", err)
+	}
+	_, err := service.Reserve(ctx, person, Estimate{})
+	if _, ok := AsExceeded(err); !ok {
+		t.Errorf("the same number still did nothing once the window was switched on: %v", err)
+	}
+}
+
 // --- enforcement -------------------------------------------------------------------
 
 func TestReserveStopsAtTheRequestLimit(t *testing.T) {
