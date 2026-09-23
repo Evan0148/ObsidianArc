@@ -182,6 +182,30 @@ describe('administrator roles on the user detail panel', () => {
     await settle();
     expect(update).toHaveBeenCalledWith(member.id, expect.objectContaining({ role: 'admin', admin_permissions: ['users'] }));
   });
+  // A heavy account takes seconds to total. The click has to show that it
+  // was heard, and a failure has to land where the reader is looking, not
+  // above a list they have scrolled away from.
+  it('opens the panel on the click and reports a failed detail inside it', async () => {
+    adopt({ ...member, id: 'operator', role: 'super_admin', admin_permissions: [] });
+    vi.spyOn(adminApi, 'groupOptions').mockResolvedValue({ groups: [] });
+    vi.spyOn(adminApi, 'users').mockResolvedValue({ users: [member], total: 1 });
+    vi.spyOn(adminApi, 'userKeys').mockResolvedValue({ keys: [] });
+    let fail: (reason: Error) => void = () => {};
+    vi.spyOn(adminApi, 'user').mockReturnValue(new Promise((_, reject) => { fail = reject; }));
+    await mount(AdminUsers);
+
+    host.querySelector<HTMLTableRowElement>('tbody tr')!.click();
+    await settle();
+    expect(panels.querySelector('.oa-panel')).not.toBeNull();
+    expect(panels.textContent).toContain(t('loading'));
+    expect(button(panels, '…').disabled).toBe(true);
+
+    fail(new Error('Database is busy'));
+    await settle();
+    expect(panels.textContent).toContain('Database is busy');
+    expect(panels.textContent).not.toContain(t('loading'));
+  });
+
 });
 
 // Granting and moving share one date field and sit next to each other, which

@@ -70,6 +70,23 @@ describe('dashboard overview', () => {
     expect(rows[0]!.textContent).toContain('90.0%');
   });
 
+  // The busiest hour by requests and the busiest by tokens are often different
+  // hours — many small turns against a few long ones — so the pair below
+  // disagrees, and the caption has to follow the switch.
+  it('switches the heatmap between requests and tokens', async () => {
+    const fixture = dashboardFixture();
+    fixture.heatmap = [{ weekday: 4, hour: 21, requests: 64, total_tokens: 100_000 }, { weekday: 1, hour: 10, requests: 12, total_tokens: 900_000 }];
+    vi.spyOn(adminApi, 'dashboard').mockResolvedValue(fixture);
+    await mountDashboard();
+    const card = host.querySelector('#secWhen')!;
+    const caption = () => card.querySelector('.oa-heatmap-caption')?.textContent ?? '';
+    expect(caption()).toContain(t('boardRequests', { count: '64' }));
+
+    button(card, t('statTokens')).click(); await nextTick();
+    expect(button(card, t('statTokens')).getAttribute('aria-pressed')).toBe('true');
+    expect(caption()).toContain(t('boardTokens', { count: '900k' }));
+  });
+
   it('keeps the last snapshot on refresh failure and allows a retry', async () => {
     const load = vi.spyOn(adminApi, 'dashboard').mockResolvedValueOnce(dashboardFixture()).mockRejectedValueOnce(new Error('Temporarily unavailable')).mockResolvedValueOnce({ ...dashboardFixture(), counts: { ...dashboardFixture().counts, users: 200 } });
     await mountDashboard();

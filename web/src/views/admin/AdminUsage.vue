@@ -9,8 +9,8 @@
 // account and it becomes theirs. That is the whole of the drill-down: the
 // same questions, asked of a narrower slice of the same ledger.
 
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { useIntervalFn } from '@vueuse/core';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useDocumentVisibility, useIntervalFn } from '@vueuse/core';
 import {
   adminApi, emptyPolicy, zoneQuery,
   type Group, type QuotaWindowKind, type UsageBreakdown, type UsagePoint,
@@ -661,6 +661,7 @@ function setPreset(preset: Preset): void {
 // --- keeping it current --------------------------------------------------------------------
 
 async function refreshRPM(): Promise<void> {
+  if (visibility.value === 'hidden') return;
   try {
     const res = await adminApi.rpm();
     currentRPM.value = res.rpm;
@@ -681,7 +682,17 @@ async function refreshRPM(): Promise<void> {
 // unreachable server recovers on its own.
 const REFRESH_MS = 15000;
 
+// Nobody reads a background tab. Each refresh recomputes every aggregate on
+// the page over the whole range — a dozen queries across the ledger — and a
+// tab left open overnight used to run them four times a minute for no one.
+// It catches up the moment it is looked at again.
+const visibility = useDocumentVisibility();
+watch(visibility, (now, was) => {
+  if (now === 'visible' && was === 'hidden') { refreshQuietly(); void refreshRPM(); }
+});
+
 function refreshQuietly(): void {
+  if (visibility.value === 'hidden') return;
   const ticket = ++summaryRequest;
   void adminApi.usage(summaryQuery()).then((summary) => {
     if (ticket !== summaryRequest) return;

@@ -9,8 +9,8 @@
 // The page re-reads itself while it is open, because a CPU figure that does
 // not move is not a CPU figure.
 
-import { computed, onMounted, ref } from 'vue';
-import { useIntervalFn } from '@vueuse/core';
+import { computed, onMounted, ref, watch } from 'vue';
+import { useDocumentVisibility, useIntervalFn } from '@vueuse/core';
 import { adminApi, type Resources, type UserStorage } from '@/admin/api';
 import AdminControlCard from './AdminControlCard.vue';
 import { IconFile, IconCpu, IconLayers } from '@/icons';
@@ -106,7 +106,10 @@ async function load(): Promise<void> {
 
 // Manual and automatic refresh share the same in-flight guard and keep the
 // table mounted, including its page and sort order, if a sample fails.
-useIntervalFn(() => { void load(); }, REFRESH_MS);
+// Paused while the tab is hidden, as the usage page is, and caught up on return.
+const visibility = useDocumentVisibility();
+useIntervalFn(() => { if (visibility.value !== 'hidden') void load(); }, REFRESH_MS);
+watch(visibility, (now, was) => { if (now === 'visible' && was === 'hidden') void load(); });
 
 onMounted(load);
 </script>

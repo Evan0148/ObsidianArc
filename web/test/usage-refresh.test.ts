@@ -257,4 +257,29 @@ describe('AdminUsage', () => {
     expect(document.body.textContent).not.toContain('boom');
     expect(document.body.textContent).toContain('8');
   });
+
+  // A hidden tab recomputing every aggregate four times a minute is load with
+  // no reader. It waits, and catches up the moment it is looked at.
+  it('pauses while the tab is hidden and catches up when it is shown', async () => {
+    let reads = 0;
+    get.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/admin/usage?')) { reads += 1; return adminPayload(reads); }
+      return adminRoutes(null)(url);
+    });
+    let state: DocumentVisibilityState = 'hidden';
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => state);
+    try {
+      mountAdmin();
+      await advance(0);
+      await advance(REFRESH_MS * 3);
+      expect(reads).toBe(1);
+
+      state = 'visible';
+      document.dispatchEvent(new Event('visibilitychange'));
+      await advance(0);
+      expect(reads).toBe(2);
+    } finally {
+      visibility.mockRestore();
+    }
+  });
 });

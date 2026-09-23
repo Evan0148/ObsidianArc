@@ -120,6 +120,11 @@ async function list(): Promise<void> {
 type PanelMode = 'account' | 'conversations' | 'transcript';
 
 const panelOpen = ref(false);
+const loadingDetail = ref(false);
+// Whether the form below holds this account. Until it does the panel shows
+// nothing editable: an empty form saved by mistake would clear real fields.
+const detailReady = ref(false);
+let opening = 0;
 const mode = ref<PanelMode>('account');
 const busy = ref(false);
 const panelError = ref('');
@@ -274,13 +279,38 @@ async function open(id: string): Promise<void> {
   grantCount.value = 1;
   grantExpiresAt.value = defaultGrantExpiry();
 
+  // The panel opens on the click, with the row the list already has, and
+  // fills in when the detail arrives. It used to wait for the detail first:
+  // an account with hundreds of thousands of ledger rows takes seconds to
+  // total, nothing moved in the meantime, and a failure was written above
+  // the list — out of sight of a reader scrolled down to the row — so the
+  // click looked like it had done nothing at all.
+  const ticket = ++opening;
+  const listed = users.value.find((candidate) => candidate.id === id);
+  account.value = listed ?? null;
+  usage.value = null;
+  lifetime.value = null;
+  models.value = [];
+  cards.value = null;
+  loadingDetail.value = true;
+  detailReady.value = false;
+  panelOpen.value = true;
+
   let detail;
   try {
     detail = await adminApi.user(id);
   } catch (failure) {
-    listError.value = failure instanceof ApiError ? failure.message : String(failure);
+    if (ticket !== opening) return;
+    loadingDetail.value = false;
+    panelError.value = failure instanceof ApiError ? failure.message : String(failure);
+    // Without a row to show there is no panel to put the error in.
+    if (!account.value) { listError.value = panelError.value; panelOpen.value = false; }
     return;
   }
+  // A second click while the first was loading wins; the late answer about
+  // the first account must not overwrite the panel now showing another.
+  if (ticket !== opening) return;
+  loadingDetail.value = false;
 
   const row = detail.user;
   const policy = detail.policy.id ? detail.policy : emptyPolicy('user', id);
@@ -325,7 +355,7 @@ async function open(id: string): Promise<void> {
     tpm: policy.tpm,
     windows,
   };
-  panelOpen.value = true;
+  detailReady.value = true;
 
   // The list and nothing else: the server keeps a digest, so there is no token
   // to show and no endpoint that could produce one. What an operator needs
@@ -658,14 +688,15 @@ const state = { q: '', role: '', status: '', group: '' };
       ? t('confirmDeleteUser', { name: account.username })
       : undefined"
     :back="mode !== 'account'"
-    :busy="busy"
+    :busy="busy || loadingDetail"
     :error="panelError"
     @close="panelOpen = false"
     @confirm="save"
     @destructive="remove"
     @back="mode === 'transcript' ? openConversations() : (mode = 'account')"
   >
-    <template v-if="mode === 'account'">
+    <p v-if="mode === 'account' && loadingDetail" class="oa-table-empty">{{ t('loading') }}</p>
+    <template v-else-if="mode === 'account' && detailReady">
       <OaStatGrid :stats="summaryStats" />
 
       <div class="oa-facts">
@@ -968,7 +999,7 @@ const state = { q: '', role: '', status: '', group: '' };
       />
     </template>
 
-    <template v-else>
+    <template v-else-if="mode === 'transcript'">
       <p v-if="transcript === null" class="oa-field-hint">{{ t('loading') }}</p>
       <div v-else class="oa-transcript">
         <div v-for="message in transcript" :key="message.id" class="oa-transcript-turn">

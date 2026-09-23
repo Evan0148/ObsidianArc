@@ -26,6 +26,7 @@ const busy = ref(false);
 const updatedAt = ref(0);
 const ranking = ref<'models' | 'users'>('models');
 const shape = ref<ChartShape>(dashboardShape);
+const heatMetric = ref<'requests' | 'total_tokens'>(dashboardHeatMetric);
 const locale = computed(() => currentLanguage() === 'zh' ? 'zh-CN' : 'en-US');
 const dateLabel = computed(() => new Date(updatedAt.value || Date.now()).toLocaleDateString(locale.value, {
   month: 'long', day: 'numeric', weekday: 'long',
@@ -110,11 +111,14 @@ async function load(): Promise<void> {
   }
 }
 onMounted(load);
+
+function onHeatMetric(next: 'requests' | 'total_tokens'): void { heatMetric.value = next; dashboardHeatMetric = next; }
 </script>
 
 <script lang="ts">
 // Preserve the existing chart preference when the administrator returns.
 let dashboardShape: ChartShape = 'bar';
+let dashboardHeatMetric: 'requests' | 'total_tokens' = 'requests';
 </script>
 
 <template>
@@ -235,8 +239,12 @@ let dashboardShape: ChartShape = 'bar';
       <section id="secWhen" class="oa-dashboard-card">
         <div class="oa-dashboard-section-head">
           <div><span class="oa-dashboard-kicker">{{ t('dashboardHeatmapHint') }}</span><h2>{{ t('heatmapTitle') }}</h2></div>
+          <div class="oa-segment" role="group" :aria-label="t('rankMetric')">
+            <button type="button" :aria-pressed="heatMetric === 'requests'" @click="onHeatMetric('requests')">{{ t('statRequests') }}</button>
+            <button type="button" :aria-pressed="heatMetric === 'total_tokens'" @click="onHeatMetric('total_tokens')">{{ t('statTokens') }}</button>
+          </div>
         </div>
-        <UsageHeatmap class="oa-dashboard-heatmap" :slots="data.heatmap ?? []" metric="requests" :format="(value) => t('boardRequests', { count: compactNumber(value) })" />
+        <UsageHeatmap class="oa-dashboard-heatmap" :slots="data.heatmap ?? []" :metric="heatMetric" :format="(value) => t(heatMetric === 'requests' ? 'boardRequests' : 'boardTokens', { count: compactNumber(value) })" />
       </section>
 
       <section id="secHealth" class="oa-dashboard-card oa-dashboard-health">

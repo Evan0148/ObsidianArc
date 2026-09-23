@@ -217,7 +217,7 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
 | Binary (SQLite + embedded SPA) | < 30 MB | 20.6 MB (16.9 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 135 kB | 168.73 kB to open the chat (140.62 JS + 28.11 CSS) |
+| Frontend, on the wire | < 135 kB | 168.80 kB to open the chat (140.69 JS + 28.11 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
 
@@ -226,11 +226,11 @@ model, a user × model cross-table, a weekday × hour heatmap) and a pass over
 the alignment of the backoffice's and the chat home's controls. Measured
 against the commit before that work, which was itself already 1.19 kB above
 the figure below — three merged contributions had not been remeasured — the
-first paint grew by 3.97 kB: 1.38 kB of JS, mostly the English strings the new
+first paint grew by 4.04 kB: 1.45 kB of JS, mostly the English strings the new
 screens need, and 2.59 kB of CSS. The CSS is the honest cost of an unsplit
 stylesheet: the charts' rules are admin-only, and they reach every reader
-because there is one stylesheet. The backoffice chunk grew by 8.83 kB to
-78.78 kB and the Chinese dictionary by 1.11 kB to 28.77 kB, neither of which a
+because there is one stylesheet. The backoffice chunk grew by 9.19 kB to
+79.14 kB and the Chinese dictionary by 1.11 kB to 28.77 kB, neither of which a
 non-administrator reading in English fetches. The binary grew by 86 kB, the
 same 86 kB with `-tags nosqlite`: the new queries and the larger embedded
 frontend, no new dependency. Built with Go 1.27.1 (20,639,904 bytes with
@@ -296,10 +296,10 @@ What each reader actually downloads:
 
 | | gzipped |
 | --- | --- |
-| English, not an administrator | 168.73 kB |
-| Chinese, not an administrator | 197.50 kB |
-| …and a conversation containing a formula | 201.15 kB |
-| Chinese administrator, backoffice open | 276.28 kB |
+| English, not an administrator | 168.80 kB |
+| Chinese, not an administrator | 197.57 kB |
+| …and a conversation containing a formula | 201.22 kB |
+| Chinese administrator, backoffice open | 276.71 kB |
 
 Route-level splitting would shave the first paint further and is deliberately
 switched off for everything but the backoffice: /settings, /keys, /usage and
