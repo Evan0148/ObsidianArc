@@ -39,7 +39,12 @@ curl https://ai.example.com/v1/images/generations \
 
 接口支持传入参考图进行图像变体与编辑（最多 5 张）：
 - 在 `POST /v1/images/generations` 中，可通过 `image` 或 `images` 字段传入 Base64 图片数据。
-- 同时支持兼容 OpenAI 的 `POST /v1/images/edits` 端点，支持通过 `multipart/form-data` 上传图片文件（字段名为 `image`）或通过 JSON 发送。
+- 同时支持兼容 OpenAI 的 `POST /v1/images/edits` 端点，支持通过 `multipart/form-data` 上传图片文件或通过 JSON 发送。文件字段名 `image`、`image[]`、`images` 都认；官方 SDK 传多张图时用的是 `image[]`。
+- multipart 请求整体不能超过「5 张 × 单张附件上限」再加少量表单字段的余量，超出返回 413。
+
+```bash
+curl https://ai.example.com/v1/images/edits   -H "Authorization: Bearer $OBSIDIAN_API_KEY"   -F model=your-image-model   -F prompt="把这两张图合成一张海报"   -F "image[]=@a.png"   -F "image[]=@b.png"
+```
 
 ## 响应格式
 
