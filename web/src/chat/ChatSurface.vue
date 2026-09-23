@@ -46,6 +46,11 @@ function scrollToBottom(): void {
   node.scrollTop = node.scrollHeight;
 }
 
+// Wired as a plain `@scroll`, never `@scroll.passive`: on a component the
+// modifier becomes part of the listener's name, emit never finds it, and this
+// silently never runs — which leaves the view following the answer no matter
+// where the reader has scrolled. The scroll area's own listener is already
+// passive; that is the one the browser cares about.
 function onScroll(): void {
   const node = scroller();
   if (!node) return;
@@ -139,7 +144,7 @@ defineExpose({ focus: () => composer.value?.focus() });
       ref="scroll"
       wrap-class="ai-chat-scroll-wrap"
       :scroll-class="rising ? 'ai-chat-scroll ai-chat-switching' : 'ai-chat-scroll'"
-      @scroll.passive="onScroll"
+      @scroll="onScroll"
     >
       <div v-if="!status.configured" class="ai-chat-setup">
         <h3 class="ai-chat-setup-title">{{ t('setupTitle') }}</h3>

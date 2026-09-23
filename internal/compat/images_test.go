@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -225,5 +226,89 @@ func TestImagesGenerationsTooManyReferenceImages(t *testing.T) {
 		`{"model":"painter","prompt":"too many","images":[`+strings.Join(many, ",")+`]}`)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400: %s", w.Code, w.Body.String())
+	}
+}
+
+// zeros is an endless run of zero bytes, so a test can send a body larger
+// than the cap without holding it in memory first.
+type zeros struct{}
+
+func (zeros) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
+}
+
+// ParseMultipartForm's argument is a memory threshold, not a ceiling: past it
+// the file parts go to temporary files on disk, as large as the sender likes.
+// So the body itself has to be capped, or any key holder can fill the disk
+// with a part this handler never even reads. The padding here is exactly
+// that: a valid edit, plus one field nobody asked for.
+func TestImagesEditsRefusesABodyPastTheCeiling(t *testing.T) {
+	fix := newFixture(t)
+	imageModel(t, fix, "painter", 0)
+	fix.upstream.reply(`{"created":1700000000,"data":[{"b64_json":"aGVsbG8="}]}`)
+
+	pngBytes, _ := base64.StdEncoding.DecodeString(testPNG)
+	reader, pipe := io.Pipe()
+	writer := multipart.NewWriter(pipe)
+	go func() {
+		_ = writer.WriteField("model", "painter")
+		_ = writer.WriteField("prompt", "edit this image")
+		part, _ := writer.CreateFormFile("image", "test.png")
+		_, _ = part.Write(pngBytes)
+		padding, _ := writer.CreateFormFile("padding", "padding.bin")
+		_, err := io.Copy(padding, io.LimitReader(zeros{}, 40<<20))
+		if err == nil {
+			err = writer.Close()
+		}
+		_ = pipe.CloseWithError(err)
+	}()
+	// Whatever the handler did not read is still blocked on the pipe; this
+	// lets that goroutine finish once the request is over.
+	defer reader.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/edits", reader)
+	req.Header.Set("Authorization", "Bearer "+fix.token)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	fix.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413: %s", w.Code, w.Body.String())
+	}
+}
+
+// The official SDKs send a list of pictures as repeated `image[]` parts, not
+// `image`, so an edit with two references has to arrive upstream as two.
+func TestImagesEditsTakesTheBracketedFieldName(t *testing.T) {
+	fix := newFixture(t)
+	imageModel(t, fix, "painter", 0)
+	fix.upstream.reply(`{"created":1700000000,"data":[{"b64_json":"aGVsbG8="}]}`)
+
+	pngBytes, _ := base64.StdEncoding.DecodeString(testPNG)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	_ = writer.WriteField("model", "painter")
+	_ = writer.WriteField("prompt", "combine these")
+	for _, name := range []string{"a.png", "b.png"} {
+		part, err := writer.CreateFormFile("image[]", name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = part.Write(pngBytes)
+	}
+	_ = writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/edits", &body)
+	req.Header.Set("Authorization", "Bearer "+fix.token)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	fix.mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+
+	if got := strings.Count(fix.upstream.receivedRaw(), `name="image"`); got != 2 {
+		t.Errorf("upstream received %d reference images, want 2", got)
 	}
 }

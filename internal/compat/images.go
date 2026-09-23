@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
@@ -18,6 +19,12 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/model"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/reqlog"
 )
+
+// maxEditBytes is the most an image edit may send: every reference image at
+// the attachment ceiling, and room for the text fields and part headers.
+// Multipart carries raw bytes, so unlike the JSON body there is no base64 to
+// allow for.
+const maxEditBytes = int64(conversation.MaxAttachmentBytes)*int64(chat.MaxReferenceImages) + 256*1024
 
 type imageGenerationRequest struct {
 	Prompt         string   `json:"prompt"`
@@ -52,8 +59,21 @@ func (h *Handlers) imagesGenerations(w http.ResponseWriter, r *http.Request, who
 	ceiling := int64(conversation.MaxAttachmentBytes)
 
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
-		maxMultipartBytes := (ceiling*4/3+16*1024)*int64(chat.MaxReferenceImages) + 64*1024
-		if err := r.ParseMultipartForm(maxMultipartBytes); err != nil {
+		// The body is capped before anything parses it. ParseMultipartForm's
+		// argument is only where it stops holding parts in memory; past it,
+		// file parts go to temporary files on disk as large as the sender
+		// likes — including parts this handler never reads.
+		r.Body = http.MaxBytesReader(w, r.Body, maxEditBytes)
+		if err := r.ParseMultipartForm(maxEditBytes); err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				return apiError{
+					status:  http.StatusRequestEntityTooLarge,
+					kind:    "invalid_request_error",
+					code:    "invalid_body",
+					message: "That request is larger than this server accepts.",
+				}
+			}
 			return badRequest("body", "Could not parse multipart form.")
 		}
 		defer func() {
@@ -73,7 +93,13 @@ func (h *Handlers) imagesGenerations(w http.ResponseWriter, r *http.Request, who
 			}
 		}
 
-		fileHeaders := append(r.MultipartForm.File["image"], r.MultipartForm.File["images"]...)
+		// `image[]` is how the official SDKs spell a list of files; `image`
+		// and `images` are what a hand-written request tends to use. Missing
+		// the first quietly turned an edit into a plain generation.
+		var fileHeaders []*multipart.FileHeader
+		for _, name := range []string{"image", "image[]", "images", "images[]"} {
+			fileHeaders = append(fileHeaders, r.MultipartForm.File[name]...)
+		}
 		if len(fileHeaders) > chat.MaxReferenceImages {
 			return badRequest("image", "At most "+strconv.Itoa(chat.MaxReferenceImages)+" reference images may be provided.")
 		}

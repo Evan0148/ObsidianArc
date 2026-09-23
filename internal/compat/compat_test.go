@@ -62,6 +62,9 @@ type stubUpstream struct {
 	// What the server was last asked for, decoded. Tool support is mostly a
 	// question of what leaves this instance, so the tests need to read it.
 	sent map[string]any
+	// The same request undecoded, for the one upstream call that is not
+	// JSON: an image edit goes out as multipart.
+	sentRaw string
 }
 
 func newStubUpstream(t *testing.T) *stubUpstream {
@@ -74,6 +77,7 @@ func newStubUpstream(t *testing.T) *stubUpstream {
 
 		stub.mu.Lock()
 		stub.sent = decoded
+		stub.sentRaw = string(raw)
 		body, frames, status := stub.body, append([]string(nil), stub.frames...), stub.status
 		stub.mu.Unlock()
 
@@ -118,6 +122,12 @@ func (s *stubUpstream) fail(status int, body string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.status, s.body, s.frames = status, body, nil
+}
+
+func (s *stubUpstream) receivedRaw() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sentRaw
 }
 
 func (s *stubUpstream) received() map[string]any {
