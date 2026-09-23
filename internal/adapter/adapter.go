@@ -460,8 +460,10 @@ func (r *Registry) Chat(ctx context.Context, p Provider, req ChatRequest, sink S
 	} else {
 		result, err = adapter.Chat(ctx, r.client, p, req, watched)
 	}
-	if err == nil && reported.Total() == 0 && result.Usage.Total() == 0 {
-		result.Usage = estimateResult(req, result)
+	if err == nil {
+		if filled := fillUsage(req, result, reported.Merge(result.Usage)); filled.Estimated {
+			result.Usage = filled
+		}
 	}
 	return result, err
 }

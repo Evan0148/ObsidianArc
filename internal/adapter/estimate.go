@@ -58,18 +58,34 @@ func EstimatePrompt(request ChatRequest) int {
 	return tokens + bytes/bytesPerToken
 }
 
-// estimateResult is roughly what an answer cost, given the request it
-// answered. Marked, so nothing downstream can mistake it for a figure the
-// provider reported.
-func estimateResult(request ChatRequest, result Result) Usage {
-	output := len(result.Text) / bytesPerToken
-	for _, call := range result.ToolCalls {
-		output += perToolCallTax + (len(call.Name)+len(call.Arguments))/bytesPerToken
+// fillUsage completes what a provider reported, field by field, and marks the
+// result if it had to.
+//
+// Field by field because some gateways report half: an output count with an
+// input of zero, or the other way round. A request that was sent was read,
+// so an input of zero is never true; an answer that came back was written,
+// so an output of zero beside actual text is not either. Whatever the
+// provider did report is kept as it is.
+//
+// Reasoning is only estimated when output was missing too. Several providers
+// count thinking inside the output figure and report no separate number, so
+// estimating it beside a reported output would count the same text twice.
+func fillUsage(request ChatRequest, result Result, reported Usage) Usage {
+	out := reported
+	if out.InputTokens == 0 {
+		out.InputTokens = EstimatePrompt(request)
+		out.Estimated = true
 	}
-	return Usage{
-		InputTokens:     EstimatePrompt(request),
-		OutputTokens:    output,
-		ReasoningTokens: len(result.Reasoning) / bytesPerToken,
-		Estimated:       true,
+
+	produced := result.Text != "" || result.Reasoning != "" || len(result.ToolCalls) > 0
+	if out.OutputTokens == 0 && out.ReasoningTokens == 0 && produced {
+		output := len(result.Text) / bytesPerToken
+		for _, call := range result.ToolCalls {
+			output += perToolCallTax + (len(call.Name)+len(call.Arguments))/bytesPerToken
+		}
+		out.OutputTokens = output
+		out.ReasoningTokens = len(result.Reasoning) / bytesPerToken
+		out.Estimated = true
 	}
+	return out
 }

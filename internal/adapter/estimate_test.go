@@ -64,6 +64,29 @@ func TestUsageReportedInTheStreamIsLeftAlone(t *testing.T) {
 	}
 }
 
+// Half a report is completed, not replaced: the output the gateway did send
+// stays exactly as sent, and only the input it left at zero is estimated.
+func TestHalfAReportIsCompletedNotReplaced(t *testing.T) {
+	server := sseServer(t, []string{
+		`{"choices":[{"delta":{"content":"a short reply"}}]}`,
+		`{"usage":{"prompt_tokens":0,"completion_tokens":4}}`,
+	}, nil)
+
+	var out collected
+	result, err := testRegistry().Chat(context.Background(),
+		Provider{Kind: KindOpenAI, BaseURL: server.URL, APIKey: "k"},
+		userSays(strings.Repeat("wxyz", 100)), out.sink)
+	if err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+	if result.Usage.OutputTokens != 4 {
+		t.Errorf("output = %d, want the reported 4 kept", result.Usage.OutputTokens)
+	}
+	if result.Usage.InputTokens != 100+perMessageTax || !result.Usage.Estimated {
+		t.Errorf("usage = %+v, want the missing input estimated and marked", result.Usage)
+	}
+}
+
 // A call that failed is not estimated. What a failed or stopped turn costs is
 // decided elsewhere, and guessing at half an answer here would change it.
 func TestAFailedCallIsNotEstimated(t *testing.T) {
