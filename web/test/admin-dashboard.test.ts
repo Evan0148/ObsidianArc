@@ -5,7 +5,7 @@ import { adminApi } from '../src/admin/api';
 import AdminDashboard from '../src/views/admin/AdminDashboard.vue';
 import AdminDashboardTrend from '../src/views/admin/AdminDashboardTrend.vue';
 import { provideAdminView } from '../src/views/admin/adminView';
-import { changeLanguage, t } from '../src/composables/useI18n';
+import { changeLanguage, t, tn } from '../src/composables/useI18n';
 import { dashboardFixture, emptyTotals } from './fixtures/dashboard';
 
 let app: App | undefined;
@@ -83,13 +83,39 @@ describe('dashboard overview', () => {
   });
 
   it('shows empty states and never invents a success rate for an unused instance', async () => {
-    vi.spyOn(adminApi, 'dashboard').mockResolvedValue({ ...dashboardFixture(), last_24h: { ...emptyTotals }, last_7d: { ...emptyTotals }, series: [], top_models: [], top_users: [], recent: [] });
+    vi.spyOn(adminApi, 'dashboard').mockResolvedValue({ ...dashboardFixture(), last_24h: { ...emptyTotals }, prev_24h: { ...emptyTotals }, last_7d: { ...emptyTotals }, series: [], heatmap: [], top_models: [], top_users: [], recent: [] });
     await mountDashboard();
     expect(host.textContent).toContain(t('noRequestsWeek'));
     expect(host.textContent).toContain(t('noRequestsYet'));
+    expect(host.textContent).toContain(t('heatmapQuiet'));
     expect(host.textContent).not.toContain('100%');
     expect(host.textContent).not.toContain('NaN');
     expect(host.querySelector('[role="slider"]')).toBeNull();
+    // Nothing yesterday and nothing today is no movement, not a fall.
+    expect(host.querySelector('.oa-delta')).toBeNull();
+  });
+
+  // Each of the day's figures says which way it moved against the day before,
+  // and the ones where up is worse — failures, waiting — say so in the colour
+  // kept for that.
+  it('compares the day with the one before it', async () => {
+    const fixture = dashboardFixture();
+    vi.spyOn(adminApi, 'dashboard').mockResolvedValue(fixture);
+    await mountDashboard();
+    const metrics = host.querySelector('.oa-dashboard-metrics')!;
+    // 4906 against 4460 is a tenth up.
+    expect(metrics.querySelector('.oa-delta')?.textContent).toContain('10%');
+    expect(metrics.querySelector('.oa-delta')?.classList.contains('up')).toBe(true);
+    const failures = host.querySelector('#secHealth .has-errors .oa-delta')!;
+    expect(failures.classList.contains('worse')).toBe(true);
+    expect(host.querySelector('#secHealth .oa-dashboard-health-rate strong')?.textContent).toBe('78.2%');
+  });
+
+  it('names who used a model under its bar', async () => {
+    vi.spyOn(adminApi, 'dashboard').mockResolvedValue(dashboardFixture());
+    await mountDashboard();
+    const first = host.querySelector('#secBusiestModels .oa-dashboard-rank-list li')!;
+    expect(first.querySelector('.oa-dashboard-rank-reach')?.textContent).toContain(tn(40, 'boardUsersOne', 'boardUsersOther', { count: 40 }));
   });
 });
 
@@ -111,16 +137,38 @@ describe('dashboard trend', () => {
     button(host, t('statTokens')).click(); await nextTick();
     expect(host.textContent).toContain(t('dashboardWeekTotal'));
     expect(button(host, t('statTokens')).getAttribute('aria-pressed')).toBe('true');
-    expect(host.querySelector('.oa-dashboard-trend-line')?.getAttribute('d')).not.toMatch(/NaN|Infinity/);
+    expect(host.querySelector('.oa-plot-line')?.getAttribute('d')).not.toMatch(/NaN|Infinity/);
   });
 
   it('renders one bucket without dividing by zero and distinguishes zero tokens from zero requests', async () => {
-    const point = { ...emptyTotals, at: Date.now(), requests: 1 };
+    // Long before the week the chart fills in, so the one bucket is drawn alone.
+    const point = { ...emptyTotals, at: Date.UTC(2020, 0, 1), requests: 1 };
     app = createApp(AdminDashboardTrend, { series: [point], totals: point, bucketMs: 21600000 });
     app.mount(host); await nextTick();
-    expect(host.querySelector('.oa-dashboard-trend-line')?.getAttribute('d')).toBe('M 360.00 130.50');
+    // Centred, at the top of a scale whose ceiling is that one request.
+    expect(host.querySelector('.oa-plot-line')?.getAttribute('d')).toBe('M 360.00 0.00');
     button(host, t('statTokens')).click(); await nextTick();
     expect(host.textContent).toContain(t('dashboardNoTokens'));
     expect(host.querySelector('[role="slider"]')).toBeNull();
+  });
+
+  // A week with a silent night in it: the buckets nobody used come back as
+  // zeros rather than being bridged by a line that suggests traffic tapered.
+  it('puts the empty buckets of the week back', async () => {
+    const offset = -new Date().getTimezoneOffset() * 60_000;
+    const step = 21_600_000;
+    const now = Date.now();
+    const last = now - (((now + offset) % step) + step) % step;
+    const series = [{ ...emptyTotals, at: last - 4 * step, requests: 5 }, { ...emptyTotals, at: last, requests: 7 }];
+    app = createApp(AdminDashboardTrend, { series, totals: { ...emptyTotals, requests: 12 }, bucketMs: step });
+    app.mount(host); await nextTick();
+    const slider = host.querySelector<HTMLElement>('[role="slider"]')!;
+    // Seven days of six-hour buckets, inclusive of both ends.
+    expect(Number(slider.getAttribute('aria-valuemax'))).toBeGreaterThanOrEqual(28);
+    slider.focus();
+    slider.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })); await nextTick();
+    expect(host.querySelector('.oa-dashboard-trend-summary strong')?.textContent).toBe('7');
+    slider.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })); await nextTick();
+    expect(host.querySelector('.oa-dashboard-trend-summary strong')?.textContent).toBe('0');
   });
 });

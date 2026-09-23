@@ -56,6 +56,7 @@
 
 .oa-icon-btn {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
   width: 34px;
@@ -86,17 +87,46 @@
 
 /* Pills, filled, no outline. A border and a fill are two ways of saying the
    same thing, and the fill is the one that survives being put on a tinted
-   surface — which every surface now is. */
+   surface — which every surface now is.
+
+   A fixed height rather than padding around whatever the text measures: the
+   height used to be the font's line box plus eight pixels, which came to 31
+   pixels beside 34-pixel selects and search fields, and every row that mixed
+   them stepped. Inline-flex so an icon beside the label is centred on it
+   rather than sitting on the text's baseline. */
 .oa-btn {
-  padding: 8px 16px;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  min-height: 34px;
+  padding: 0 16px;
   border: none;
   border-radius: 999px;
   background: var(--ai-surface-container-high);
   color: var(--ai-text);
+  font-family: inherit;
   font-size: 12.5px;
   font-weight: 500;
+  line-height: 1.3;
+  text-decoration: none;
+  white-space: nowrap;
   cursor: pointer;
   transition: background 0.15s ease;
+}
+
+.oa-btn > svg {
+  flex-shrink: 0;
+}
+
+/* The same button for a row of figures, where a full-size one would be the
+   loudest thing in the row. */
+.oa-btn.small {
+  min-height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
 }
 
 .oa-btn:hover {
@@ -562,13 +592,18 @@
 .oa-input-row input[type="password"] {
   box-sizing: border-box;
   width: 100%;
-  padding: 9px 12px;
+  /* One height for every single-line field, whatever the browser thinks a
+     date or a number input measures: a datetime-local field used to stand
+     two pixels taller than the text field above it. */
+  min-height: 36px;
+  padding: 8px 12px;
   border: none;
   border-radius: 11px;
   background: var(--ai-field-bg);
   color: var(--ai-text);
   font: inherit;
   font-size: 12.5px;
+  line-height: 1.4;
   transition: background 0.15s ease;
 }
 
@@ -638,6 +673,12 @@
 .oa-input-row input {
   flex: 1;
   min-width: 0;
+}
+
+/* A button beside a field is as tall as the field, so the pair reads as one
+   control rather than a pill sitting against a box. */
+.oa-input-row > .oa-btn {
+  min-height: 36px;
 }
 
 .oa-checkbox-field {

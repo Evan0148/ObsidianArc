@@ -330,9 +330,9 @@ onMounted(load);
     </div>
 
     <div id="feedbackList" class="oa-feedback-results">
-      <p v-if="loading" class="oa-menu-empty">{{ t('loading') }}</p>
-      <p v-else-if="listError" class="oa-menu-empty">{{ listError }}</p>
-      <p v-else-if="!rows.length" class="oa-menu-empty">{{ t('feedbackEmpty') }}</p>
+      <p v-if="loading" class="oa-table-empty">{{ t('loading') }}</p>
+      <p v-else-if="listError" class="oa-table-empty">{{ listError }}</p>
+      <p v-else-if="!rows.length" class="oa-table-empty">{{ t('feedbackEmpty') }}</p>
 
       <div v-else class="oa-feedback-cards">
         <button

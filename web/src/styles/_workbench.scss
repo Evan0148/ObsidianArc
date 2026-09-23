@@ -1,9 +1,7 @@
 /* These rules belong to the grouped admin pages only. Shared fields retain
-   their appearance settings, while cards give long forms a readable width. */
-.oa-admin-main-refined .oa-admin-head { padding: 27px 30px 18px; }
-.oa-admin-main-refined .oa-admin-title { font-size: 27px; font-weight: 650; letter-spacing: -.8px; }
-.oa-admin-main-refined .oa-admin-subtitle { margin-top: 7px; line-height: 1.65; }
-.oa-admin-main-refined .oa-admin-body { padding: 12px 30px 30px; }
+   their appearance settings, while cards give long forms a readable width.
+   The page head these used to enlarge is now every section's, in
+   _surfaces.scss. */
 .oa-workbench, .oa-resource-page { max-width: 1480px; margin: 0 auto; container: workbench / inline-size; }
 .oa-workbench-nav { display: grid; grid-template-columns: repeat(var(--control-groups), minmax(0, 1fr)); gap: 12px; }
 .oa-workbench-tab { min-width: 0; display: flex; flex-direction: column; gap: 7px; text-align: left; padding: 21px; border: none; outline: none; border-radius: 18px; font: inherit; color: var(--ai-text); background: var(--ai-surface-card); cursor: pointer; transition: background-color .15s ease, color .15s ease; }
@@ -117,11 +115,6 @@
   .oa-resource-metric > p { grid-column: 1 / -1; }
 }
 @media (max-width: 700px) {
-  .oa-admin-main-refined .oa-admin-head { padding: 20px 17px 12px; align-items: flex-start; }
-  .oa-admin-main-refined .oa-admin-title { font-size: 23px; }
-  .oa-admin-main-refined .oa-admin-subtitle { max-width: 38ch; font-size: 11px; }
-  .oa-admin-main-refined .oa-admin-body { padding: 10px 14px 22px; }
-  .oa-admin-main-refined .oa-admin-actions { gap: 8px; }
   .oa-control-save-state { font-size: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {

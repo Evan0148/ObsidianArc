@@ -10,7 +10,7 @@ import { useDebounceFn } from '@vueuse/core';
 import {
   adminApi, emptyPolicy,
   type Account, type AccountStatus, type ApiKey, type CardHolding, type Conversation,
-  type Group, type Message, type QuotaWindowKind, type Role,
+  type Group, type Message, type QuotaWindowKind, type Role, type UsageBreakdown,
 } from '@/admin/api';
 import { ApiError } from '@/api/client';
 import type { UsageSummary } from '@/api/usage';
@@ -40,6 +40,8 @@ import { absoluteTime, compactNumber, relativeTime } from '@/lib/format';
 import { currentUser, canAdmin, isSuperAdmin } from '@/stores/session';
 import AdminFailure from './AdminFailure.vue';
 import CreditsField from './CreditsField.vue';
+import ExpiryPresets from './ExpiryPresets.vue';
+import UsageBoard from './usage/UsageBoard.vue';
 import { useAdminView } from './adminView';
 
 const WINDOWS: QuotaWindowKind[] = ['5h', '1w', '1m'];
@@ -66,7 +68,8 @@ const listing = ref(false);
 const filters = ref({ ...state });
 
 const columns = computed<Array<Column<Account>>>(() => [
-  { key: 'account', header: t('colAccount'), width: '220px' },
+  // No width: the name is the column that takes what the others leave.
+  { key: 'account', header: t('colAccount') },
   { key: 'email', header: t('colEmail'), text: (row) => row.email || '—', secondary: true, width: '160px' },
   { key: 'group', header: t('colGroup'), text: (row) => groupName(row.group_id), width: '120px' },
   { key: 'role', header: t('colRole'), width: '120px' },
@@ -125,6 +128,8 @@ const account = ref<Account | null>(null);
 const usage = ref<UsageSummary | null>(null);
 const lifetime = ref<{ requests: number; total_tokens: number; credits: number } | null>(null);
 const cards = ref<CardHolding | null>(null);
+/** Every model the account has used, by tokens: what its spending goes on. */
+const models = ref<UsageBreakdown[]>([]);
 const keys = ref<ApiKey[] | null>(null);
 const conversations = ref<Conversation[] | null>(null);
 const conversationPage = ref<PageState>({ page: 1, pageSize: 20 });
@@ -154,27 +159,6 @@ function defaultGrantExpiry(): string {
   return dateTimeLocal(Date.now() + 30 * 24 * 3_600_000);
 }
 
-function computeExpiryPreset(type: '1w' | '1m' | '3m' | '6m' | '1y'): string {
-  const d = new Date();
-  switch (type) {
-    case '1w':
-      d.setDate(d.getDate() + 7);
-      break;
-    case '1m':
-      d.setMonth(d.getMonth() + 1);
-      break;
-    case '3m':
-      d.setMonth(d.getMonth() + 3);
-      break;
-    case '6m':
-      d.setMonth(d.getMonth() + 6);
-      break;
-    case '1y':
-      d.setFullYear(d.getFullYear() + 1);
-      break;
-  }
-  return dateTimeLocal(d.getTime());
-}
 
 const form = ref({
   nickname: '', email: '', qq: '', bio: '', avatar: '',
@@ -316,6 +300,7 @@ async function open(id: string): Promise<void> {
   account.value = row;
   usage.value = detail.usage;
   lifetime.value = detail.lifetime;
+  models.value = detail.models ?? [];
   cards.value = detail.cards;
   apiRestrictionTouched.value = false;
   const restrictionActive = apiRestrictionActive(row);
@@ -690,6 +675,22 @@ const state = { q: '', role: '', status: '', group: '' };
         </div>
       </div>
 
+      <!-- What the lifetime figures above were spent on. The question after
+           "how much" is "on what", and it is cheaper to answer here than to
+           send the operator to the usage page to narrow it by hand. -->
+      <template v-if="models.length">
+        <OaFormSection :title="t('boardTheirModels')" :hint="t('boardTheirModelsHint')" />
+        <UsageBoard
+          :rows="models" kind="model" metric="tokens" :limit="4" :reach="false"
+          :selectable="canAdmin('usage') && !!view.open" :empty-text="t('nothingYet')"
+          @select="view.open?.('/admin/usage', { user: account.id, model: $event })"
+        />
+        <button
+          v-if="canAdmin('usage') && view.open" type="button" class="oa-btn small oa-panel-link"
+          @click="view.open?.('/admin/usage', { user: account.id })"
+        >{{ t('viewInUsage') }}</button>
+      </template>
+
       <!-- The same bars the account sees in its own composer, from the same
            summary: an administrator answering "why can this person not send
            anything" should be reading the figure the person is up against. -->
@@ -767,13 +768,7 @@ const state = { q: '', role: '', status: '', group: '' };
         type="datetime-local"
         required
       />
-      <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: -6px; margin-bottom: 12px;">
-        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="grantExpiresAt = computeExpiryPreset('1w')">{{ t('expiry1Week') }}</button>
-        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="grantExpiresAt = computeExpiryPreset('1m')">{{ t('expiry1Month') }}</button>
-        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="grantExpiresAt = computeExpiryPreset('3m')">{{ t('expiry3Months') }}</button>
-        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="grantExpiresAt = computeExpiryPreset('6m')">{{ t('expiryHalfYear') }}</button>
-        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="grantExpiresAt = computeExpiryPreset('1y')">{{ t('expiry1Year') }}</button>
-      </div>
+      <ExpiryPresets @pick="grantExpiresAt = $event" />
       <div class="oa-card-actions">
         <button type="button" class="oa-btn" :disabled="!!grantLabel" @click="grant">
           {{ grantLabel || t('grantCards') }}
@@ -845,14 +840,7 @@ const state = { q: '', role: '', status: '', group: '' };
         :label="t('membershipExpiry')"
         :hint="t('membershipExpiryHint')"
       />
-      <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: -6px; margin-bottom: 12px;">
-        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="form.groupExpiresAt = computeExpiryPreset('1w')">{{ t('expiry1Week') }}</button>
-        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="form.groupExpiresAt = computeExpiryPreset('1m')">{{ t('expiry1Month') }}</button>
-        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="form.groupExpiresAt = computeExpiryPreset('3m')">{{ t('expiry3Months') }}</button>
-        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="form.groupExpiresAt = computeExpiryPreset('6m')">{{ t('expiryHalfYear') }}</button>
-        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="form.groupExpiresAt = computeExpiryPreset('1y')">{{ t('expiry1Year') }}</button>
-        <button type="button" class="oa-btn" style="padding: 2px 8px; font-size: 12px;" @click="form.groupExpiresAt = ''">{{ t('membershipPermanent') }}</button>
-      </div>
+      <ExpiryPresets permanent @pick="form.groupExpiresAt = $event" />
       <OaSwitchField
         v-model="form.apiRestricted"
         :label="t('apiRestricted')"

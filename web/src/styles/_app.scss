@@ -514,13 +514,21 @@
   flex: 1;
 }
 
+/* A fixed height and a centred label, so a badge sits on a row's midline
+   however its font draws: Chinese at ten pixels rode higher than Latin did,
+   and two badges side by side did not line up. */
 .oa-badge {
-  padding: 1px 8px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 20px;
+  padding: 0 8px;
   border-radius: 999px;
   background: var(--ai-badge-bg);
   color: var(--ai-badge-text);
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 600;
+  line-height: 1;
   letter-spacing: 0.02em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -532,7 +540,7 @@
 }
 
 .oa-badge-danger {
-  background: rgba(185, 28, 28, 0.12);
+  background: color-mix(in srgb, var(--ai-danger) 14%, transparent);
   color: var(--ai-danger);
 }
 

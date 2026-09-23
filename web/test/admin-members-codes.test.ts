@@ -81,7 +81,7 @@ describe('administrator roles on the user detail panel', () => {
     vi.spyOn(adminApi, 'users').mockResolvedValue({ users: [member], total: 1 });
     vi.spyOn(adminApi, 'user').mockResolvedValue({
       user: member, policy, usage: { windows: [], unlimited: true },
-      lifetime: { requests: 0, input_tokens: 0, output_tokens: 0, reasoning_tokens: 0, total_tokens: 0, credits: 0, errors: 0 },
+      lifetime: { requests: 0, input_tokens: 0, output_tokens: 0, reasoning_tokens: 0, total_tokens: 0, credits: 0, errors: 0, users: 0, models: 0, duration_ms: 0 },
       cards: { total: 0, available: 0, used: 0, expired: 0, cards: [] },
     });
     vi.spyOn(adminApi, 'userKeys').mockResolvedValue({ keys: [] });
@@ -214,7 +214,7 @@ describe('moving the expiry on cards an account already holds', () => {
     vi.spyOn(adminApi, 'users').mockResolvedValue({ users: [holder], total: 1 });
     vi.spyOn(adminApi, 'user').mockResolvedValue({
       user: holder, policy, usage: { windows: [], unlimited: true },
-      lifetime: { requests: 0, input_tokens: 0, output_tokens: 0, reasoning_tokens: 0, total_tokens: 0, credits: 0, errors: 0 },
+      lifetime: { requests: 0, input_tokens: 0, output_tokens: 0, reasoning_tokens: 0, total_tokens: 0, credits: 0, errors: 0, users: 0, models: 0, duration_ms: 0 },
       cards: holding,
     });
     vi.spyOn(adminApi, 'userKeys').mockResolvedValue({ keys: [] });

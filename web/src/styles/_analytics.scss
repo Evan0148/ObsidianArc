@@ -1,0 +1,1076 @@
+/* The usage report and the chart vocabulary it shares with the overview:
+   cards, segmented switches, figures with a direction, a curve over a grid,
+   a week folded onto a clock, a table of who uses what, ranked boards.
+
+   Nothing here brings a colour of its own. Every fill is the accent mixed
+   into a surface, so a chart is drawn in whatever colour the reader picked
+   and reads the same way on a light scheme, a dark one and a wallpaper. */
+
+/* --- small shared pieces --------------------------------------------------- */
+
+/* Read by a screen reader, drawn for nobody. */
+.oa-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* The line above a card's title: what the card is about, in the ordinary
+   secondary voice rather than capitals, which Chinese does not have. */
+.oa-kicker {
+  display: block;
+  color: var(--ai-text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* A few mutually exclusive choices as one pill. The track is the field fill
+   so it reads both on a card and on the page behind one; the height matches
+   a button's, so a switch and a button beside it share one line. */
+.oa-segment {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--ai-field-bg);
+}
+
+.oa-segment button {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ai-text-secondary);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.oa-segment button:hover:not([aria-pressed='true']) {
+  background: var(--ai-state-hover);
+  color: var(--ai-text);
+}
+
+.oa-segment button[aria-pressed='true'] {
+  background: var(--ai-primary);
+  color: var(--ai-primary-text);
+}
+
+.oa-segment button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ai-focus-shadow);
+}
+
+/* A control that is only words: "clear filters". It has the height of the
+   pills beside it so the row does not step, and no fill until hovered so it
+   does not compete with them. */
+.oa-text-btn {
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ai-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.oa-text-btn:hover {
+  background: var(--ai-state-hover);
+  color: var(--ai-text);
+}
+
+.oa-text-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ai-focus-shadow);
+}
+
+/* Quick picks under a field — "a week", "a month" — which used to be buttons
+   squeezed to two pixels of padding with inline styles. One size, one gap,
+   in every panel that has them. */
+.oa-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: -6px;
+}
+
+.oa-chip-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ai-field-bg);
+  color: var(--ai-text);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.oa-chip-btn:hover {
+  background: var(--ai-field-bg-hover);
+}
+
+.oa-chip-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ai-focus-shadow);
+}
+
+/* A way out of a panel to the section that says more — "open in usage". It
+   stays the width of its words: a panel body stretches its children, and a
+   full-width pill reads as the panel's main action, which this is not. */
+.oa-panel-link {
+  align-self: flex-start;
+}
+
+/* --- cards ------------------------------------------------------------------ */
+
+.oa-viz-card {
+  min-width: 0;
+  padding: 22px 24px;
+  border-radius: 18px;
+  background: var(--ai-surface-card);
+  scroll-margin-top: 14px;
+}
+
+.oa-viz-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  margin-bottom: 18px;
+}
+
+.oa-viz-head > div:first-child {
+  min-width: 0;
+}
+
+.oa-viz-head h2 {
+  margin: 3px 0 0;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.4;
+  letter-spacing: -0.2px;
+}
+
+.oa-viz-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -4px 0 16px;
+}
+
+.oa-viz-summary strong {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+}
+
+.oa-viz-summary span {
+  color: var(--ai-text-secondary);
+  font-size: 11.5px;
+  text-align: right;
+}
+
+.oa-viz-foot {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ai-border);
+  color: var(--ai-text-secondary);
+  font-size: 11px;
+}
+
+.oa-viz-foot > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.oa-viz-foot .oa-dashboard-dot {
+  color: var(--ai-primary);
+}
+
+.oa-viz-empty {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  margin: 0;
+  color: var(--ai-text-secondary);
+  font-size: 12px;
+}
+
+/* --- figures with a direction ------------------------------------------------ */
+
+.oa-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--ai-state-hover);
+  color: var(--ai-text);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.oa-delta.flat,
+.oa-delta.new {
+  color: var(--ai-text-secondary);
+  font-weight: 500;
+}
+
+.oa-delta.worse {
+  background: color-mix(in srgb, var(--ai-danger) 16%, transparent);
+  color: var(--ai-danger);
+}
+
+.oa-kpis {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.oa-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 18px 20px;
+  border-radius: 18px;
+  background: var(--ai-surface-card);
+}
+
+.oa-kpi-label {
+  color: var(--ai-text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.oa-kpi-value {
+  font-size: clamp(22px, 2.1vw, 30px);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.8px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.oa-kpi-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-height: 18px;
+  margin-top: auto;
+  color: var(--ai-text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* Input, output and thinking as one bar: the proportion is the point, and
+   three numbers do not show it at a glance. */
+.oa-kpi-split {
+  display: flex;
+  gap: 2px;
+  height: 4px;
+  margin-top: -2px;
+  overflow: hidden;
+  border-radius: 999px;
+}
+
+.oa-kpi-split > span {
+  flex-basis: 0;
+  min-width: 3px;
+  background: var(--ai-primary);
+}
+
+.oa-kpi-split > .out {
+  opacity: 0.55;
+}
+
+.oa-kpi-split > .think {
+  opacity: 0.28;
+}
+
+.oa-kpi.featured {
+  background: var(--ai-primary);
+  color: var(--ai-primary-text);
+}
+
+.oa-kpi.featured .oa-kpi-label,
+.oa-kpi.featured .oa-kpi-foot {
+  color: inherit;
+  opacity: 0.82;
+}
+
+.oa-kpi.featured .oa-delta {
+  background: color-mix(in srgb, var(--ai-primary-text) 16%, transparent);
+  color: inherit;
+}
+
+.oa-kpi.alarming .oa-kpi-value {
+  color: var(--ai-danger);
+}
+
+/* --- a curve over a grid -------------------------------------------------------- */
+
+.oa-plot {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-rows: var(--oa-plot-height, 180px) auto;
+  row-gap: 10px;
+}
+
+.oa-plot-y {
+  position: relative;
+}
+
+.oa-plot-y > span {
+  position: absolute;
+  right: 10px;
+  transform: translateY(-50%);
+  color: var(--ai-text-secondary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.oa-plot-area {
+  position: relative;
+  min-width: 0;
+  border-radius: 4px;
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+
+.oa-plot-area:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ai-focus-shadow);
+}
+
+.oa-plot-area svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.oa-plot-grid {
+  stroke: var(--ai-border);
+  stroke-width: 1;
+  stroke-dasharray: 3 5;
+}
+
+.oa-plot-line {
+  fill: none;
+  stroke: var(--ai-primary);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.oa-plot-crosshair {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--ai-outline-variant);
+  transform: translateX(-0.5px);
+  pointer-events: none;
+}
+
+.oa-plot-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: var(--ai-primary);
+  box-shadow: 0 0 0 3px var(--ai-surface-card);
+  pointer-events: none;
+}
+
+.oa-plot-bubble {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 11px;
+  border-radius: 11px;
+  background: var(--ai-surface-container-high);
+  box-shadow: var(--ai-shadow-md);
+  white-space: nowrap;
+  transform: translate(14px, -50%);
+  pointer-events: none;
+}
+
+/* Past the last quarter it opens to the left, so it never runs off the card. */
+.oa-plot-bubble.flip {
+  transform: translate(calc(-100% - 14px), -50%);
+}
+
+.oa-plot-bubble strong {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.oa-plot-bubble small {
+  color: var(--ai-text-secondary);
+  font-size: 10.5px;
+}
+
+.oa-plot-x {
+  position: relative;
+  grid-column: 2;
+  height: 14px;
+}
+
+.oa-plot-x > span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  color: var(--ai-text-secondary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The ends are pinned inside the plot rather than centred on its edges,
+   where half of each label would hang outside the card. */
+.oa-plot-x > span.start {
+  transform: none;
+}
+
+.oa-plot-x > span.end {
+  transform: translateX(-100%);
+}
+
+/* --- a week folded onto a clock ------------------------------------------------- */
+
+.oa-heatmap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.oa-heatmap-caption {
+  min-height: 18px;
+  margin: 0;
+  color: var(--ai-text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.oa-heatmap-grid {
+  display: grid;
+  grid-template-columns: 34px repeat(24, minmax(0, 1fr));
+  align-items: center;
+  gap: 3px;
+}
+
+.oa-heatmap-day {
+  color: var(--ai-text-secondary);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.oa-heatmap-cell {
+  aspect-ratio: 1;
+  min-height: 9px;
+  border-radius: 4px;
+  background: var(--ai-surface-container);
+  transition: box-shadow 0.12s ease;
+}
+
+.oa-heatmap-cell.filled,
+.oa-heatmap-legend i.filled {
+  background: color-mix(in srgb, var(--ai-primary) var(--oa-heat), var(--ai-surface-container));
+}
+
+.oa-heatmap-cell.active {
+  box-shadow: 0 0 0 2px var(--ai-text);
+}
+
+.oa-heatmap-hour {
+  color: var(--ai-text-secondary);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.oa-heatmap-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  color: var(--ai-text-secondary);
+  font-size: 10.5px;
+}
+
+.oa-heatmap-legend > span:first-child {
+  margin-right: 4px;
+}
+
+.oa-heatmap-legend > span:last-child {
+  margin-left: 4px;
+}
+
+.oa-heatmap-legend i {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--ai-surface-container);
+}
+
+/* --- who uses what ------------------------------------------------------------------ */
+
+.oa-matrix-wrap {
+  margin: 0 -6px;
+  padding: 0 6px 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ai-outline-variant) transparent;
+}
+
+.oa-matrix-wrap:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ai-focus-shadow);
+  border-radius: 12px;
+}
+
+.oa-matrix {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 3px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.oa-matrix th {
+  font-weight: 500;
+  text-align: left;
+}
+
+.oa-matrix thead th {
+  min-width: 78px;
+  max-width: 128px;
+  padding: 0 0 4px;
+  vertical-align: bottom;
+}
+
+.oa-matrix thead .oa-matrix-corner {
+  min-width: 150px;
+  padding: 0 6px 8px;
+  color: var(--ai-text-secondary);
+  font-size: 11px;
+}
+
+.oa-matrix-head,
+.oa-matrix-user {
+  display: flex;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ai-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.oa-matrix-head {
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 7px;
+  border-radius: 9px;
+}
+
+.oa-matrix-head span,
+.oa-matrix-head small,
+.oa-matrix-user > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oa-matrix-head span {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.oa-matrix-head small {
+  min-height: 13px;
+  color: var(--ai-text-secondary);
+  font-size: 10px;
+}
+
+.oa-matrix-user {
+  align-items: center;
+  gap: 8px;
+  max-width: 210px;
+  padding: 3px 6px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.oa-matrix-user .oa-board-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--ai-badge-bg);
+  color: var(--ai-badge-text);
+  font-size: 11px;
+}
+
+.oa-matrix-head:hover,
+.oa-matrix-user:hover {
+  background: var(--ai-state-hover);
+}
+
+.oa-matrix-head:focus-visible,
+.oa-matrix-user:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ai-focus-shadow);
+}
+
+.oa-matrix tbody th {
+  padding: 0;
+}
+
+.oa-matrix td {
+  height: 34px;
+  padding: 0 9px;
+  border-radius: 8px;
+  background: var(--ai-surface-container-low);
+  color: var(--ai-text-secondary);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.oa-matrix td.filled {
+  background: color-mix(in srgb, var(--ai-primary) var(--oa-heat), var(--ai-surface-container-low));
+  color: var(--ai-text);
+}
+
+/* Past about half strength the fill is the accent itself, and text in the
+   ordinary colour would sit on it at no contrast at all. */
+.oa-matrix td.strong {
+  color: var(--ai-primary-text);
+  font-weight: 600;
+}
+
+.oa-matrix .oa-matrix-total {
+  padding-left: 14px;
+  background: transparent;
+  color: var(--ai-text);
+  font-weight: 600;
+  text-align: right;
+}
+
+.oa-matrix thead .oa-matrix-total {
+  padding-bottom: 8px;
+  color: var(--ai-text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* --- ranked boards -------------------------------------------------------------------- */
+
+.oa-board {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 -10px;
+  padding: 0;
+  list-style: none;
+}
+
+.oa-board-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ai-text);
+  font: inherit;
+  text-align: left;
+}
+
+button.oa-board-row {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+button.oa-board-row:hover {
+  background: var(--ai-state-hover);
+}
+
+button.oa-board-row:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ai-focus-shadow);
+}
+
+.oa-board-rank {
+  width: 18px;
+  flex-shrink: 0;
+  color: var(--ai-text-secondary);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.oa-board li:first-child .oa-board-rank {
+  color: var(--ai-text);
+  font-weight: 650;
+}
+
+.oa-board-mark {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 11px;
+  background: var(--ai-surface-container);
+  color: var(--ai-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  user-select: none;
+}
+
+.oa-board-user .oa-board-mark {
+  border-radius: 50%;
+  background: var(--ai-badge-bg);
+  color: var(--ai-badge-text);
+}
+
+.oa-board-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.oa-board-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.oa-board-name,
+.oa-board-notes {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oa-board-name {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.oa-board-value {
+  flex-shrink: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.oa-board-sub {
+  color: var(--ai-text-secondary);
+  font-size: 10.5px;
+}
+
+.oa-board-sub small {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.oa-board-track {
+  display: block;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ai-surface-container);
+}
+
+.oa-board-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ai-primary);
+  opacity: 0.7;
+}
+
+.oa-board li:first-child .oa-board-track > span {
+  opacity: 1;
+}
+
+.oa-board-more {
+  /* Its own width even where the board sits in a column that stretches
+     its children, as a panel's body does. */
+  align-self: flex-start;
+  height: 28px;
+  margin: 10px 0 0 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ai-text-secondary);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.oa-board-more:hover {
+  background: var(--ai-state-hover);
+  color: var(--ai-text);
+}
+
+.oa-board-empty {
+  margin: 0;
+  padding: 40px 8px;
+  color: var(--ai-text-secondary);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* --- the report page ------------------------------------------------------------------- */
+
+.oa-report {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1480px;
+  margin: 0 auto;
+  container: report / inline-size;
+}
+
+.oa-report-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.oa-report-filters .oa-filter-select {
+  max-width: 220px;
+}
+
+/* A filter in force is marked the way a chosen row is everywhere else. */
+.oa-filter-select.set {
+  background-color: var(--ai-badge-bg);
+  color: var(--ai-badge-text);
+  font-weight: 600;
+}
+
+.oa-report-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  margin-left: auto;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--ai-surface-card);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.oa-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ai-primary);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .oa-live-dot {
+    animation: oaLivePulse 2s ease-in-out infinite;
+  }
+}
+
+@keyframes oaLivePulse {
+  50% { opacity: 0.3; }
+}
+
+.oa-report-focus {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  background: var(--ai-surface-card);
+}
+
+.oa-report-focus-mark {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  background: var(--ai-primary);
+  color: var(--ai-primary-text);
+  font-size: 18px;
+  font-weight: 650;
+  user-select: none;
+}
+
+.oa-report-focus-mark.user {
+  border-radius: 50%;
+}
+
+.oa-report-focus-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.oa-report-focus-copy h2 {
+  margin: 2px 0 4px;
+  overflow: hidden;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.4px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oa-report-focus-copy p {
+  margin: 0;
+  color: var(--ai-text-secondary);
+  font-size: 12px;
+}
+
+.oa-report-focus .oa-btn {
+  flex-shrink: 0;
+}
+
+.oa-report-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.oa-report-row-lead {
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+}
+
+/* A drill-down hides one of a pair; the other takes the row rather than
+   sitting in half of it beside a gap. */
+.oa-report-row > :only-child {
+  grid-column: 1 / -1;
+}
+
+.oa-report-loading {
+  display: grid;
+  gap: 16px;
+  max-width: 1480px;
+  margin: 0 auto;
+}
+
+.oa-report-loading > div {
+  height: 132px;
+  border-radius: 18px;
+  background: var(--ai-surface-card);
+}
+
+.oa-report-loading > div:nth-child(2) {
+  height: 280px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .oa-report-loading > div {
+    animation: oaSkeleton 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes oaSkeleton {
+  50% { opacity: 0.55; }
+}
+
+/* In the page head, beside the buttons: the range switch is the page's own
+   first question, so it sits where the page's actions are. */
+.oa-admin-actions .oa-range {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.oa-admin-actions .oa-range::-webkit-scrollbar {
+  display: none;
+}
+
+@container report (max-width: 1180px) {
+  .oa-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container report (max-width: 900px) {
+  .oa-report-row,
+  .oa-report-row-lead {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container report (max-width: 600px) {
+  .oa-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .oa-viz-card {
+    padding: 18px;
+  }
+
+  .oa-report-focus {
+    flex-wrap: wrap;
+  }
+
+  .oa-report-live {
+    margin-left: 0;
+  }
+
+  .oa-heatmap-grid {
+    gap: 2px;
+  }
+
+  .oa-heatmap-cell {
+    border-radius: 3px;
+  }
+}

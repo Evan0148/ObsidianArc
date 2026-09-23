@@ -156,7 +156,13 @@ function clearMarks(): void {
   <div ref="wrap" class="oa-table-wrap" tabindex="0">
     <p v-if="!props.rows.length" class="oa-table-empty">{{ props.empty }}</p>
     <!-- A block establishes the actual table width before fixed column layout.
-         A min-width on the table itself can still leave columns compressed. -->
+         A min-width on the table itself can still leave columns compressed.
+         A column that names no width is counted at 140 here, for the point at
+         which the table starts to scroll, but is given no width on its
+         header: in a fixed layout that is the column that takes whatever the
+         sized ones leave — the name, usually — instead of every column being
+         stretched in proportion and the figures drifting apart. -->
+
     <div v-else :style="{ minWidth: `${props.columns.reduce((sum, col) => sum + (Number.parseInt(col.width ?? '') || 140), 0)}px` }">
     <table class="oa-table">
       <thead>
@@ -172,7 +178,7 @@ function clearMarks(): void {
                 desc: props.sort?.column === index && props.sort.descending,
               },
             ]"
-            :style="{ width: column.width ?? '140px' }"
+            :style="column.width ? { width: column.width } : undefined"
             :aria-sort="column.sort ? sortState(index) : undefined"
             :tabindex="column.sort ? 0 : undefined"
             @click="column.sort && toggleSort(index)"

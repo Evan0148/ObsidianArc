@@ -25,5 +25,7 @@
 @use 'terminal';
 // The overview has its own layout; its rules stay out of the shared surfaces.
 @use 'dashboard';
+// The usage report and the chart pieces the overview borrows from it.
+@use 'analytics';
 // Grouped administration forms share only this local layout.
 @use 'workbench';

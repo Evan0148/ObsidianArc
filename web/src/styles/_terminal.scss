@@ -37,13 +37,15 @@
    its own horizontal scrollbar instead of pushing the settings button out of
    reach. */
 
+/* The same thirty-pixel gutter every other section's body has, so the tabs
+   start under the page title rather than twenty pixels to the left of it. */
 .oa-terminal-tabstrip {
   display: flex;
   align-items: center;
   flex-shrink: 0;
   gap: 8px;
   height: 34px;
-  padding: 6px 10px;
+  padding: 2px 30px 8px;
 }
 
 .oa-terminal-tabs {
@@ -83,10 +85,14 @@
 }
 
 .oa-terminal-tab.active {
-  color: var(--ai-text);
-  /* An inset ring rather than a fill: ten filled pills in a row reads as a
-     bar chart, and the active one only needs to be findable, not loudest. */
-  box-shadow: inset 0 0 0 1px var(--ai-outline-variant), inset 0 -2px 0 var(--ai-primary);
+  /* The fill the rail marks its current section with, rather than the ring
+     this used to wear: every tab is already a filled pill, so a ring was the
+     one outlined control on the page, and the rail had already settled how
+     this interface says "this one". Quiet enough that ten tabs still do not
+     read as a bar chart. */
+  background: var(--ai-badge-bg);
+  color: var(--ai-badge-text);
+  font-weight: 600;
 }
 
 .oa-terminal-tab-dot {
@@ -193,7 +199,7 @@
   min-height: 0;
   min-width: 0;
   position: relative;
-  margin: 0 10px 10px;
+  margin: 0 30px 30px;
   border-radius: 14px;
   /* A flat token, not a color-mix: the card behind it already carries the
      wallpaper's translucency, and AGENTS.md forbids a second, independent
@@ -416,6 +422,18 @@
 
 @keyframes oa-terminal-spin {
   to { transform: rotate(360deg); }
+}
+
+/* The narrow layout's gutter, which the other sections' bodies shrink to at
+   the same width. */
+@media (max-width: 900px) {
+  .oa-terminal-tabstrip {
+    padding: 2px 16px 8px;
+  }
+
+  .oa-terminal-pane {
+    margin: 0 16px 16px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

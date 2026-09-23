@@ -9,7 +9,7 @@ import { nextTick, ref, watch } from 'vue';
 import { useResizeObserver } from '@vueuse/core';
 import OaIconButton from '@/components/OaIconButton.vue';
 import OaScrollArea from '@/components/OaScrollArea.vue';
-import { t } from '@/composables/useI18n';
+import { t, type StringKey } from '@/composables/useI18n';
 import { isWork, pendingMode, setMode, type Mode } from '@/stores/workspace';
 import { IconMenu, IconPlus } from '@/icons';
 import ChatComposer from './ChatComposer.vue';
@@ -18,10 +18,10 @@ import ChatMessage from './ChatMessage.vue';
 import ChatPending from './ChatPending.vue';
 import ChatSidebar from './ChatSidebar.vue';
 import {
-  active, addImages, busy, chatChallenge, dragging, draft, flash, historyOpen, messages, pending,
+  active, addImages, busy, chatChallenge, dragging, draft, flash, historyOpen, isEmpty, messages, pending,
   scrollTick, showPending, startNewConversation, status, submit, suggestions, switchTick,
 } from './useChat';
-import { isAdmin } from '@/stores/session';
+import { currentUser, isAdmin } from '@/stores/session';
 
 // The two surfaces, in the order they are offered. A list rather than two
 // hand-written buttons so the strip cannot drift out of step with the store
@@ -119,6 +119,41 @@ function ask(key: (typeof suggestions.value)[number]): void {
   void submit();
 }
 
+/**
+ * The empty conversation greets the person by the part of the day it is and
+ * the name they chose. A function rather than a computed, so it is worked out
+ * each time the greeting is drawn instead of cached: a tab left open over
+ * lunch should not still say good morning the next time it is looked at.
+ */
+function greeting(): string {
+  const hour = new Date().getHours();
+  const part: StringKey = hour < 5 ? 'greetNight' : hour < 11 ? 'greetMorning' : hour < 13 ? 'greetNoon'
+    : hour < 18 ? 'greetAfternoon' : hour < 23 ? 'greetEvening' : 'greetNight';
+  const name = currentUser.value?.nickname || currentUser.value?.username;
+  return name ? t('greetNamed', { greeting: t(part), name }) : t('emptyTitle');
+}
+
+// The first message sends the composer from the middle of the empty column
+// down to the bottom, where a conversation keeps it. It glides rather than
+// jumps: the reader was looking straight at it, and a control that vanishes
+// from under the eye and reappears elsewhere reads as a glitch. Measured
+// before the layout changes and animated from there — the change itself is a
+// class on the row, which no transition can interpolate.
+watch(isEmpty, (empty, was) => {
+  const node = composer.value?.$el as HTMLElement | undefined;
+  if (empty || !was || !node || typeof node.animate !== 'function') return;
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  const before = node.getBoundingClientRect().top;
+  void nextTick(() => {
+    const delta = before - node.getBoundingClientRect().top;
+    if (Math.abs(delta) < 2) return;
+    node.animate(
+      [{ transform: `translateY(${delta}px)` }, { transform: 'none' }],
+      { duration: 340, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+    );
+  });
+}, { flush: 'pre' });
+
 defineExpose({ focus: () => composer.value?.focus() });
 </script>
 
@@ -180,7 +215,7 @@ defineExpose({ focus: () => composer.value?.focus() });
           >{{ t(option === 'work' ? 'modeWork' : 'modeChat') }}</button>
         </div>
 
-        <h3 class="ai-chat-empty-title">{{ isWork ? t('workGreeting') : t('emptyTitle') }}</h3>
+        <h3 class="ai-chat-empty-title">{{ isWork ? t('workGreeting') : greeting() }}</h3>
         <p class="ai-chat-empty-body">{{ isWork ? t('workBlurb') : t('emptyBody') }}</p>
         <div v-if="!isWork" class="ai-chat-suggestions">
           <button

@@ -234,24 +234,32 @@
   isolation: isolate;
 }
 
+/* One head for every section. There used to be two — a 17px title on the
+   list pages and a 27px one on the four grouped ones — so the title jumped
+   size and position as the rail was walked, and a page without a subtitle
+   sat its title four pixels lower than one with. Centred on the actions, so
+   one line or two, the title and the buttons share a middle. */
 .oa-admin-head {
   display: flex;
-  align-items: flex-end;
-  gap: 12px;
+  align-items: center;
+  gap: 12px 16px;
   flex-shrink: 0;
-  padding: 20px 22px 14px;
+  min-height: 42px;
+  padding: 24px 30px 16px;
 }
 
 .oa-admin-title {
   margin: 0;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.2px;
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.6px;
 }
 
 .oa-admin-subtitle {
-  margin: 3px 0 0;
+  margin: 4px 0 0;
   font-size: 12px;
+  line-height: 1.6;
   color: var(--ai-text-secondary);
 }
 
@@ -261,8 +269,20 @@
 
 .oa-admin-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+}
+
+/* An icon button among the page's buttons — refresh, mostly — is filled like
+   them, so it reads as one of the row rather than a glyph floating beside it. */
+.oa-admin-actions .oa-icon-btn {
+  background: var(--ai-field-bg);
+}
+
+.oa-admin-actions .oa-icon-btn:hover:not(:disabled) {
+  background: var(--ai-field-bg-hover);
 }
 
 .oa-admin-body-wrap {
@@ -284,7 +304,7 @@
 .oa-admin-body {
   flex: 1;
   min-height: 0;
-  padding: 18px 22px 24px;
+  padding: 10px 30px 30px;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none;
@@ -319,11 +339,15 @@
   margin-bottom: 14px;
 }
 
+/* The height the buttons have, so a row of filters, a search and an action
+   shares one top and one bottom edge. It used to come from padding around
+   the text, which made the pills 34 pixels and the buttons beside them 31. */
 .oa-filters input[type='search'],
 .oa-filters input[type='text'],
 .oa-filter-select {
   box-sizing: border-box;
-  padding: 8px 14px;
+  height: 34px;
+  padding: 0 14px;
   border: none;
   border-radius: 999px;
   background-color: var(--ai-field-bg);
@@ -337,8 +361,10 @@
 .oa-filter-select {
   display: inline-flex;
   align-items: center;
+  max-width: 100%;
   appearance: none;
   padding-right: 30px;
+  white-space: nowrap;
   background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
     linear-gradient(135deg, currentColor 50%, transparent 50%);
   background-position: calc(100% - 16px) calc(50% + 1px), calc(100% - 11px) calc(50% + 1px);
@@ -474,8 +500,9 @@
   /* Declared column widths include padding. Otherwise fixed-width neighbours
      consume the space reserved for the account/name column. */
   box-sizing: border-box;
-  padding: 8px 12px;
-  background: color-mix(in srgb, var(--ai-text) 9%, transparent);
+  height: 34px;
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--ai-text) 7%, transparent);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -514,7 +541,7 @@
    on a tinted surface. Weaker than the header above and than the hover
    below, so all three stay tellable apart. */
 .oa-table tbody tr:nth-child(odd) td {
-  background: color-mix(in srgb, var(--ai-text) 4%, transparent);
+  background: color-mix(in srgb, var(--ai-text) 3.5%, transparent);
 }
 
 /* The band is a shape, so it ends the way everything else here does. Applied
@@ -558,10 +585,16 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* An empty list is a shape in the place the list would be, not a sentence
+   floating in the page: the same rounded band a row is, taller, so the
+   screen does not look half-drawn while there is nothing to show. */
 .oa-table-empty {
   margin: 0;
-  padding: 32px 12px;
+  padding: 44px 16px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--ai-text) 3%, transparent);
   font-size: 12.5px;
+  line-height: 1.6;
   text-align: center;
   color: var(--ai-text-secondary);
 }
@@ -592,7 +625,20 @@
 .oa-badge-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
+}
+
+/* A cell's name with a badge that qualifies it — "default" beside a group. */
+.oa-cell-with-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.oa-cell-with-badge > .oa-badge {
+  flex-shrink: 0;
 }
 
 /* Secondary columns remain available on phones through the table scroller. */
@@ -1060,13 +1106,16 @@
   }
 }
 
+/* Mixed from the danger token rather than a fixed red, so the tint and the
+   text are the same red in both schemes: the fixed one was the light
+   scheme's red under the dark scheme's paler text. */
 .oa-btn-danger {
-  background: rgba(185, 28, 28, 0.12);
+  background: color-mix(in srgb, var(--ai-danger) 14%, transparent);
   color: var(--ai-danger);
 }
 
 .oa-btn-danger:hover {
-  background: rgba(185, 28, 28, 0.2);
+  background: color-mix(in srgb, var(--ai-danger) 22%, transparent);
 }
 
 /* The second click, where the tint is no longer enough of a warning. */
@@ -1141,6 +1190,10 @@
 
 .oa-switch-field .oa-checkbox-field input[type="checkbox"]:checked::after {
   transform: translateX(16px);
+  /* On the accent the knob takes the accent's own text colour. A white knob
+     on a white track — which is what the dark scheme's accent is — was a
+     switch with no visible knob at all whenever it was on. */
+  background: var(--ai-primary-text);
 }
 
 .oa-switch-field .oa-checkbox-field input[type="checkbox"]:focus-visible {
@@ -2506,66 +2559,110 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  max-width: 1480px;
+  margin: 0 auto;
+  container: logs / inline-size;
 }
 
+/* Eight fields, so four to a row at a comfortable width and two rows even
+   — where auto-fit used to leave the path field alone on a second line. */
 .oa-log-filter-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px 12px;
 }
 
 .oa-log-filter-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.oa-log-holding {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  color: var(--ai-text-secondary);
+  font-size: 11.5px;
 }
 
 .oa-log-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+  margin: 0 -10px;
+}
+
+/* The header and every row share one set of columns. */
+.oa-log-head,
+.oa-log-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) minmax(0, 140px) minmax(0, 160px) 76px 96px;
+  align-items: center;
+  column-gap: 14px;
+}
+
+.oa-log-head {
+  padding: 0 10px 8px;
+  color: var(--ai-text-secondary);
+  font-size: 11px;
+}
+
+.oa-log-head .numeric,
+.oa-log-cell.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* A row is a button because every one of them opens the whole record. */
 .oa-log-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   width: 100%;
   box-sizing: border-box;
-  padding: 8px 11px;
+  min-height: 44px;
+  padding: 6px 10px;
   border: none;
   border-radius: 11px;
   background: transparent;
   color: var(--ai-text);
   font: inherit;
+  font-size: 12px;
   text-align: left;
   cursor: pointer;
   transition: background 0.13s ease;
 }
 
 .oa-log-row:hover {
-  background: var(--ai-surface-container-high);
+  background: var(--ai-state-hover);
 }
 
-.oa-log-row-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.oa-log-row:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ai-focus-shadow);
 }
 
-.oa-log-row-head {
+.oa-log-request {
   display: flex;
   align-items: baseline;
   gap: 8px;
   min-width: 0;
 }
 
+.oa-log-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oa-log-cell.quiet {
+  color: var(--ai-text-secondary);
+}
+
 .oa-log-method {
+  flex-shrink: 0;
+  width: 44px;
   font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -2573,6 +2670,7 @@
 }
 
 .oa-log-path {
+  min-width: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   overflow: hidden;
@@ -2580,17 +2678,31 @@
   white-space: nowrap;
 }
 
-.oa-log-row-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px 10px;
+.oa-log-error {
+  flex-shrink: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 11px;
-  color: var(--ai-text-secondary);
+  color: var(--ai-danger);
 }
 
-.oa-log-error {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color: var(--ai-danger);
+@container logs (max-width: 900px) {
+  .oa-log-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* The account and the model are in the record a click away; the request,
+     its outcome and its timing are what a narrow column keeps. */
+  .oa-log-head,
+  .oa-log-row {
+    grid-template-columns: 60px minmax(0, 1fr) 68px 84px;
+  }
+
+  .oa-log-head > :nth-child(3),
+  .oa-log-head > :nth-child(4),
+  .oa-log-row > :nth-child(3),
+  .oa-log-row > :nth-child(4) {
+    display: none;
+  }
 }
 
 .oa-log-pager {
@@ -2698,7 +2810,8 @@
    than as a control: an operator is here to see what somebody holds, and the
    move is the second thought, not the first. */
 .oa-card-move {
-  padding: 3px 10px;
+  min-height: 28px;
+  padding: 0 11px;
   font-size: 11.5px;
 }
 
@@ -2764,6 +2877,27 @@
 .oa-fact-value.mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   user-select: all;
+}
+
+/* A value with its copy button beside it, centred on the value's line. */
+.oa-fact-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* The icon button at the size of a line of small text, for a control that
+   sits inside a row of figures rather than in a toolbar. */
+.oa-icon-btn.tiny {
+  width: 24px;
+  height: 24px;
+}
+
+/* A section's own follow-up — "see the error history" — set off from the
+   hints above it by a line's worth of space rather than an inline style. */
+.oa-section-action {
+  margin-top: 10px;
 }
 
 /* A minted batch, listed once. Monospace and one per line so it can be
@@ -4001,10 +4135,14 @@
 
 /* The pager stays outside the horizontal scroller so its controls stay on screen. */
 .oa-table-block { min-width: 0; width: 100%; }
-.oa-pagination { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 0; font-size: 12px; color: var(--ai-text-secondary); }
-.oa-pagination-size, .oa-pagination-actions { display: flex; align-items: center; gap: 6px; }
-.oa-pagination-count { flex: 1; white-space: nowrap; }
-.oa-pagination-actions .oa-btn { min-height: 34px; padding: 7px 12px; }
+.oa-pagination { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; padding: 14px 0 2px; font-size: 12px; color: var(--ai-text-secondary); }
+.oa-pagination.compact { padding-top: 12px; font-size: 11.5px; }
+/* "Rows per page" is two words, and in a narrow card it was being broken
+   onto two lines beside a one-line control. */
+.oa-pagination-size, .oa-pagination-actions { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.oa-pagination-actions > span { padding: 0 4px; font-variant-numeric: tabular-nums; }
+.oa-pagination-count { flex: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.oa-pagination-actions .oa-btn { min-height: 32px; padding: 0 12px; }
 .oa-pagination .oa-filter-select { min-width: 66px; }
 .oa-permission-empty { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding: 60px 20px; color: var(--ai-text-secondary); }
 .oa-permission-empty h2, .oa-permission-empty p { margin: 0; }
@@ -4022,7 +4160,7 @@
 .oa-appearance-section > .oa-field-hint { margin: 0; }
 .oa-appearance-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .oa-appearance-heading h3 { margin: 0; font-size: 13px; font-weight: 650; }
-.oa-appearance-heading > .oa-btn { padding: 5px 10px; font-size: 11px; }
+.oa-appearance-heading > .oa-btn { min-height: 28px; padding: 0 11px; font-size: 11.5px; }
 .oa-background-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
 .oa-background-choice { display: flex; flex-direction: column; align-items: stretch; gap: 8px; min-width: 0; padding: 0; border: none; border-radius: 999px; background: transparent; color: var(--ai-text-secondary); font: inherit; font-size: 11px; cursor: pointer; }
 .oa-background-swatch { position: relative; display: block; height: 52px; border-radius: 11px; box-shadow: inset 0 0 0 1px var(--ai-border); }

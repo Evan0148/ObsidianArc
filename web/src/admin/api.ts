@@ -165,21 +165,70 @@ export interface UsageTotals {
   total_tokens: number;
   credits: number;
   errors: number;
+  /** Distinct accounts behind the rows: on a model's row, how widely it is used. */
+  users: number;
+  /** Distinct models behind the rows: on an account's row, how many it moves between. */
+  models: number;
+  /** Summed, never averaged on the server: divide by requests for the mean. */
+  duration_ms: number;
 }
 
 export interface UsageBreakdown extends UsageTotals {
   key: string;
   label: string;
+  /** The provider under a model, the handle under an account's nickname. */
+  detail?: string;
+  last_at: number;
 }
 
 export interface UsagePoint extends UsageTotals {
   at: number;
 }
 
+/** One hour of one weekday, on the reader's clock. 0 is Sunday. */
+export interface UsageSlot {
+  weekday: number;
+  hour: number;
+  requests: number;
+  total_tokens: number;
+}
+
+export interface UsageCell extends UsageTotals {
+  row: string;
+  col: string;
+}
+
+/** The account-by-model grid: the keys it was counted for, and the cells. */
+export interface UsageMatrix {
+  rows: string[];
+  cols: string[];
+  cells: UsageCell[];
+}
+
+/** What the usage page reads in one request. */
+export interface UsageReport {
+  totals: UsageTotals;
+  /** The same span immediately before; null for "all time", which has no before. */
+  previous: UsageTotals | null;
+  by_model: UsageBreakdown[];
+  by_provider: UsageBreakdown[];
+  by_user: UsageBreakdown[];
+  by_group: UsageBreakdown[];
+  by_status: UsageBreakdown[];
+  series: UsagePoint[];
+  bucket_ms: number;
+  heatmap: UsageSlot[];
+  matrix: UsageMatrix;
+  current_rpm?: number;
+}
+
+export type UsageDimension = 'model' | 'provider' | 'user' | 'group' | 'status';
+
 export interface UsageRecord {
   id: string;
   user_id: string;
   username: string;
+  nickname?: string;
   model_name: string;
   provider_name: string;
   conversation_id: string;
@@ -207,11 +256,14 @@ export interface Dashboard {
   };
   newest_users: Account[];
   last_24h: UsageTotals;
+  /** The 24 hours before those, so each figure can say which way it moved. */
+  prev_24h: UsageTotals;
   last_7d: UsageTotals;
   top_models: UsageBreakdown[];
   top_users: UsageBreakdown[];
   series: UsagePoint[];
   bucket_ms: number;
+  heatmap: UsageSlot[];
   recent: UsageRecord[];
 }
 
@@ -309,8 +361,20 @@ export interface LogFacets {
   oldest: number;
 }
 
-/** How a breakdown is ranked. Three defensible answers to "the most". */
-export type UsageMetric = 'requests' | 'tokens' | 'credits';
+/**
+ * How a breakdown is ranked. Several defensible answers to "the most"; `users`
+ * is the one that asks how popular something is rather than how busy.
+ */
+export type UsageMetric = 'requests' | 'tokens' | 'credits' | 'users';
+
+/**
+ * The reader's distance from UTC in minutes east, which is what the server
+ * aligns a day to. Asked each time rather than once, so a laptop that crossed
+ * a time zone since the page opened draws its days where the reader now is.
+ */
+export function zoneQuery(): string {
+  return `tz=${-new Date().getTimezoneOffset()}`;
+}
 
 export interface UserStorage {
   user_id: string;
@@ -425,7 +489,7 @@ export const adminApi = {
   providerOptions: () => api.get<{ providers: ProviderOption[] }>('/api/admin/references'),
   memberOptions: (query: string) => api.get<{ users: Account[]; total: number }>(`/api/admin/member-options${query}`),
   dashboard: (metric: UsageMetric = 'credits') =>
-    api.get<Dashboard>(`/api/admin/dashboard?metric=${metric}`),
+    api.get<Dashboard>(`/api/admin/dashboard?metric=${metric}&${zoneQuery()}`),
   meta: () => api.get<Meta>('/api/admin/meta'),
   tryReview: (body: Record<string, unknown>) =>
     api.post<{ ran: boolean; decision: 'allow' | 'restrict' | 'refuse'; reason: string }>(
@@ -479,6 +543,8 @@ export const adminApi = {
       user: Account;
       usage: UsageSummary;
       lifetime: UsageTotals;
+      /** Every model this account has used, by tokens: what it spends on. */
+      models?: UsageBreakdown[];
       policy: QuotaPolicy;
       cards: CardHolding;
     }>(`/api/admin/users/${id}`),
@@ -561,15 +627,11 @@ export const adminApi = {
     api.post<{ removed: number }>('/api/admin/logs/prune', { days }),
 
   usage: (query: string) =>
-    api.get<{
-      totals: UsageTotals;
-      by_model: UsageBreakdown[];
-      by_provider: UsageBreakdown[];
-      by_user: UsageBreakdown[];
-      series: UsagePoint[];
-      bucket_ms: number;
-      current_rpm?: number;
-    }>(`/api/admin/usage${query}`),
+    api.get<UsageReport>(`/api/admin/usage${query}`),
+  // One dimension alone — who used a model, what an account used — for a panel
+  // that should not pay for the whole report.
+  usageBreakdown: (dimension: UsageDimension, query = '') =>
+    api.get<{ rows: UsageBreakdown[] }>(`/api/admin/usage/breakdown?dimension=${dimension}${query ? `&${query}` : ''}`),
   usageRecords: (query: string) =>
     api.get<{ records: UsageRecord[]; total: number }>(`/api/admin/usage/records${query}`),
   rpm: (query = '') =>

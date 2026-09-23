@@ -188,6 +188,9 @@ provideAdminView({
     return segments.value.slice(1);
   },
   actionsHost,
+  open(path, query) {
+    void router.push({ path, query: query ?? {} });
+  },
 });
 
 // Changing views should never leave a stale heading or a set of buttons
@@ -332,7 +335,7 @@ onMounted(() => {
 
     <!-- The whole section arrives together, including its heading and actions.
          Keying only navigation keeps saves from replaying the entrance. -->
-    <div :key="current.slug" class="oa-admin-main" :class="[`enter-${direction}`, { 'oa-admin-main-dashboard': !current.slug && allowed, 'oa-admin-main-refined': ['settings', 'security', 'resources', 'availability'].includes(current.slug) && allowed }]">
+    <div :key="current.slug" class="oa-admin-main" :class="[`enter-${direction}`, { 'oa-admin-main-dashboard': !current.slug && allowed }]">
       <!-- The overview owns its editorial heading; other pages keep the shared toolbar. -->
       <div v-if="current.slug || !allowed" class="oa-admin-head" :ref="attachActions">
         <div>

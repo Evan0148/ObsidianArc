@@ -4,60 +4,74 @@
 //
 // Every figure here is an aggregate over the ledger, so the same page answers
 // "what is this costing" and "why did that request fail" without either being
-// a separate feature.
+// a separate feature. And every name on it is a way in: pick a model and the
+// page becomes that model's — who uses it, when, how often it fails; pick an
+// account and it becomes theirs. That is the whole of the drill-down: the
+// same questions, asked of a narrower slice of the same ledger.
 
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useIntervalFn } from '@vueuse/core';
 import {
-  adminApi, emptyPolicy,
-  type Group, type QuotaWindowKind, type UsageBreakdown, type UsageMetric,
-  type UsageRecord, type UsageTotals,
+  adminApi, emptyPolicy, zoneQuery,
+  type Group, type QuotaWindowKind, type UsageBreakdown, type UsagePoint,
+  type UsageRecord, type UsageReport, type UsageTotals,
 } from '@/admin/api';
 import { ApiError } from '@/api/client';
-import OaAdminSection from '@/components/OaAdminSection.vue';
 import OaCellStack from '@/components/OaCellStack.vue';
-import OaChart from '@/components/OaChart.vue';
 import OaFormSection from '@/components/OaFormSection.vue';
 import OaHoldButton from '@/components/OaHoldButton.vue';
 import OaNumberField from '@/components/OaNumberField.vue';
 import OaPanel from '@/components/OaPanel.vue';
 import OaSelect from '@/components/OaSelect.vue';
 import OaSelectField from '@/components/OaSelectField.vue';
-import OaSpark from '@/components/OaSpark.vue';
-import OaStatGrid from '@/components/OaStatGrid.vue';
 import OaSwitchField from '@/components/OaSwitchField.vue';
 import OaTable from '@/components/OaTable.vue';
 import OaTextField from '@/components/OaTextField.vue';
 import type { Column, PageState } from '@/components/table-types';
-import type { Stat } from '@/components/stat';
 import { celebrate } from '@/composables/useConfetti';
-import { t, type StringKey } from '@/composables/useI18n';
-import type { ChartShape } from '@/lib/chart';
+import { t, tn, type StringKey } from '@/composables/useI18n';
+import { IconClose } from '@/icons';
 import { compactNumber, relativeTime, tokenFigure } from '@/lib/format';
 import AdminFailure from './AdminFailure.vue';
 import CreditsField from './CreditsField.vue';
 import StatusBadge from './StatusBadge.vue';
 import { useAdminView } from './adminView';
+import UsageBoard from './usage/UsageBoard.vue';
+import UsageDelta from './usage/UsageDelta.vue';
+import UsageHeatmap from './usage/UsageHeatmap.vue';
+import UsageMatrix from './usage/UsageMatrix.vue';
+import UsagePlot from './usage/UsagePlot.vue';
+import { fillBuckets, formatDuration, percent } from './usage/scale';
+import type { BoardMetric, PlotPoint } from './usage/shape';
 
 interface RangePreset {
   key: string;
+  /** On the button, where seven of them share one row. */
   label: StringKey;
+  /** Above a chart, where there is room to say it in full. */
+  long: StringKey;
   hours: number;
 }
 
 const RANGE_PRESETS: RangePreset[] = [
-  { key: '1h', label: 'rangeHour', hours: 1 },
-  { key: '24h', label: 'rangeDay', hours: 24 },
-  { key: '7d', label: 'rangeWeek', hours: 24 * 7 },
-  { key: '30d', label: 'rangeMonth', hours: 24 * 30 },
-  { key: '90d', label: 'rangeQuarter', hours: 24 * 90 },
-  { key: 'all', label: 'rangeAll', hours: 0 },
+  { key: '1h', label: 'range1h', long: 'rangeHour', hours: 1 },
+  { key: '24h', label: 'range24h', long: 'rangeDay', hours: 24 },
+  { key: '7d', label: 'range7d', long: 'rangeWeek', hours: 24 * 7 },
+  { key: '30d', label: 'range30d', long: 'rangeMonth', hours: 24 * 30 },
+  { key: '90d', label: 'range90d', long: 'rangeQuarter', hours: 24 * 90 },
+  { key: 'all', label: 'rangeAllShort', long: 'rangeAll', hours: 0 },
 ];
 
 const WINDOWS: QuotaWindowKind[] = ['5h', '1w', '1m'];
 
+type Dimension = 'model' | 'user' | 'group' | 'provider';
+type Outcome = '' | 'ok' | 'error' | 'aborted' | 'rejected';
+type TrendMetric = 'requests' | 'total_tokens' | 'credits' | 'users';
+type CellMetric = 'requests' | 'total_tokens' | 'credits';
+type Spread = 'group' | 'provider' | 'status';
+
 const view = useAdminView();
-view.setTitle(t('usageTitle'));
+view.setTitle(t('usageTitle'), t('usageSubtitle'));
 
 const currentRPM = ref(0);
 const rpmTimer = ref<number | null>(null);
@@ -75,54 +89,113 @@ function toLocalISO(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-const rangeChoices = computed(() => {
-  const list = RANGE_PRESETS.map((entry) => ({
-    value: entry.key,
-    label: t(entry.label),
-  }));
-  const customLabel = customSince && customUntil
-    ? `${t('rangeCustom')} (${new Date(customSince).toLocaleDateString()} ~ ${new Date(customUntil).toLocaleDateString()})`
-    : t('rangeCustom');
-  list.push({
-    value: 'custom',
-    label: customLabel,
-  });
-  return list;
-});
+const customLabel = computed(() => range.value === 'custom' && customSince && customUntil
+  ? `${new Date(customSince).toLocaleDateString()} – ${new Date(customUntil).toLocaleDateString()}`
+  : t('rangeCustomShort'));
+const rangeKicker = computed(() => range.value === 'custom'
+  ? customLabel.value
+  : t((RANGE_PRESETS.find((preset) => preset.key === range.value) ?? RANGE_PRESETS[1]!).long));
 
-// Remembered across visits: an operator who looks at credits by user does it
+// Remembered across visits: an operator who reads tokens by account does it
 // again next time, and having to choose twice is friction with no benefit.
-const metric = ref<UsageMetric>(selectedMetric);
-const shape = ref<ChartShape>(selectedShape);
-const dimension = ref<'model' | 'user' | 'provider'>(selectedDimension);
+const trendMetric = ref<TrendMetric>(selectedTrend);
+const modelMetric = ref<BoardMetric>(selectedModelMetric);
+const userMetric = ref<BoardMetric>(selectedUserMetric);
+const cellMetric = ref<CellMetric>(selectedCellMetric);
+const heatMetric = ref<'requests' | 'total_tokens'>(selectedHeatMetric);
+const spread = ref<Spread>(selectedSpread);
 
-const totals = ref<UsageTotals | null>(null);
-const byModel = ref<UsageBreakdown[]>([]);
-const byProvider = ref<UsageBreakdown[]>([]);
-const byUser = ref<UsageBreakdown[]>([]);
-const series = ref<Array<{ at: number; requests: number; total_tokens: number }>>([]);
-const bucketMs = ref(3600000);
+// Not remembered: a drill-down is a question about one thing, and coming back
+// to the page later still narrowed to it reads as missing data.
+//
+// A link from another section — an account's panel, a model's — arrives
+// already narrowed, in the query. It is read once: from then on the filters
+// are the page's own. Anything that is not an identifier is dropped here
+// rather than sent to be refused.
+function linkedFilters(): Record<Dimension, string> & { status: Outcome } {
+  const query = new URLSearchParams(window.location.search);
+  const id = (key: string): string => {
+    const value = query.get(key) ?? '';
+    return /^[0-9A-HJKMNP-TV-Z]{26}$/.test(value) ? value : '';
+  };
+  const status = query.get('status') ?? '';
+  return {
+    model: id('model'), user: id('user'), group: id('group'), provider: id('provider'),
+    status: (['ok', 'error', 'aborted', 'rejected'].includes(status) ? status : '') as Outcome,
+  };
+}
+const filters = ref(linkedFilters());
+const anyFilter = computed(() => Object.values(filters.value).some(Boolean));
+
+const report = ref<UsageReport | null>(null);
 const records = ref<UsageRecord[]>([]);
 const recordTotal = ref(0);
 const recordPage = ref<PageState>({ page: 1, pageSize: 20 });
 const recordsBusy = ref(false);
+const error = ref('');
+const loaded = ref(false);
 let recordRequest = 0;
 // The summary fetch needs a ticket of its own. A request that outlives a
-// range or metric change must not paint its stale numbers over the newer
+// range or filter change must not paint its stale numbers over the newer
 // one's — loadRecords has always done this; this is the other half.
 let summaryRequest = 0;
 let periodSince = 0;
 let periodUntil = 0;
+let offsetMs = 0;
+
+/**
+ * The names each filter can be set to, kept from the last answer in which
+ * that dimension was not itself filtered. Narrowed to one model, the report
+ * only knows about that model; the list to pick another from is the one
+ * from before.
+ */
+const known = ref<Record<Dimension, UsageBreakdown[]>>({ model: [], user: [], group: [], provider: [] });
+
+const totals = computed<UsageTotals | null>(() => report.value?.totals ?? null);
+const previous = computed(() => report.value?.previous ?? null);
+const byModel = computed(() => report.value?.by_model ?? []);
+const byUser = computed(() => report.value?.by_user ?? []);
+const byGroup = computed(() => report.value?.by_group ?? []);
+const byProvider = computed(() => report.value?.by_provider ?? []);
+const byStatus = computed(() => report.value?.by_status ?? []);
+
+function figure(value: number | undefined): number {
+  return Number.isFinite(value) ? value! : 0;
+}
+
+// --- the query --------------------------------------------------------------------
+
+// The period, the filters and the zone the page is currently showing, as a
+// query. Shared by load(), the records and the timer below: two copies would
+// eventually disagree about which slice is on screen.
+function sliceQuery(): URLSearchParams {
+  const params = new URLSearchParams();
+  if (periodSince > 0) params.set('since', String(periodSince));
+  if (periodUntil > 0) params.set('until', String(periodUntil));
+  if (filters.value.model) params.set('model_id', filters.value.model);
+  if (filters.value.user) params.set('user_id', filters.value.user);
+  if (filters.value.group) params.set('group_id', filters.value.group);
+  if (filters.value.provider) params.set('provider_id', filters.value.provider);
+  if (filters.value.status) params.set('status', filters.value.status);
+  return params;
+}
+
+function summaryQuery(): string {
+  const params = sliceQuery();
+  // The server ranks every breakdown by this; the boards re-sort on their
+  // own, so what it decides here is only which accounts and models make the
+  // grid — the ones that spend the most tokens.
+  params.set('metric', 'tokens');
+  return `?${params.toString()}&${zoneQuery()}`;
+}
+
 async function loadRecords(quiet = false): Promise<void> {
   const ticket = ++recordRequest;
   recordsBusy.value = true;
   try {
-    const params = new URLSearchParams();
-    if (periodSince > 0) params.set('since', String(periodSince));
-    if (periodUntil > 0) params.set('until', String(periodUntil));
+    const params = sliceQuery();
     params.set('limit', String(recordPage.value.pageSize));
     params.set('offset', String((recordPage.value.page - 1) * recordPage.value.pageSize));
-
     const result = await adminApi.usageRecords(`?${params.toString()}`);
     if (ticket !== recordRequest) return;
     records.value = result.records ?? [];
@@ -131,72 +204,44 @@ async function loadRecords(quiet = false): Promise<void> {
   finally { if (ticket === recordRequest) recordsBusy.value = false; }
 }
 function changeRecords(next: PageState): void { recordPage.value = next; void loadRecords(); }
-const error = ref('');
-const loaded = ref(false);
 
-const totalStats = computed<Stat[]>(() => {
-  const value = totals.value;
-  if (!value) return [];
-  return [
-    {
-      label: t('statRPM'),
-      value: compactNumber(currentRPM.value),
-      note: t('rpmRealtime'),
-    },
-    {
-      label: t('statRequests'),
-      value: compactNumber(value.requests),
-      note: value.errors ? t('nFailed', { count: value.errors }) : t('allFine'),
-    },
-    { label: t('statInputTokens'), value: compactNumber(value.input_tokens) },
-    { label: t('statOutputTokens'), value: compactNumber(value.output_tokens) },
-    { label: t('statReasoningTokens'), value: compactNumber(value.reasoning_tokens) },
-    { label: t('statCredits'), value: compactNumber(value.credits) },
-  ];
-});
-
-/** The figure the current metric ranks by, for the chart's own arithmetic. */
-function metricValue(row: UsageBreakdown): number {
-  if (metric.value === 'requests') return row.requests;
-  if (metric.value === 'tokens') return row.total_tokens;
-  return row.credits;
+function applyReport(next: UsageReport): void {
+  report.value = next;
+  if (typeof next.current_rpm === 'number') currentRPM.value = next.current_rpm;
+  const lists: Record<Dimension, UsageBreakdown[]> = {
+    model: next.by_model ?? [], user: next.by_user ?? [], group: next.by_group ?? [], provider: next.by_provider ?? [],
+  };
+  for (const dimension of Object.keys(lists) as Dimension[]) {
+    if (!filters.value[dimension]) known.value[dimension] = lists[dimension];
+  }
 }
 
-const ranked = computed(() => {
-  const rows = dimension.value === 'model' ? byModel.value
-    : dimension.value === 'user' ? byUser.value : byProvider.value;
-  return rows.map((row) => ({
-    key: row.key,
-    label: row.label || row.key || '—',
-    value: metricValue(row),
-  }));
-});
+async function load(): Promise<void> {
+  error.value = '';
+  if (range.value === 'custom') {
+    periodSince = customSince;
+    periodUntil = customUntil;
+  } else {
+    const preset = RANGE_PRESETS.find((p) => p.key === range.value) ?? RANGE_PRESETS[1]!;
+    periodSince = preset.hours > 0 ? Date.now() - preset.hours * 3600_000 : 0;
+    periodUntil = 0;
+  }
+  offsetMs = -new Date().getTimezoneOffset() * 60_000;
+  recordPage.value.page = 1;
 
-const breakdownColumns = computed<Array<Column<UsageBreakdown>>>(() => [
-  { key: 'name', header: t('colModel'), text: (row) => row.label || row.key || '—' },
-  { key: 'requests', header: t('colRequests'), text: (row) => compactNumber(row.requests), numeric: true },
-  { key: 'tokens', header: t('colTokens'), text: (row) => compactNumber(row.total_tokens), numeric: true },
-  { key: 'credits', header: t('colCredits'), text: (row) => compactNumber(row.credits), numeric: true },
-  { key: 'failed', header: t('colFailed'), text: (row) => compactNumber(row.errors), numeric: true, secondary: true },
-]);
+  const ticket = ++summaryRequest;
+  try {
+    const [summary] = await Promise.all([adminApi.usage(summaryQuery()), loadRecords()]);
+    if (ticket !== summaryRequest) return;
+    applyReport(summary);
+  } catch (failure) {
+    if (ticket === summaryRequest) error.value = failure instanceof Error ? failure.message : String(failure);
+  } finally {
+    loaded.value = true;
+  }
+}
 
-const providerColumns = computed<Array<Column<UsageBreakdown>>>(() => [
-  { key: 'name', header: t('colProvider'), text: (row) => row.label || row.key || '—' },
-  { key: 'requests', header: t('colRequests'), text: (row) => compactNumber(row.requests), numeric: true },
-  { key: 'tokens', header: t('colTokens'), text: (row) => compactNumber(row.total_tokens), numeric: true },
-  { key: 'credits', header: t('colCredits'), text: (row) => compactNumber(row.credits), numeric: true },
-]);
-
-const recordColumns = computed<Array<Column<UsageRecord>>>(() => [
-  { key: 'when', header: t('colWhen'), text: (row) => relativeTime(row.started_at) },
-  { key: 'user', header: t('colUser'), text: (row) => row.username || row.user_id },
-  { key: 'model', header: t('colModel'), secondary: true },
-  { key: 'in', header: t('colIn'), text: (row) => tokenFigure(row.input_tokens, row.estimated), numeric: true, secondary: true },
-  { key: 'out', header: t('colOut'), text: (row) => tokenFigure(row.output_tokens, row.estimated), numeric: true, secondary: true },
-  { key: 'credits', header: t('colCredits'), text: (row) => compactNumber(row.credits), numeric: true },
-  { key: 'took', header: t('colTook'), text: (row) => `${(row.duration_ms / 1000).toFixed(1)}s`, numeric: true, secondary: true },
-  { key: 'status', header: t('colStatus') },
-]);
+// --- range and filters ------------------------------------------------------------------
 
 function onRange(next: string): void {
   if (next === 'custom') {
@@ -208,109 +253,214 @@ function onRange(next: string): void {
   void load();
 }
 
-function openCustomRange(): void {
-  if (!customStart.value) {
-    customStart.value = toLocalISO(new Date(Date.now() - 24 * 3600_000));
-  }
-  if (!customEnd.value) {
-    customEnd.value = toLocalISO(new Date());
-  }
-  customRangeError.value = '';
-  customRangeOpen.value = true;
-}
-
-function closeCustomRange(): void {
-  customRangeOpen.value = false;
-  customRangeError.value = '';
-  if (selectedRange !== 'custom') {
-    range.value = selectedRange;
-  }
-}
-
-function applyCustomRange(): void {
-  if (!customStart.value) {
-    customRangeError.value = t('customStartRequired');
-    return;
-  }
-  if (!customEnd.value) {
-    customRangeError.value = t('customEndRequired');
-    return;
-  }
-  const startMs = new Date(customStart.value).getTime();
-  const endMs = new Date(customEnd.value).getTime();
-  if (isNaN(startMs) || isNaN(endMs) || startMs >= endMs) {
-    customRangeError.value = t('customInvalidRange');
-    return;
-  }
-  customSince = startMs;
-  customUntil = endMs;
-  savedCustomSince = startMs;
-  savedCustomUntil = endMs;
-  savedCustomStart = customStart.value;
-  savedCustomEnd = customEnd.value;
-  range.value = 'custom';
-  selectedRange = 'custom';
-  customRangeError.value = '';
-  customRangeOpen.value = false;
+function setFilter(dimension: Dimension | 'status', key: string): void {
+  if (filters.value[dimension] === key) return;
+  (filters.value as Record<string, string>)[dimension] = key;
   void load();
 }
 
-function setPreset(preset: 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'last7d' | 'last30d'): void {
-  const now = new Date();
-  const start = new Date(now);
-  const end = new Date(now);
-
-  switch (preset) {
-    case 'today':
-      start.setHours(0, 0, 0, 0);
-      break;
-    case 'yesterday':
-      start.setDate(start.getDate() - 1);
-      start.setHours(0, 0, 0, 0);
-      end.setDate(end.getDate() - 1);
-      end.setHours(23, 59, 59, 999);
-      break;
-    case 'thisWeek': {
-      const day = start.getDay();
-      const diff = day === 0 ? 6 : day - 1;
-      start.setDate(start.getDate() - diff);
-      start.setHours(0, 0, 0, 0);
-      break;
-    }
-    case 'thisMonth':
-      start.setDate(1);
-      start.setHours(0, 0, 0, 0);
-      break;
-    case 'last7d':
-      start.setTime(now.getTime() - 7 * 24 * 3600_000);
-      break;
-    case 'last30d':
-      start.setTime(now.getTime() - 30 * 24 * 3600_000);
-      break;
-  }
-  customStart.value = toLocalISO(start);
-  customEnd.value = toLocalISO(end);
-  customRangeError.value = '';
-}
-
-function onMetric(next: UsageMetric): void {
-  metric.value = next;
-  selectedMetric = next;
-  // The chart and tables use the same server ranking.
+function clearFilters(): void {
+  filters.value = { model: '', user: '', group: '', provider: '', status: '' };
   void load();
 }
 
-function onShape(next: ChartShape): void {
-  shape.value = next;
-  selectedShape = next;
+function nameOf(dimension: Dimension, key: string): string {
+  const row = known.value[dimension].find((entry) => entry.key === key)
+    ?? report.value?.[`by_${dimension}` as const]?.find((entry) => entry.key === key);
+  return row?.label || key;
 }
 
-function onDimension(next: 'model' | 'user' | 'provider'): void {
-  dimension.value = next;
-  selectedDimension = next;
+function choicesFor(dimension: Dimension, all: StringKey): Array<{ value: string; label: string }> {
+  const rows = known.value[dimension].filter((row) => row.key);
+  const selected = filters.value[dimension];
+  // The one in force stays pickable even if the cached list predates it.
+  if (selected && !rows.some((row) => row.key === selected)) rows.unshift({ key: selected, label: nameOf(dimension, selected) } as UsageBreakdown);
+  const labelled = (row: UsageBreakdown): string => {
+    const name = row.label || row.key;
+    if (!row.detail || row.detail === row.label) return name;
+    return dimension === 'user' ? `${name} · @${row.detail}` : `${name} · ${row.detail}`;
+  };
+  return [{ value: '', label: t(all) }, ...rows.slice(0, 200).map((row) => ({ value: row.key, label: labelled(row) }))];
 }
 
-// --- the default allowance ------------------------------------------------------
+const outcomeChoices = computed<Array<{ value: Outcome; label: string }>>(() => [
+  { value: '', label: t('filterAllOutcomes') },
+  { value: 'ok', label: t('statusOk') },
+  { value: 'error', label: t('statusFailed') },
+  { value: 'aborted', label: t('statusStopped') },
+  { value: 'rejected', label: t('statusRefused') },
+]);
+
+/** The one model or account the page has been narrowed to, for the banner. */
+const focus = computed(() => {
+  if (filters.value.model) {
+    const row = byModel.value.find((entry) => entry.key === filters.value.model);
+    return { kind: 'model' as const, name: nameOf('model', filters.value.model), row };
+  }
+  if (filters.value.user) {
+    const row = byUser.value.find((entry) => entry.key === filters.value.user);
+    return { kind: 'user' as const, name: nameOf('user', filters.value.user), row };
+  }
+  return null;
+});
+
+function focusNotes(): string[] {
+  const row = focus.value?.row;
+  if (!row) return [t('noRequestsPeriod')];
+  const notes: string[] = [];
+  if (focus.value?.kind === 'model') {
+    if (row.detail) notes.push(row.detail);
+    notes.push(tn(row.users, 'boardUsersOne', 'boardUsersOther', { count: row.users }));
+  } else {
+    if (row.detail) notes.push(`@${row.detail}`);
+    notes.push(tn(row.models, 'boardModelsOne', 'boardModelsOther', { count: row.models }));
+  }
+  notes.push(t('boardRequests', { count: compactNumber(row.requests) }));
+  if (row.last_at) notes.push(t('lastUsed', { when: relativeTime(row.last_at) }));
+  return notes;
+}
+
+// --- the figures ---------------------------------------------------------------------
+
+const successRate = computed(() => {
+  const value = totals.value;
+  return value && value.requests ? (value.requests - value.errors) / value.requests : null;
+});
+const meanLatency = computed(() => {
+  const value = totals.value;
+  return value && value.requests ? figure(value.duration_ms) / value.requests : 0;
+});
+const previousLatency = computed(() => {
+  const value = previous.value;
+  return value && value.requests ? figure(value.duration_ms) / value.requests : null;
+});
+const tokenSplit = computed(() => {
+  const value = totals.value;
+  const whole = value ? value.input_tokens + value.output_tokens + value.reasoning_tokens : 0;
+  if (!value || !whole) return [];
+  return [
+    { key: 'in', label: t('dashboardInput'), value: value.input_tokens, share: value.input_tokens / whole },
+    { key: 'out', label: t('dashboardOutput'), value: value.output_tokens, share: value.output_tokens / whole },
+    { key: 'think', label: t('tokensThinking'), value: value.reasoning_tokens, share: value.reasoning_tokens / whole },
+  ];
+});
+
+// --- the trend ---------------------------------------------------------------------------
+
+const TREND_METRICS: Array<{ value: TrendMetric; label: StringKey }> = [
+  { value: 'requests', label: 'statRequests' },
+  { value: 'total_tokens', label: 'statTokens' },
+  { value: 'credits', label: 'statCredits' },
+  { value: 'users', label: 'trendUsers' },
+];
+const activePoint = ref<number | null>(null);
+// Narrowed to one account, "how many accounts" is always one: the options
+// that would only ever say so are left out rather than drawn flat.
+const trendOptions = computed(() => filters.value.user ? TREND_METRICS.filter((option) => option.value !== 'users') : TREND_METRICS);
+const trendShown = computed<TrendMetric>(() => filters.value.user && trendMetric.value === 'users' ? 'requests' : trendMetric.value);
+
+const series = computed<UsagePoint[]>(() => {
+  const data = report.value;
+  if (!data) return [];
+  const zero = (at: number): UsagePoint => ({
+    at, requests: 0, input_tokens: 0, output_tokens: 0, reasoning_tokens: 0, total_tokens: 0,
+    credits: 0, errors: 0, users: 0, models: 0, duration_ms: 0,
+  });
+  return fillBuckets(data.series ?? [], data.bucket_ms, {
+    since: periodSince, until: periodUntil || Date.now(), offsetMs,
+  }, zero);
+});
+const plotPoints = computed<PlotPoint[]>(() => series.value.map((point) => ({ at: point.at, value: figure(point[trendShown.value]) })));
+const trendFormat = computed(() => trendShown.value === 'credits'
+  ? (value: number) => compactNumber(Math.round(value * 100) / 100)
+  : (value: number) => compactNumber(value));
+const trendSummary = computed(() => {
+  const point = activePoint.value === null ? null : series.value[activePoint.value];
+  if (point) return figure(point[trendShown.value]);
+  const value = totals.value;
+  // Accounts are counted once for the whole range, not summed per bucket:
+  // somebody active every day is one account, not thirty.
+  return value ? figure(value[trendShown.value]) : 0;
+});
+const trendPeak = computed(() => Math.max(0, ...plotPoints.value.map((point) => point.value)));
+const plot = ref<InstanceType<typeof UsagePlot> | null>(null);
+const trendCaption = computed(() => {
+  const point = activePoint.value === null ? null : series.value[activePoint.value];
+  if (point && plot.value) return plot.value.describe(point.at);
+  return trendShown.value === 'users' ? t('trendDistinct') : t('trendTotal');
+});
+
+// --- the boards and the grid -----------------------------------------------------------------
+
+const BOARD_METRICS: Array<{ value: BoardMetric; label: StringKey }> = [
+  { value: 'users', label: 'metricPeople' },
+  { value: 'requests', label: 'statRequests' },
+  { value: 'tokens', label: 'statTokens' },
+  { value: 'credits', label: 'statCredits' },
+];
+const USER_METRICS = BOARD_METRICS.slice(1);
+// With one account picked, the model board is that account's models, and
+// "how many people" of one person is not a ranking.
+const modelOptions = computed(() => filters.value.user ? USER_METRICS : BOARD_METRICS);
+const modelShown = computed<BoardMetric>(() => filters.value.user && modelMetric.value === 'users' ? 'tokens' : modelMetric.value);
+const CELL_METRICS: Array<{ value: CellMetric; label: StringKey }> = [
+  { value: 'requests', label: 'statRequests' },
+  { value: 'total_tokens', label: 'statTokens' },
+  { value: 'credits', label: 'statCredits' },
+];
+
+/**
+ * Each shown account's heaviest model, from the grid, for the board's note.
+ * Not while one model is picked: every account would be noted as mostly using
+ * the model the whole page is already about.
+ */
+const favourites = computed(() => {
+  if (filters.value.model) return {};
+  const best = new Map<string, { col: string; tokens: number }>();
+  for (const cell of report.value?.matrix?.cells ?? []) {
+    const current = best.get(cell.row);
+    if (!current || cell.total_tokens > current.tokens) best.set(cell.row, { col: cell.col, tokens: cell.total_tokens });
+  }
+  const out: Record<string, string> = {};
+  for (const [user, entry] of best) out[user] = nameOf('model', entry.col);
+  return out;
+});
+const showMatrix = computed(() => !filters.value.model && !filters.value.user
+  && (report.value?.matrix?.rows?.length ?? 0) > 0 && (report.value?.matrix?.cols?.length ?? 0) > 0);
+
+// One setter per control, each remembering its choice for the next visit.
+function onTrend(next: TrendMetric): void { trendMetric.value = next; selectedTrend = next; activePoint.value = null; }
+function onModelMetric(next: BoardMetric): void { modelMetric.value = next; selectedModelMetric = next; }
+function onUserMetric(next: BoardMetric): void { userMetric.value = next; selectedUserMetric = next; }
+function onCellMetric(next: CellMetric): void { cellMetric.value = next; selectedCellMetric = next; }
+function onHeatMetric(next: 'requests' | 'total_tokens'): void { heatMetric.value = next; selectedHeatMetric = next; }
+function onSpreadChoice(next: Spread): void { spread.value = next; selectedSpread = next; }
+
+const statusRows = computed<UsageBreakdown[]>(() => byStatus.value.map((row) => ({
+  ...row,
+  label: row.key === 'ok' ? t('statusOk') : row.key === 'aborted' ? t('statusStopped')
+    : row.key === 'rejected' ? t('statusRefused') : t('statusFailed'),
+})));
+const spreadRows = computed(() => spread.value === 'group' ? byGroup.value : spread.value === 'provider' ? byProvider.value : statusRows.value);
+function onSpread(key: string): void {
+  if (spread.value === 'status') setFilter('status', key);
+  else setFilter(spread.value, key);
+}
+
+// --- the ledger ---------------------------------------------------------------------------
+
+const recordColumns = computed<Array<Column<UsageRecord>>>(() => [
+  { key: 'when', header: t('colWhen'), text: (row) => relativeTime(row.started_at), width: '104px' },
+  { key: 'user', header: t('colUser'), width: '180px' },
+  { key: 'model', header: t('colModel'), width: '200px' },
+  { key: 'in', header: t('colIn'), text: (row) => tokenFigure(row.input_tokens, row.estimated), numeric: true, secondary: true, width: '84px' },
+  { key: 'out', header: t('colOut'), text: (row) => tokenFigure(row.output_tokens, row.estimated), numeric: true, secondary: true, width: '84px' },
+  { key: 'credits', header: t('colCredits'), text: (row) => compactNumber(row.credits), numeric: true, width: '88px' },
+  { key: 'took', header: t('colTook'), text: (row) => formatDuration(row.duration_ms), numeric: true, secondary: true, width: '88px' },
+  { key: 'status', header: t('colStatus'), width: '150px' },
+]);
+
+// --- the default allowance ------------------------------------------------------------------
 
 const policyOpen = ref(false);
 const policyBusy = ref(false);
@@ -368,7 +518,7 @@ async function savePolicy(): Promise<void> {
   }
 }
 
-// --- putting an allowance back --------------------------------------------------
+// --- putting an allowance back --------------------------------------------------------------
 
 const resetOpen = ref(false);
 const resetScope = ref<'all' | 'group' | 'user'>('all');
@@ -417,6 +567,99 @@ async function runReset(): Promise<void> {
   }
 }
 
+// --- a custom range ------------------------------------------------------------------------
+
+function openCustomRange(): void {
+  if (!customStart.value) customStart.value = toLocalISO(new Date(Date.now() - 24 * 3600_000));
+  if (!customEnd.value) customEnd.value = toLocalISO(new Date());
+  customRangeError.value = '';
+  customRangeOpen.value = true;
+}
+
+function closeCustomRange(): void {
+  customRangeOpen.value = false;
+  customRangeError.value = '';
+  if (selectedRange !== 'custom') range.value = selectedRange;
+}
+
+function applyCustomRange(): void {
+  if (!customStart.value) {
+    customRangeError.value = t('customStartRequired');
+    return;
+  }
+  if (!customEnd.value) {
+    customRangeError.value = t('customEndRequired');
+    return;
+  }
+  const startMs = new Date(customStart.value).getTime();
+  const endMs = new Date(customEnd.value).getTime();
+  if (isNaN(startMs) || isNaN(endMs) || startMs >= endMs) {
+    customRangeError.value = t('customInvalidRange');
+    return;
+  }
+  customSince = startMs;
+  customUntil = endMs;
+  savedCustomSince = startMs;
+  savedCustomUntil = endMs;
+  savedCustomStart = customStart.value;
+  savedCustomEnd = customEnd.value;
+  range.value = 'custom';
+  selectedRange = 'custom';
+  customRangeError.value = '';
+  customRangeOpen.value = false;
+  void load();
+}
+
+type Preset = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'last7d' | 'last30d';
+const CUSTOM_PRESETS: Array<{ key: Preset; label: StringKey }> = [
+  { key: 'today', label: 'presetToday' },
+  { key: 'yesterday', label: 'presetYesterday' },
+  { key: 'thisWeek', label: 'presetThisWeek' },
+  { key: 'thisMonth', label: 'presetThisMonth' },
+  { key: 'last7d', label: 'presetLast7Days' },
+  { key: 'last30d', label: 'presetLast30Days' },
+];
+
+function setPreset(preset: Preset): void {
+  const now = new Date();
+  const start = new Date(now);
+  const end = new Date(now);
+
+  switch (preset) {
+    case 'today':
+      start.setHours(0, 0, 0, 0);
+      break;
+    case 'yesterday':
+      start.setDate(start.getDate() - 1);
+      start.setHours(0, 0, 0, 0);
+      end.setDate(end.getDate() - 1);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'thisWeek': {
+      const day = start.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      start.setDate(start.getDate() - diff);
+      start.setHours(0, 0, 0, 0);
+      break;
+    }
+    case 'thisMonth':
+      start.setDate(1);
+      start.setHours(0, 0, 0, 0);
+      break;
+    case 'last7d':
+      start.setTime(now.getTime() - 7 * 24 * 3600_000);
+      break;
+    case 'last30d':
+      start.setTime(now.getTime() - 30 * 24 * 3600_000);
+      break;
+  }
+  customStart.value = toLocalISO(start);
+  customEnd.value = toLocalISO(end);
+  customRangeError.value = '';
+}
+
+// --- keeping it current --------------------------------------------------------------------
+
 async function refreshRPM(): Promise<void> {
   try {
     const res = await adminApi.rpm();
@@ -426,64 +669,11 @@ async function refreshRPM(): Promise<void> {
   }
 }
 
-// The period and metric the page is currently showing, as a query. Shared by
-// load() and the timer below: two copies would eventually disagree about
-// which window is on screen.
-function periodQuery(): string {
-  const params = new URLSearchParams();
-  if (periodSince > 0) params.set('since', String(periodSince));
-  if (periodUntil > 0) params.set('until', String(periodUntil));
-  params.set('metric', metric.value);
-  return `?${params.toString()}`;
-}
-
-async function load(): Promise<void> {
-  error.value = '';
-  if (range.value === 'custom') {
-    periodSince = customSince;
-    periodUntil = customUntil;
-  } else {
-    const preset = RANGE_PRESETS.find((p) => p.key === range.value) ?? RANGE_PRESETS[1]!;
-    periodSince = preset.hours > 0 ? Date.now() - preset.hours * 3600_000 : 0;
-    periodUntil = 0;
-  }
-  recordPage.value.page = 1;
-  const query = periodQuery();
-
-  const ticket = ++summaryRequest;
-  try {
-    const [summary] = await Promise.all([
-      adminApi.usage(query),
-      loadRecords(),
-    ]);
-    if (ticket !== summaryRequest) return;
-    applySummary(summary);
-  } catch (failure) {
-    if (ticket === summaryRequest) {
-      error.value = failure instanceof Error ? failure.message : String(failure);
-    }
-  } finally {
-    loaded.value = true;
-  }
-}
-
-function applySummary(summary: Awaited<ReturnType<typeof adminApi.usage>>): void {
-  totals.value = summary.totals;
-  byModel.value = summary.by_model;
-  byProvider.value = summary.by_provider;
-  byUser.value = summary.by_user;
-  series.value = summary.series;
-  bucketMs.value = summary.bucket_ms;
-  if (typeof summary.current_rpm === 'number') {
-    currentRPM.value = summary.current_rpm;
-  }
-}
-
 // The page re-reads itself while it is open: these are aggregates over the
 // ledger and they move the moment a request lands, so an operator watching a
 // running instance should not have to reach for a refresh.
 //
-// It reuses the period load() worked out and leaves recordPage alone — the
+// It reuses the slice load() worked out and leaves recordPage alone — the
 // timer only asks the same question again; it does not change the operator's
 // filters or throw them back to the first page. A failed refresh is ignored,
 // because the last good figures are a better answer than an error where they
@@ -493,9 +683,9 @@ const REFRESH_MS = 15000;
 
 function refreshQuietly(): void {
   const ticket = ++summaryRequest;
-  void adminApi.usage(periodQuery()).then((summary) => {
+  void adminApi.usage(summaryQuery()).then((summary) => {
     if (ticket !== summaryRequest) return;
-    applySummary(summary);
+    applyReport(summary);
     error.value = '';
   }).catch(() => {});
   void loadRecords(true);
@@ -510,17 +700,18 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  if (rpmTimer.value !== null) {
-    clearInterval(rpmTimer.value);
-  }
+  if (rpmTimer.value !== null) clearInterval(rpmTimer.value);
 });
 </script>
 
 <script lang="ts">
 let selectedRange = '24h';
-let selectedMetric: UsageMetric = 'credits';
-let selectedShape: ChartShape = 'bar';
-let selectedDimension: 'model' | 'user' | 'provider' = 'model';
+let selectedTrend: 'requests' | 'total_tokens' | 'credits' | 'users' = 'requests';
+let selectedModelMetric: 'users' | 'requests' | 'tokens' | 'credits' = 'users';
+let selectedUserMetric: 'users' | 'requests' | 'tokens' | 'credits' = 'tokens';
+let selectedCellMetric: 'requests' | 'total_tokens' | 'credits' = 'total_tokens';
+let selectedHeatMetric: 'requests' | 'total_tokens' = 'requests';
+let selectedSpread: 'group' | 'provider' | 'status' = 'group';
 let savedCustomStart = '';
 let savedCustomEnd = '';
 let savedCustomSince = 0;
@@ -529,106 +720,214 @@ let savedCustomUntil = 0;
 
 <template>
   <Teleport :to="view.actionsHost">
-    <div class="oa-filters" style="margin: 0; display: flex; align-items: center; gap: 8px;">
-      <OaSelect
-        :model-value="range"
-        class="oa-filter-select"
-        :choices="rangeChoices"
-        @update:model-value="onRange"
-      />
+    <div class="oa-segment oa-range" role="group" :aria-label="t('rangeLabel')">
       <button
-        v-if="range === 'custom'"
-        type="button"
-        class="oa-btn"
-        style="padding: 6px 12px; font-size: 12px;"
-        @click="openCustomRange"
-      >
-        {{ t('editTimeRange') }}
-      </button>
+        v-for="preset in RANGE_PRESETS" :key="preset.key" type="button"
+        :aria-pressed="range === preset.key" @click="onRange(preset.key)"
+      >{{ t(preset.label) }}</button>
+      <button type="button" :aria-pressed="range === 'custom'" @click="onRange('custom')">{{ customLabel }}</button>
     </div>
     <button id="defaultLimits" type="button" class="oa-btn" @click="openPolicy">{{ t('defaultLimits') }}</button>
     <button id="resetQuota" type="button" class="oa-btn oa-btn-danger" @click="openReset">{{ t('resetQuota') }}</button>
   </Teleport>
 
   <AdminFailure v-if="error" :message="error" @retry="load" />
-  <p v-else-if="!loaded" class="oa-table-empty">{{ t('loading') }}</p>
+  <div v-else-if="!loaded" class="oa-report-loading" role="status" :aria-label="t('loading')"><div /><div /><div /></div>
 
-  <template v-else>
-    <OaAdminSection id="secTotals" :title="t('secTotals')">
-      <OaStatGrid :stats="totalStats" />
-    </OaAdminSection>
+  <div v-else class="oa-report">
+    <div id="usageFilters" class="oa-report-filters">
+      <OaSelect class="oa-filter-select" :class="{ set: !!filters.model }" :model-value="filters.model" :aria-label="t('colModel')"
+        :choices="choicesFor('model', 'filterAllModels')" @update:model-value="setFilter('model', $event)" />
+      <OaSelect class="oa-filter-select" :class="{ set: !!filters.user }" :model-value="filters.user" :aria-label="t('colUser')"
+        :choices="choicesFor('user', 'filterAllUsers')" @update:model-value="setFilter('user', $event)" />
+      <OaSelect class="oa-filter-select" :class="{ set: !!filters.group }" :model-value="filters.group" :aria-label="t('colGroup')"
+        :choices="choicesFor('group', 'anyGroup')" @update:model-value="setFilter('group', $event)" />
+      <OaSelect class="oa-filter-select" :class="{ set: !!filters.provider }" :model-value="filters.provider" :aria-label="t('colProvider')"
+        :choices="choicesFor('provider', 'filterAllProviders')" @update:model-value="setFilter('provider', $event)" />
+      <OaSelect class="oa-filter-select" :class="{ set: !!filters.status }" :model-value="filters.status" :aria-label="t('colStatus')"
+        :choices="outcomeChoices" :searchable="false" @update:model-value="setFilter('status', $event)" />
+      <button v-if="anyFilter" type="button" class="oa-text-btn" @click="clearFilters">{{ t('filterClear') }}</button>
+      <span class="oa-report-live" :title="t('rpmRealtime')"><span class="oa-live-dot" aria-hidden="true" />{{ t('liveRPM', { count: compactNumber(currentRPM) }) }}</span>
+    </div>
 
-    <OaAdminSection id="secOverTime" :title="t('secOverTime')">
-      <OaSpark :series="series" :bucket-ms="bucketMs" :empty-text="t('noRequestsPeriod')" />
-    </OaAdminSection>
-
-    <!-- Three choices rather than one, because "who used the most" has three
-         defensible answers and a chart that picks silently is a chart that
-         misleads. Shape and dimension repaint from what is already loaded;
-         changing the metric refetches, because the ranking is the server's. -->
-    <OaAdminSection id="secRanking" :title="t('secRanking')">
-      <div class="oa-ranking">
-        <div class="oa-ranking-controls">
-          <OaSelectField
-            :model-value="dimension"
-            :label="t('rankBy')"
-            :options="[
-              { value: 'model', label: t('rankModels') },
-              { value: 'user', label: t('rankUsers') },
-              { value: 'provider', label: t('rankProviders') },
-            ]"
-            @update:model-value="onDimension"
-          />
-          <OaSelectField
-            :model-value="metric"
-            :label="t('rankMetric')"
-            :options="[
-              { value: 'credits', label: t('metricCredits') },
-              { value: 'tokens', label: t('metricTokens') },
-              { value: 'requests', label: t('metricRequests') },
-            ]"
-            @update:model-value="onMetric"
-          />
-          <OaSelectField
-            :model-value="shape"
-            :label="t('chartShape')"
-            :options="[
-              { value: 'bar', label: t('chartBar') },
-              { value: 'pie', label: t('chartPie') },
-            ]"
-            @update:model-value="onShape"
-          />
-        </div>
-        <div class="oa-ranking-canvas">
-          <OaChart
-            :shape="shape"
-            :data="ranked"
-            :format="(value) => (metric === 'credits' ? value.toFixed(2) : compactNumber(value))"
-            :empty-text="t('nothingInPeriod')"
-            :other-label="t('chartOther')"
-          />
-        </div>
+    <section v-if="focus" class="oa-report-focus" :aria-label="focus.name">
+      <span class="oa-report-focus-mark" :class="focus.kind" aria-hidden="true">{{ Array.from(focus.name)[0]?.toLocaleUpperCase() }}</span>
+      <div class="oa-report-focus-copy">
+        <span class="oa-kicker">{{ focus.kind === 'model' ? t('colModel') : t('colAccount') }}</span>
+        <h2>{{ focus.name }}</h2>
+        <p>{{ focusNotes().join(' · ') }}</p>
       </div>
-    </OaAdminSection>
+      <button type="button" class="oa-btn" @click="setFilter(focus.kind, '')">
+        <IconClose :size="14" aria-hidden="true" />{{ t('focusBack') }}
+      </button>
+    </section>
 
-    <OaAdminSection id="secByModel" :title="t('secByModel')">
-      <OaTable :columns="breakdownColumns" :rows="byModel" :empty="t('nothingInPeriod')" />
-    </OaAdminSection>
+    <section id="secTotals" class="oa-kpis" :aria-label="t('secTotals')">
+      <article class="oa-kpi featured">
+        <span class="oa-kpi-label">{{ t('statRequests') }}</span>
+        <strong class="oa-kpi-value" :title="figure(totals?.requests).toLocaleString()">{{ compactNumber(figure(totals?.requests)) }}</strong>
+        <span class="oa-kpi-foot">
+          <UsageDelta :current="figure(totals?.requests)" :previous="previous?.requests" />
+          <span>{{ successRate === null ? t('noRequestsPeriod') : t('kpiSuccess', { rate: percent(successRate) }) }}</span>
+        </span>
+      </article>
+      <article class="oa-kpi">
+        <span class="oa-kpi-label">{{ t('statTokens') }}</span>
+        <strong class="oa-kpi-value" :title="figure(totals?.total_tokens).toLocaleString()">{{ compactNumber(figure(totals?.total_tokens)) }}</strong>
+        <span v-if="tokenSplit.length" class="oa-kpi-split" aria-hidden="true">
+          <span v-for="part in tokenSplit" :key="part.key" :class="part.key" :style="{ flexGrow: part.share }" />
+        </span>
+        <span class="oa-kpi-foot">
+          <UsageDelta :current="figure(totals?.total_tokens)" :previous="previous?.total_tokens" />
+          <span v-if="tokenSplit.length">{{ tokenSplit.map((part) => `${part.label} ${compactNumber(part.value)}`).join(' · ') }}</span>
+        </span>
+      </article>
+      <article class="oa-kpi">
+        <span class="oa-kpi-label">{{ t('statCredits') }}</span>
+        <strong class="oa-kpi-value" :title="figure(totals?.credits).toLocaleString()">{{ compactNumber(Math.round(figure(totals?.credits) * 100) / 100) }}</strong>
+        <span class="oa-kpi-foot">
+          <UsageDelta :current="figure(totals?.credits)" :previous="previous?.credits" />
+          <span v-if="totals?.requests">{{ t('kpiPerRequest', { value: compactNumber(Math.round(figure(totals?.credits) / totals.requests * 100) / 100) }) }}</span>
+        </span>
+      </article>
+      <!-- One account's page counts its models instead: "active accounts: 1"
+           is true and says nothing. -->
+      <article v-if="filters.user" class="oa-kpi">
+        <span class="oa-kpi-label">{{ t('kpiModels') }}</span>
+        <strong class="oa-kpi-value">{{ compactNumber(figure(totals?.models)) }}</strong>
+        <span class="oa-kpi-foot">
+          <UsageDelta :current="figure(totals?.models)" :previous="previous?.models" />
+          <span v-if="favourites[filters.user]">{{ t('boardFavourite', { model: favourites[filters.user]! }) }}</span>
+        </span>
+      </article>
+      <article v-else class="oa-kpi">
+        <span class="oa-kpi-label">{{ t('kpiActiveUsers') }}</span>
+        <strong class="oa-kpi-value">{{ compactNumber(figure(totals?.users)) }}</strong>
+        <span class="oa-kpi-foot">
+          <UsageDelta :current="figure(totals?.users)" :previous="previous?.users" />
+          <span v-if="totals?.models">{{ t('kpiModelsUsed', { count: totals.models }) }}</span>
+        </span>
+      </article>
+      <article class="oa-kpi">
+        <span class="oa-kpi-label">{{ t('kpiLatency') }}</span>
+        <strong class="oa-kpi-value">{{ formatDuration(meanLatency) }}</strong>
+        <span class="oa-kpi-foot">
+          <UsageDelta :current="meanLatency" :previous="previousLatency" inverse />
+          <span>{{ t('kpiLatencyNote') }}</span>
+        </span>
+      </article>
+      <article class="oa-kpi" :class="{ alarming: figure(totals?.errors) > 0 }">
+        <span class="oa-kpi-label">{{ t('dashboardFailedRequests') }}</span>
+        <strong class="oa-kpi-value">{{ compactNumber(figure(totals?.errors)) }}</strong>
+        <span class="oa-kpi-foot">
+          <UsageDelta :current="figure(totals?.errors)" :previous="previous?.errors" inverse />
+          <span v-if="totals?.requests">{{ t('dashboardFailureRate', { rate: percent(figure(totals.errors) / totals.requests) }) }}</span>
+        </span>
+      </article>
+    </section>
 
-    <OaAdminSection id="secByProvider" :title="t('secByProvider')">
-      <OaTable :columns="providerColumns" :rows="byProvider" :empty="t('nothingInPeriod')" />
-    </OaAdminSection>
+    <section id="secOverTime" class="oa-viz-card">
+      <header class="oa-viz-head">
+        <div><span class="oa-kicker">{{ rangeKicker }}</span><h2>{{ t('secOverTime') }}</h2></div>
+        <div class="oa-segment" role="group" :aria-label="t('dashboardTrendMetric')">
+          <button v-for="option in trendOptions" :key="option.value" type="button" :aria-pressed="trendShown === option.value"
+            @click="onTrend(option.value)">{{ t(option.label) }}</button>
+        </div>
+      </header>
+      <div class="oa-viz-summary">
+        <strong>{{ trendFormat(trendSummary) }}</strong>
+        <span>{{ trendCaption }}</span>
+      </div>
+      <UsagePlot
+        v-if="plotPoints.some((point) => point.value > 0)"
+        ref="plot" v-model:active="activePoint" :points="plotPoints" :bucket-ms="report?.bucket_ms ?? 3600000"
+        :format="trendFormat" :label="t('dashboardChartKeyboard')" :height="190"
+      />
+      <p v-else class="oa-viz-empty">{{ t('noRequestsPeriod') }}</p>
+      <footer class="oa-viz-foot">
+        <span><span class="oa-dashboard-dot" />{{ (report?.bucket_ms ?? 0) >= 86400000 ? t('trendDaily') : t('trendHourly') }}</span>
+        <span>{{ t('dashboardPeak', { value: trendFormat(trendPeak) }) }}</span>
+      </footer>
+    </section>
 
-    <OaAdminSection :title="t('secRequestsN', { count: recordTotal })">
+    <div class="oa-report-row">
+      <section v-if="!filters.model" id="secPopularModels" class="oa-viz-card">
+        <header class="oa-viz-head">
+          <div><span class="oa-kicker">{{ t(filters.user ? 'boardTheirModelsHint' : 'boardPopularHint') }}</span><h2>{{ t(filters.user ? 'boardTheirModels' : 'boardPopularModels') }}</h2></div>
+          <div class="oa-segment" role="group" :aria-label="t('rankMetric')">
+            <button v-for="option in modelOptions" :key="option.value" type="button" :aria-pressed="modelShown === option.value"
+              @click="onModelMetric(option.value)">{{ t(option.label) }}</button>
+          </div>
+        </header>
+        <UsageBoard :rows="byModel" kind="model" :metric="modelShown" :reach="!filters.user" :empty-text="t('nothingInPeriod')" @select="setFilter('model', $event)" />
+      </section>
+      <section v-if="!filters.user" id="secTopUsers" class="oa-viz-card">
+        <header class="oa-viz-head">
+          <div><span class="oa-kicker">{{ t('boardTopUsersHint') }}</span><h2>{{ t('secTopUsers') }}</h2></div>
+          <div class="oa-segment" role="group" :aria-label="t('rankMetric')">
+            <button v-for="option in USER_METRICS" :key="option.value" type="button" :aria-pressed="userMetric === option.value"
+              @click="onUserMetric(option.value)">{{ t(option.label) }}</button>
+          </div>
+        </header>
+        <UsageBoard :rows="byUser" kind="user" :metric="userMetric" :reach="!filters.model" :favourites="favourites" :empty-text="t('nothingInPeriod')" @select="setFilter('user', $event)" />
+      </section>
+    </div>
+
+    <section v-if="showMatrix && report" id="secWhoUsesWhat" class="oa-viz-card">
+      <header class="oa-viz-head">
+        <div><span class="oa-kicker">{{ t('matrixHint') }}</span><h2>{{ t('matrixTitle') }}</h2></div>
+        <div class="oa-segment" role="group" :aria-label="t('rankMetric')">
+          <button v-for="option in CELL_METRICS" :key="option.value" type="button" :aria-pressed="cellMetric === option.value"
+            @click="onCellMetric(option.value)">{{ t(option.label) }}</button>
+        </div>
+      </header>
+      <UsageMatrix
+        :matrix="report.matrix" :users="byUser" :models="byModel" :metric="cellMetric"
+        :format="(value) => compactNumber(cellMetric === 'credits' ? Math.round(value * 100) / 100 : value)"
+        @user="setFilter('user', $event)" @model="setFilter('model', $event)"
+      />
+    </section>
+
+    <div class="oa-report-row oa-report-row-lead">
+      <section id="secWhen" class="oa-viz-card">
+        <header class="oa-viz-head">
+          <div><span class="oa-kicker">{{ t('heatmapHint') }}</span><h2>{{ t('heatmapTitle') }}</h2></div>
+          <div class="oa-segment" role="group" :aria-label="t('rankMetric')">
+            <button type="button" :aria-pressed="heatMetric === 'requests'" @click="onHeatMetric('requests')">{{ t('statRequests') }}</button>
+            <button type="button" :aria-pressed="heatMetric === 'total_tokens'" @click="onHeatMetric('total_tokens')">{{ t('statTokens') }}</button>
+          </div>
+        </header>
+        <UsageHeatmap :slots="report?.heatmap ?? []" :metric="heatMetric" :format="(value) => t(heatMetric === 'requests' ? 'boardRequests' : 'boardTokens', { count: compactNumber(value) })" />
+      </section>
+      <section id="secSpread" class="oa-viz-card">
+        <header class="oa-viz-head">
+          <div><span class="oa-kicker">{{ t('spreadHint') }}</span><h2>{{ t('spreadTitle') }}</h2></div>
+          <div class="oa-segment" role="group" :aria-label="t('spreadTitle')">
+            <button type="button" :aria-pressed="spread === 'group'" @click="onSpreadChoice('group')">{{ t('colGroup') }}</button>
+            <button type="button" :aria-pressed="spread === 'provider'" @click="onSpreadChoice('provider')">{{ t('colProvider') }}</button>
+            <button type="button" :aria-pressed="spread === 'status'" @click="onSpreadChoice('status')">{{ t('spreadOutcomes') }}</button>
+          </div>
+        </header>
+        <UsageBoard :rows="spreadRows" :kind="spread === 'status' ? 'provider' : spread" metric="requests" :limit="5" :empty-text="t('nothingInPeriod')" @select="onSpread" />
+      </section>
+    </div>
+
+    <section id="secRecords" class="oa-viz-card">
+      <header class="oa-viz-head">
+        <div><span class="oa-kicker">{{ t('recordsHint') }}</span><h2>{{ t('secRequestsN', { count: recordTotal }) }}</h2></div>
+      </header>
       <OaTable
         :pagination="{ ...recordPage, total: recordTotal }"
         :busy="recordsBusy"
-        @page="changeRecords"
         :columns="recordColumns"
         :rows="records"
         :empty="t('noRequestsPeriod')"
         :muted="(row) => row.status !== 'ok'"
+        @page="changeRecords"
       >
+        <template #cell-user="{ row }">
+          <OaCellStack :title="row.nickname || row.username || row.user_id" :sub="row.nickname && row.username ? `@${row.username}` : ''" />
+        </template>
         <template #cell-model="{ row }">
           <OaCellStack :title="row.model_name || '—'" :sub="row.provider_name" />
         </template>
@@ -636,8 +935,8 @@ let savedCustomUntil = 0;
           <StatusBadge :status="row.status" :error-code="row.error_code" />
         </template>
       </OaTable>
-    </OaAdminSection>
-  </template>
+    </section>
+  </div>
 
   <!-- The instance default: what applies to anyone whose group and account say
        nothing. Edited here rather than on the groups page because it is not a
@@ -729,7 +1028,6 @@ let savedCustomUntil = 0;
     <p class="oa-field-hint oa-hold-note">{{ t('resetHoldHint') }}</p>
   </OaPanel>
 
-  <!-- Custom time range picker -->
   <OaPanel
     v-if="customRangeOpen"
     :title="t('customTimeTitle')"
@@ -739,13 +1037,8 @@ let savedCustomUntil = 0;
     @confirm="applyCustomRange"
   >
     <p class="oa-field-hint">{{ t('customTimeHint') }}</p>
-    <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px;">
-      <button type="button" class="oa-btn" style="padding: 4px 10px; font-size: 12px;" @click="setPreset('today')">{{ t('presetToday') }}</button>
-      <button type="button" class="oa-btn" style="padding: 4px 10px; font-size: 12px;" @click="setPreset('yesterday')">{{ t('presetYesterday') }}</button>
-      <button type="button" class="oa-btn" style="padding: 4px 10px; font-size: 12px;" @click="setPreset('thisWeek')">{{ t('presetThisWeek') }}</button>
-      <button type="button" class="oa-btn" style="padding: 4px 10px; font-size: 12px;" @click="setPreset('thisMonth')">{{ t('presetThisMonth') }}</button>
-      <button type="button" class="oa-btn" style="padding: 4px 10px; font-size: 12px;" @click="setPreset('last7d')">{{ t('presetLast7Days') }}</button>
-      <button type="button" class="oa-btn" style="padding: 4px 10px; font-size: 12px;" @click="setPreset('last30d')">{{ t('presetLast30Days') }}</button>
+    <div class="oa-chip-row">
+      <button v-for="preset in CUSTOM_PRESETS" :key="preset.key" type="button" class="oa-chip-btn" @click="setPreset(preset.key)">{{ t(preset.label) }}</button>
     </div>
     <OaTextField
       v-model="customStart"

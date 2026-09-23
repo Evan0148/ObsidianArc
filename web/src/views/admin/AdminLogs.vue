@@ -23,8 +23,8 @@ import OaPanel from '@/components/OaPanel.vue';
 import OaSelectField from '@/components/OaSelectField.vue';
 import OaTextField from '@/components/OaTextField.vue';
 import type { Choice } from '@/components/choice';
+import { RefreshCw } from 'lucide-vue-next';
 import { t, type StringKey } from '@/composables/useI18n';
-import { IconChevron } from '@/icons';
 import { absoluteTime, relativeTime } from '@/lib/format';
 import AdminFailure from './AdminFailure.vue';
 import { useAdminView } from './adminView';
@@ -44,7 +44,7 @@ const WINDOWS: Array<{ value: string; label: StringKey; hours: number }> = [
 ];
 
 const view = useAdminView();
-view.setTitle(t('navLogs'));
+view.setTitle(t('navLogs'), t('logsSubtitle'));
 
 const router = useRouter();
 const route = useRoute();
@@ -201,15 +201,17 @@ onMounted(reload);
 
 <template>
   <Teleport :to="view.actionsHost">
-    <OaIconButton class="oa-icon-btn" :label="t('refresh')" @click="reload">
-      <IconChevron :size="16" />
+    <!-- A refresh icon, which it had not been: the button was a chevron, and
+         read as a control that collapsed something. -->
+    <OaIconButton class="oa-icon-btn" :label="t('refresh')" :disabled="loading" @click="reload">
+      <RefreshCw :size="15" :class="{ 'is-refreshing': loading }" aria-hidden="true" />
     </OaIconButton>
   </Teleport>
 
   <AdminFailure v-if="error" :message="error" @retry="reload" />
 
   <div v-else class="oa-log-page">
-    <div v-if="facets" id="logsFilter" class="oa-log-filters">
+    <div v-if="facets" id="logsFilter" class="oa-viz-card oa-log-filters">
       <div class="oa-log-filter-grid">
         <OaSelectField
           v-model="query.window"
@@ -267,23 +269,37 @@ onMounted(reload);
       </div>
 
       <div class="oa-log-filter-actions">
-        <button type="button" class="oa-btn" @click="narrow">{{ t('logApply') }}</button>
+        <button type="button" class="oa-btn primary" @click="narrow">{{ t('logApply') }}</button>
         <button type="button" class="oa-btn" @click="clearFilters">{{ t('logClear') }}</button>
-        <span class="oa-field-hint">{{ t('logHolding', { count: facets.total }) }}</span>
-        <!-- A gap in an audit trail has to be visible, not inferred. -->
-        <OaBadge v-if="facets.dropped > 0" tone="danger">
-          {{ t('logDropped', { count: facets.dropped }) }}
-        </OaBadge>
+        <span class="oa-log-holding">
+          <!-- A gap in an audit trail has to be visible, not inferred. -->
+          <OaBadge v-if="facets.dropped > 0" tone="danger">
+            {{ t('logDropped', { count: facets.dropped }) }}
+          </OaBadge>
+          {{ t('logHolding', { count: facets.total }) }}
+        </span>
       </div>
     </div>
 
-    <div id="logsTable" class="oa-log-results">
-      <p v-if="loading" class="oa-menu-empty">{{ t('loading') }}</p>
-      <p v-else-if="listError" class="oa-menu-empty">{{ listError }}</p>
-      <p v-else-if="!entries.length" class="oa-menu-empty">{{ t('logEmpty') }}</p>
+    <!-- Columns rather than two stacked lines per row: the questions asked of
+         a log — which ones failed, whose, how slow — are asked down a column,
+         and a column is only readable when every row puts the same thing in
+         the same place. -->
+    <div id="logsTable" class="oa-viz-card oa-log-results">
+      <p v-if="loading && !entries.length" class="oa-table-empty">{{ t('loading') }}</p>
+      <p v-else-if="listError" class="oa-table-empty">{{ listError }}</p>
+      <p v-else-if="!entries.length" class="oa-table-empty">{{ t('logEmpty') }}</p>
 
       <template v-else>
-        <div class="oa-log-list">
+        <div class="oa-log-list" :aria-busy="loading">
+          <div class="oa-log-head" aria-hidden="true">
+            <span>{{ t('logStatus') }}</span>
+            <span>{{ t('logRequest') }}</span>
+            <span>{{ t('logUser') }}</span>
+            <span>{{ t('logModel') }}</span>
+            <span class="numeric">{{ t('logDuration') }}</span>
+            <span class="numeric">{{ t('logWhen') }}</span>
+          </div>
           <button
             v-for="entry in entries"
             :key="entry.id"
@@ -291,24 +307,18 @@ onMounted(reload);
             class="oa-log-row"
             @click="opened = entry"
           >
-            <OaBadge :tone="tone(entry.status)">{{ entry.status }}</OaBadge>
-            <div class="oa-log-row-main">
-              <div class="oa-log-row-head">
-                <span class="oa-log-method">{{ entry.method }}</span>
-                <span class="oa-log-path">{{ entry.path }}</span>
-              </div>
-              <div class="oa-log-row-meta">
-                <span>{{ entry.username || t('logAnonymous') }}</span>
-                <span v-if="entry.model_name">{{ entry.model_name }}</span>
-                <span v-if="entry.error_code" class="oa-log-error">{{ entry.error_code }}</span>
-                <span>{{ entry.duration_ms }} ms</span>
-                <span>{{ relativeTime(entry.at) }}</span>
-              </div>
-            </div>
+            <span><OaBadge :tone="tone(entry.status)">{{ entry.status }}</OaBadge></span>
+            <span class="oa-log-request">
+              <span class="oa-log-method">{{ entry.method }}</span>
+              <span class="oa-log-path">{{ entry.path }}</span>
+              <span v-if="entry.error_code" class="oa-log-error">{{ entry.error_code }}</span>
+            </span>
+            <span class="oa-log-cell" :class="{ quiet: !entry.username }">{{ entry.username || t('logAnonymous') }}</span>
+            <span class="oa-log-cell" :class="{ quiet: !entry.model_name }">{{ entry.model_name || '—' }}</span>
+            <span class="oa-log-cell numeric">{{ entry.duration_ms }} ms</span>
+            <span class="oa-log-cell numeric quiet" :title="absoluteTime(entry.at)">{{ relativeTime(entry.at) }}</span>
           </button>
         </div>
-
-
       </template>
       <OaPagination :page="Math.floor(query.offset / pageSize) + 1" :page-size="pageSize" :total="total" :busy="loading" @change="page" />
     </div>

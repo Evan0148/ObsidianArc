@@ -24,6 +24,13 @@ export interface AdminView {
    * gone and every expression in its template reads undefined.
    */
   actionsHost: HTMLElement;
+  /**
+   * Moves to another section, narrowed by a query — the usage report for one
+   * account, say. Through the shell rather than the router, so a page can
+   * link to another without every test that mounts it installing a router;
+   * absent where nothing can navigate, and a page offers no link then.
+   */
+  open?(path: string, query?: Record<string, string>): void;
 }
 
 const ADMIN_VIEW: InjectionKey<AdminView> = Symbol('oa-admin-view');

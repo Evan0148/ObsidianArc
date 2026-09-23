@@ -11,7 +11,7 @@ import { useRoute, useRouter } from 'vue-router';
 import {
   adminApi,
   type AdminModel, type Group, type Meta, type ModelHealth, type Provider,
-  type ReasoningStyle, type ReasoningTier,
+  type ReasoningStyle, type ReasoningTier, type UsageBreakdown,
 } from '@/admin/api';
 import { pickJSONFile, saveAsFile } from '@/api/backup';
 import { ApiError } from '@/api/client';
@@ -34,10 +34,12 @@ import type { Column, SortState } from '@/components/table-types';
 import { t } from '@/composables/useI18n';
 import { IconCheck, IconCopy } from '@/icons';
 import { compactNumber } from '@/lib/format';
+import { canAdmin } from '@/stores/session';
 import AdminFailure from './AdminFailure.vue';
 import ReasoningTiers from './ReasoningTiers.vue';
 import { reasoningLabel } from './reasoning-labels';
 import { useAdminView } from './adminView';
+import UsageBoard from './usage/UsageBoard.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -146,7 +148,9 @@ const columns = computed<Array<Column<AdminModel>>>(() => [
     text: (row) => weightLabel(row),
     numeric: true,
     secondary: true,
-    width: '80px',
+    // Wide enough for the longest pair it prints, "0.25× / 2.5×": at 80 it
+    // was cut to "0.25× / …" the moment a panel narrowed the table.
+    width: '112px',
     // What the cell prints is a pair; what anyone sorts by is the output
     // rate, which is the half that dominates a bill.
     sort: (row) => row.output_token_weight,
@@ -294,8 +298,33 @@ const routeChoices = computed(() => [
     .map((entry) => ({ value: entry.id, label: `${entry.display_name} — ${entry.provider_name}` })),
 ]);
 
+/**
+ * The accounts that used a model most over the last month, for its panel.
+ *
+ * Asked of the one-dimension endpoint rather than the whole usage report:
+ * this is one list for one panel, and the report is a dozen aggregates. Only
+ * for an operator who may read usage at all; nothing is shown otherwise.
+ */
+const users = ref<UsageBreakdown[] | null>(null);
+let usersRequest = 0;
+async function loadUsers(modelID: string): Promise<void> {
+  const ticket = ++usersRequest;
+  users.value = null;
+  if (!canAdmin('usage')) return;
+  try {
+    const since = Date.now() - 30 * 86_400_000;
+    const { rows } = await adminApi.usageBreakdown('user', `model_id=${modelID}&since=${since}&metric=tokens`);
+    if (ticket === usersRequest) users.value = rows;
+  } catch {
+    // A panel that cannot say who uses the model still edits it.
+    if (ticket === usersRequest) users.value = [];
+  }
+}
+
 function open(row: AdminModel | null, from: AdminModel | null = null): void {
   existing.value = row;
+  if (row) void loadUsers(row.id);
+  else users.value = null;
   template.value = from;
   idCopied.value = false;
   panelError.value = '';
@@ -627,7 +656,7 @@ let sortState: SortState | null = null;
 
 <template>
   <Teleport :to="view.actionsHost">
-    <div id="modelImportExport" style="display: inline-flex; gap: inherit;">
+    <div id="modelImportExport" class="oa-button-row">
       <button
         type="button"
         class="oa-btn"
@@ -784,15 +813,14 @@ let sortState: SortState | null = null;
     </template>
     <!-- A field that shows a value the form cannot change. -->
     <template v-else>
-      <div class="oa-facts" style="margin-bottom: 14px;">
+      <div class="oa-facts">
         <div class="oa-fact">
           <span class="oa-fact-label">{{ t('modelUniqueID') }}</span>
-          <div style="display: inline-flex; align-items: center; gap: 4px;">
+          <div class="oa-fact-copy">
             <span class="oa-fact-value mono">{{ existing!.id }}</span>
             <OaIconButton
-              class="oa-icon-btn"
+              class="oa-icon-btn tiny"
               :label="idCopied ? t('copied') : t('copy')"
-              style="width: 22px; height: 22px; padding: 0;"
               @click="copyID(existing!.id)"
             >
               <IconCheck v-if="idCopied" :size="12" />
@@ -867,16 +895,25 @@ let sortState: SortState | null = null;
           </div>
         </template>
       </template>
-      <div style="margin-top: 10px;">
-        <button
-          type="button"
-          class="oa-btn"
-          @click="router.push({ path: '/admin/logs', query: { model_id: existing.id, outcome: 'failed', window: '' } })"
-        >
-          {{ t('viewModelErrorHistory') }}
-        </button>
-      </div>
+      <button
+        type="button"
+        class="oa-btn small oa-section-action"
+        @click="router.push({ path: '/admin/logs', query: { model_id: existing.id, outcome: 'failed', window: '' } })"
+      >{{ t('viewModelErrorHistory') }}</button>
     </div>
+
+    <!-- Who reaches for this model, before the controls that decide who may:
+         taking a model away from a group reads differently once the names of
+         the people using it are on the screen. -->
+    <template v-if="existing && users && users.length">
+      <OaFormSection id="secWhoUsesIt" :title="t('whoUsesIt')" :hint="t('whoUsesItHint')" />
+      <UsageBoard
+        :rows="users" kind="user" metric="tokens" :limit="5" :reach="false"
+        :selectable="!!view.open" :empty-text="t('nothingYet')"
+        @select="view.open?.('/admin/usage', { model: existing.id, user: $event })"
+      />
+      <button v-if="view.open" type="button" class="oa-btn small oa-panel-link" @click="view.open?.('/admin/usage', { model: existing.id })">{{ t('viewInUsage') }}</button>
+    </template>
 
     <OaFormSection id="secGroupAccess" :title="t('secGroupAccess')" />
     <OaTierList

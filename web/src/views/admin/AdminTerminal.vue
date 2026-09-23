@@ -25,7 +25,7 @@ import TerminalSettings from './terminal/TerminalSettings.vue';
 // `AdminPage.vue` remounts this component on every visit, so this runs again
 // each time the reader comes back to the section.
 const view = useAdminView();
-view.setTitle(t('navTerminal'));
+view.setTitle(t('navTerminal'), t('terminalSubtitle'));
 
 interface TerminalTab {
   id: string;

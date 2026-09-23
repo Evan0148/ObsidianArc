@@ -94,10 +94,9 @@ function policyFor(groupID: string): QuotaPolicy {
 const columns = computed<Array<Column<Group>>>(() => [
   { key: 'group', header: t('colGroup') },
   // Leave room for the group name when the member panel narrows the table.
-  { key: 'members', header: t('colMembers'), text: (row) => String(row.members), numeric: true, width: '60px' },
-  { key: 'models', header: t('colModels'), width: '85px' },
-  { key: 'limits', header: t('colLimits'), secondary: true, width: '110px' },
-  { key: 'default', header: '', width: '60px' },
+  { key: 'members', header: t('colMembers'), text: (row) => String(row.members), numeric: true, width: '84px' },
+  { key: 'models', header: t('colModels'), width: '120px' },
+  { key: 'limits', header: t('colLimits'), secondary: true, width: '220px' },
 ]);
 
 function limitBadges(policy: QuotaPolicy): string[] {
@@ -265,8 +264,13 @@ onMounted(load);
       selectable
       @select="open($event)"
     >
+      <!-- The default mark beside the name it qualifies, rather than alone in a
+           column with no heading at the far end of the row. -->
       <template #cell-group="{ row }">
-        <OaCellStack :title="row.name" :sub="row.description || undefined" />
+        <span class="oa-cell-with-badge">
+          <OaCellStack :title="row.name" :sub="row.description || undefined" />
+          <OaBadge v-if="row.is_default">{{ t('defaultBadge') }}</OaBadge>
+        </span>
       </template>
       <template #cell-models="{ row }">
         <OaBadge tone="muted">
@@ -279,10 +283,6 @@ onMounted(load);
             {{ part }}
           </OaBadge>
         </OaBadgeRow>
-      </template>
-      <template #cell-default="{ row }">
-        <OaBadge v-if="row.is_default">{{ t('defaultBadge') }}</OaBadge>
-        <span v-else />
       </template>
     </OaTable>
 

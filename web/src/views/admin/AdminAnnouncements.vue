@@ -29,7 +29,7 @@ type DisplayMode = Announcement['display_mode'];
 
 const route = useRoute();
 const view = useAdminView();
-view.setTitle(t('announcements'));
+view.setTitle(t('announcements'), t('announcementsSubtitle'));
 
 const announcements = ref<Announcement[]>([]);
 const error = ref('');

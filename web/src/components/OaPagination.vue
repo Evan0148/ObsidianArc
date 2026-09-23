@@ -13,8 +13,15 @@ function go(page: number, pageSize = props.pageSize): void {
 }
 </script>
 
+<!-- Nothing to page through draws nothing, and one page draws only the count:
+     "1 / 1" between two disabled arrows is four controls that do nothing,
+     under every short table in the backoffice. The size menu stays with the
+     arrows, because it only matters once there is a second page to avoid. -->
 <template>
-  <nav class="oa-pagination" :aria-label="t('pagination')">
+  <nav v-if="total > 0 && pages === 1" class="oa-pagination compact" :aria-label="t('pagination')">
+    <span class="oa-pagination-count" aria-live="polite">{{ t('pageSummary', { first: 1, last: total, total }) }}</span>
+  </nav>
+  <nav v-else-if="total > 0" class="oa-pagination" :aria-label="t('pagination')">
     <div class="oa-pagination-size">
       <span>{{ t('rowsPerPage') }}</span>
       <OaSelect

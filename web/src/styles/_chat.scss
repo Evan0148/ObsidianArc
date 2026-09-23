@@ -309,9 +309,17 @@
   height: 0;
 }
 
+/* An empty list is a quiet band where the rows would be, centred like every
+   other empty state, rather than a sentence flush against the rail's edge
+   that reads as a line someone forgot to style. */
 .ai-chat-list-empty {
   margin: 4px 0;
+  padding: 22px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ai-text) 3%, transparent);
   font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
   color: var(--ai-text-secondary);
 }
 
@@ -625,12 +633,24 @@
   font-size: 12px;
 }
 
+/* The block is set in the same face and size as the code inside it. Left to
+   the browser, a <pre> is the generic `monospace` at 14px, and that invisible
+   14px line — not the 12px text on it — set the leading: every line of code
+   stood 23px from the next, looser than the prose around it.
+
+   A tab is four columns rather than the browser's eight. Code that arrives
+   indented with tabs — everything gofmt writes, for one — is usually read at
+   four, and at eight two levels of nesting spent sixteen columns of a narrow
+   card before the first character. */
 .ai-answer pre {
   margin: 0 0 8px;
   padding: 10px 12px;
   border-radius: 10px;
   background: var(--ai-surface-container-low);
   overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  tab-size: 4;
 }
 
 .ai-answer pre code {
@@ -1601,15 +1621,39 @@
   justify-content: center;
 }
 
+/* An empty conversation is the greeting and the composer together, as one
+   group in the middle of the column — not a greeting at the top of a void
+   with the composer pinned under it at the bottom of the window. The column
+   centres the group rather than the greeting alone, and the padding under it
+   lifts the group a little above the geometric middle, where the eye puts the
+   middle of a screen. The first message sends the composer to the bottom,
+   where a conversation keeps it; ChatSurface animates that move. */
+.ai-chat-wide.is-empty .ai-chat-main {
+  justify-content: center;
+  padding-bottom: 7vh;
+}
+
+.ai-chat-wide.is-empty .ai-chat-scroll-wrap {
+  flex: 0 1 auto;
+}
+
+.ai-chat-wide.is-empty .ai-chat-composer {
+  margin-top: 18px;
+}
+
 .ai-chat-wide .ai-chat-empty {
   padding: 0;
   text-align: center;
 }
 
+/* The greeting is the page's headline while the conversation is empty, so it
+   is set at the size the backoffice gives a page title, not a card's. */
 .ai-chat-wide .ai-chat-empty-title {
   margin-bottom: 10px;
-  font-size: 22px;
-  letter-spacing: -0.2px;
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.6px;
 }
 
 .ai-chat-wide .ai-chat-empty-body {
@@ -1751,7 +1795,7 @@
   }
 
   .ai-chat-wide .ai-chat-empty-title {
-    font-size: 19px;
+    font-size: 21px;
   }
 }
 
