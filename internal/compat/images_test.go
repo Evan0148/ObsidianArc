@@ -1,8 +1,11 @@
 package compat
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -164,5 +167,63 @@ func TestImagesGenerationsNeverRelaysAProviderURL(t *testing.T) {
 	}
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 when nothing but links came back: %s", w.Code, w.Body.String())
+	}
+}
+
+const testPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+
+func TestImagesGenerationsWithReferenceImagesJSON(t *testing.T) {
+	fix := newFixture(t)
+	imageModel(t, fix, "painter", 0)
+	fix.upstream.reply(`{"created":1700000000,"data":[{"b64_json":"aGVsbG8="}]}`)
+
+	w := fix.do(t, http.MethodPost, "/v1/images/generations", fix.token,
+		`{"model":"painter","prompt":"combine","images":["`+testPNG+`","`+testPNG+`"]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestImagesEditsMultipart(t *testing.T) {
+	fix := newFixture(t)
+	imageModel(t, fix, "painter", 0)
+	fix.upstream.reply(`{"created":1700000000,"data":[{"b64_json":"aGVsbG8="}]}`)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	_ = writer.WriteField("model", "painter")
+	_ = writer.WriteField("prompt", "edit this image")
+	part, err := writer.CreateFormFile("image", "test.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pngBytes, _ := base64.StdEncoding.DecodeString(testPNG)
+	_, _ = part.Write(pngBytes)
+	_ = writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/edits", &body)
+	req.Header.Set("Authorization", "Bearer "+fix.token)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	w := httptest.NewRecorder()
+	fix.mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestImagesGenerationsTooManyReferenceImages(t *testing.T) {
+	fix := newFixture(t)
+	imageModel(t, fix, "painter", 0)
+
+	many := make([]string, chat.MaxReferenceImages+1)
+	for i := range many {
+		many[i] = `"` + testPNG + `"`
+	}
+
+	w := fix.do(t, http.MethodPost, "/v1/images/generations", fix.token,
+		`{"model":"painter","prompt":"too many","images":[`+strings.Join(many, ",")+`]}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", w.Code, w.Body.String())
 	}
 }

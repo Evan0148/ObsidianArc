@@ -84,11 +84,10 @@ function clearReferences(): void {
   references.value = [];
 }
 
-async function takeReference(): Promise<void> {
-  const node = picker.value;
-  const files = Array.from(node?.files ?? []);
-  // Cleared straight away so picking the same file twice still fires a change.
-  if (node) node.value = '';
+const draggingRef = ref(false);
+
+async function addReferenceFiles(list: FileList | File[] | null | undefined): Promise<void> {
+  const files = Array.from(list ?? []).filter((file) => file.type.startsWith('image/'));
   if (!files.length) return;
 
   const remaining = MAX_REFERENCE_IMAGES - references.value.length;
@@ -108,6 +107,46 @@ async function takeReference(): Promise<void> {
       error.value = err instanceof ImageError ? err.message : t('imageFailed');
     }
   }
+}
+
+async function takeReference(): Promise<void> {
+  const node = picker.value;
+  const files = Array.from(node?.files ?? []);
+  // Cleared straight away so picking the same file twice still fires a change.
+  if (node) node.value = '';
+  await addReferenceFiles(files);
+}
+
+function carriesFiles(event: DragEvent): boolean {
+  const types = event.dataTransfer?.types;
+  return !!types && Array.prototype.indexOf.call(types, 'Files') !== -1;
+}
+
+function onDragEnter(event: DragEvent): void {
+  if (!carriesFiles(event) || references.value.length >= MAX_REFERENCE_IMAGES) return;
+  event.preventDefault();
+  draggingRef.value = true;
+}
+
+function onDragOver(event: DragEvent): void {
+  if (!carriesFiles(event) || references.value.length >= MAX_REFERENCE_IMAGES) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+  draggingRef.value = true;
+}
+
+function onDragLeave(event: DragEvent): void {
+  const target = event.currentTarget as HTMLElement;
+  if (event.target === target || !target.contains(event.relatedTarget as Node | null)) {
+    draggingRef.value = false;
+  }
+}
+
+function onDrop(event: DragEvent): void {
+  if (!carriesFiles(event)) return;
+  event.preventDefault();
+  draggingRef.value = false;
+  void addReferenceFiles(event.dataTransfer?.files);
 }
 
 // A blob: URL is held by the document until it is released, so leaving the
@@ -369,23 +408,35 @@ function imageSource(img: ImageGenerationItem): string {
           <span>{{ t('referenceImage') }}</span>
           <span v-if="references.length" class="oa-reference-count">{{ references.length }}/{{ MAX_REFERENCE_IMAGES }}</span>
         </label>
-        <div class="oa-reference-list">
-          <div v-for="(item, idx) in references" :key="item.id" class="oa-reference">
-            <img class="oa-reference-img" :src="item.preview" alt="" :draggable="false">
-            <OaIconButton class="oa-reference-remove" :label="t('removeImage')" @click="dropReference(idx)">
-              <IconClose :size="12" />
-            </OaIconButton>
+        <div
+          class="oa-reference-zone"
+          :class="{ dragging: draggingRef }"
+          @dragenter="onDragEnter"
+          @dragover="onDragOver"
+          @dragleave="onDragLeave"
+          @drop="onDrop"
+        >
+          <div class="oa-reference-list">
+            <div v-for="(item, idx) in references" :key="item.id" class="oa-reference">
+              <img class="oa-reference-img" :src="item.preview" alt="" :draggable="false">
+              <OaIconButton class="oa-reference-remove" :label="t('removeImage')" @click="dropReference(idx)">
+                <IconClose :size="12" />
+              </OaIconButton>
+            </div>
+            <button
+              v-if="references.length < MAX_REFERENCE_IMAGES"
+              type="button"
+              class="oa-reference-pick"
+              :disabled="busy"
+              @click="picker?.click()"
+            >
+              <IconImage :size="15" />
+              <span>{{ t('referenceImageAdd') }}</span>
+            </button>
           </div>
-          <button
-            v-if="references.length < MAX_REFERENCE_IMAGES"
-            type="button"
-            class="oa-reference-pick"
-            :disabled="busy"
-            @click="picker?.click()"
-          >
-            <IconImage :size="15" />
-            <span>{{ t('referenceImageAdd') }}</span>
-          </button>
+          <div v-if="draggingRef" class="oa-reference-drop-hint">
+            <span>{{ t('dropHint') }}</span>
+          </div>
         </div>
         <p class="oa-field-hint">{{ t('referenceImageHint') }}</p>
         <input
@@ -410,6 +461,8 @@ function imageSource(img: ImageGenerationItem): string {
           :disabled="busy"
           @keydown.ctrl.enter="generate"
           @keydown.meta.enter="generate"
+          @dragover="onDragOver"
+          @drop="onDrop"
         />
       </div>
 

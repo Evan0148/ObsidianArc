@@ -29,9 +29,17 @@ curl https://ai.example.com/v1/images/generations \
 | `size` | 按上游支持填写，不保证所有尺寸可用 |
 | `quality` | 传给上游，支持值由上游决定 |
 | `style` | 传给上游，支持值由上游决定 |
+| `image` | 可选，Base64 参考图数据 |
+| `images` | 可选，Base64 参考图数据列表（最多 5 张） |
 | `response_format` | 当前网关固定向上游请求 `b64_json` |
 
 `size` 和 `quality` 未填写时，网关没有统一补上 `1024x1024` 或 `standard`。最终行为由适配器与上游决定。
+
+## 参考图与编辑端点
+
+接口支持传入参考图进行图像变体与编辑（最多 5 张）：
+- 在 `POST /v1/images/generations` 中，可通过 `image` 或 `images` 字段传入 Base64 图片数据。
+- 同时支持兼容 OpenAI 的 `POST /v1/images/edits` 端点，支持通过 `multipart/form-data` 上传图片文件（字段名为 `image`）或通过 JSON 发送。
 
 ## 响应格式
 
@@ -52,7 +60,5 @@ curl https://ai.example.com/v1/images/generations \
 ## 用量与限制
 
 图像请求同样执行账号权限、并发与额度检查，并写入用量记录。点数按模型配置和生图结算规则计算。
-
-这个兼容端点不提供图片编辑、变体或参考图上传接口。网页图像工作台可以有不同的能力入口，不能直接套用到 `/v1/images/generations`。
 
 参数不被上游接受时，先简化为单张生成，再核对该模型支持的尺寸和风格。

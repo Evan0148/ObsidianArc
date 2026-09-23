@@ -80,6 +80,18 @@ func generatedImageBytes(
 	return checkImage(data, ceiling)
 }
 
+var (
+	ErrImageScheme  = errImageScheme
+	ErrImagePrivate = errImagePrivate
+	ErrImageMedia   = errImageMedia
+	ErrImageSize    = errImageSize
+)
+
+// CheckImage identifies bytes rather than believing what they were called.
+func CheckImage(data []byte, ceiling int64) ([]byte, string, error) {
+	return checkImage(data, ceiling)
+}
+
 // checkImage identifies bytes rather than believing what they were called.
 //
 // Both delivery shapes used to be stored as image/png on the provider's say-so,
