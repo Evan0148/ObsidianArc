@@ -107,6 +107,14 @@ func (h *Handlers) showUser(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return httpx.Internal(err)
 	}
+	// Which models this account reaches for, over its whole life. Bounded by
+	// how many models the instance has ever had rather than by the ledger,
+	// and it is the question an operator asks next after "how much": on
+	// what.
+	models, err := h.usage.GroupBy(r.Context(), "model", usage.MetricTokens, usage.Filter{UserID: userID})
+	if err != nil {
+		return httpx.Internal(err)
+	}
 	policy, err := h.quota.Policies().GetOrEmpty(r.Context(), nil, quota.ScopeUser, userID)
 	if err != nil {
 		return httpx.Internal(err)
@@ -124,6 +132,7 @@ func (h *Handlers) showUser(w http.ResponseWriter, r *http.Request) error {
 		"user":     account,
 		"usage":    summary,
 		"lifetime": totals,
+		"models":   models,
 		"policy":   policy,
 		"cards":    held,
 	})

@@ -68,7 +68,7 @@ func TestSeriesBucketsByTheStepItIsGiven(t *testing.T) {
 	write(hour-1, 5, 5, StatusError)
 	write(2*hour+7, 1, 2, StatusOK)
 
-	points, err := store.Series(ctx, Filter{}, time.Hour)
+	points, err := store.Series(ctx, Filter{}, time.Hour, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestSeriesStillHonoursItsFilter(t *testing.T) {
 		}
 	}
 
-	points, err := store.Series(ctx, Filter{Since: hour}, time.Hour)
+	points, err := store.Series(ctx, Filter{Since: hour}, time.Hour, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestSeriesStillHonoursItsFilter(t *testing.T) {
 		t.Errorf("first bucket = %d, want %d", points[0].At, hour)
 	}
 
-	none, err := store.Series(ctx, Filter{UserID: "nobody"}, time.Hour)
+	none, err := store.Series(ctx, Filter{UserID: "nobody"}, time.Hour, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

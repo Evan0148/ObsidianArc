@@ -32,6 +32,7 @@ type Record struct {
 	ID             string `json:"id"`
 	UserID         string `json:"user_id"`
 	Username       string `json:"username,omitempty"`
+	Nickname       string `json:"nickname,omitempty"`
 	GroupID        string `json:"group_id"`
 	ProviderID     string `json:"provider_id"`
 	ProviderName   string `json:"provider_name"`
@@ -106,6 +107,43 @@ type Totals struct {
 	TotalTokens     int64   `json:"total_tokens"`
 	Credits         float64 `json:"credits"`
 	Errors          int64   `json:"errors"`
+	// How many different accounts, and how many different models, the rows
+	// span. On a model's row the first is how widely it is used; on an
+	// account's row the second is how many models it moves between. Neither
+	// can be added up from other rows — two models' users overlap — which is
+	// why they are counted here rather than summed in a browser.
+	Users  int64 `json:"users"`
+	Models int64 `json:"models"`
+	// The time the rows spent waiting on a provider, summed. A sum rather than
+	// an average so that it stays right when rows are merged; the average is
+	// this over Requests, wherever one is shown.
+	DurationMS int64 `json:"duration_ms"`
+}
+
+// aggregates is the select list every total is read from, in the order
+// targets scans it. One list for every query in the package, so a figure
+// added to Totals reaches all of them at once rather than the one somebody
+// happened to be reading.
+//
+// The prefix qualifies each column for the queries that join another table.
+// Models are counted through NULLIF because a turn refused before a model was
+// resolved is written with an empty id, and "" is not a model anybody used.
+func aggregates(prefix string) string {
+	return `COUNT(*),
+		COALESCE(SUM(` + prefix + `input_tokens), 0),
+		COALESCE(SUM(` + prefix + `output_tokens), 0),
+		COALESCE(SUM(` + prefix + `reasoning_tokens), 0),
+		COALESCE(SUM(` + prefix + `total_tokens), 0),
+		COALESCE(SUM(` + prefix + `credits), 0),
+		COALESCE(SUM(CASE WHEN ` + prefix + `status = 'error' THEN 1 ELSE 0 END), 0),
+		COUNT(DISTINCT ` + prefix + `user_id),
+		COUNT(DISTINCT NULLIF(` + prefix + `model_id, '')),
+		COALESCE(SUM(` + prefix + `duration_ms), 0)`
+}
+
+func (t *Totals) targets() []any {
+	return []any{&t.Requests, &t.InputTokens, &t.OutputTokens, &t.ReasoningTokens,
+		&t.TotalTokens, &t.Credits, &t.Errors, &t.Users, &t.Models, &t.DurationMS}
 }
 
 // Filter narrows an aggregate or a listing. A zero value means "everything".
@@ -162,23 +200,12 @@ func (f Filter) where(prefix string) (string, []any) {
 	return " WHERE " + strings.Join(conditions, " AND "), args
 }
 
-const totalsSelect = `SELECT
-	COUNT(*),
-	COALESCE(SUM(input_tokens), 0),
-	COALESCE(SUM(output_tokens), 0),
-	COALESCE(SUM(reasoning_tokens), 0),
-	COALESCE(SUM(total_tokens), 0),
-	COALESCE(SUM(credits), 0),
-	COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END), 0)
-	FROM usage_records`
-
 func (s *Store) Totals(ctx context.Context, filter Filter) (Totals, error) {
 	where, args := filter.where("")
 
 	var totals Totals
-	err := s.db.QueryRow(ctx, totalsSelect+where, args...).Scan(
-		&totals.Requests, &totals.InputTokens, &totals.OutputTokens,
-		&totals.ReasoningTokens, &totals.TotalTokens, &totals.Credits, &totals.Errors)
+	err := s.db.QueryRow(ctx, `SELECT `+aggregates("")+` FROM usage_records`+where, args...).
+		Scan(totals.targets()...)
 	if err != nil {
 		return Totals{}, fmt.Errorf("usage: totals: %w", err)
 	}
@@ -203,70 +230,94 @@ func (s *Store) CurrentRPM(ctx context.Context, filter Filter) (int64, error) {
 type Breakdown struct {
 	Key   string `json:"key"`
 	Label string `json:"label"`
+	// A second line for the label, where one tells two rows apart: the
+	// provider under a model's name, since two providers may serve models
+	// called the same thing, and the handle under an account's nickname,
+	// since nicknames are not unique.
+	Detail string `json:"detail,omitempty"`
+	// When the newest of these rows started — how recently a model was in
+	// use, or an account was active.
+	LastAt int64 `json:"last_at"`
 	Totals
 }
 
-// GroupBy aggregates over one dimension. The column and label are chosen from
-// a fixed set rather than interpolated from a caller's string, so no request
-// parameter reaches the query text.
-// Metrics a breakdown can be ranked by. "Who used the most" has three
+// Metrics a breakdown can be ranked by. "Who used the most" has several
 // defensible answers — the most requests, the most tokens, the most money —
 // and which one an operator means depends on what they are worried about.
+// "Users" is the one that asks how popular something is rather than how
+// heavily it is used: a model one account hammers is busy, a model forty
+// accounts reach for is popular, and the two lists are rarely the same.
 const (
 	MetricRequests = "requests"
 	MetricTokens   = "tokens"
 	MetricCredits  = "credits"
+	MetricUsers    = "users"
 )
 
 // rankBy maps a metric onto the expression a breakdown is ordered by. An
 // unknown metric ranks by credits, which is the one that costs something.
-func rankBy(metric string) string {
+func rankBy(metric, prefix string) string {
 	switch metric {
 	case MetricRequests:
 		return "COUNT(*)"
 	case MetricTokens:
-		return "COALESCE(SUM(total_tokens), 0)"
+		return "COALESCE(SUM(" + prefix + "total_tokens), 0)"
+	case MetricUsers:
+		return "COUNT(DISTINCT " + prefix + "user_id)"
 	default:
-		return "COALESCE(SUM(credits), 0)"
+		return "COALESCE(SUM(" + prefix + "credits), 0)"
 	}
 }
 
 // GroupBy totals the ledger along one dimension, ranked by one metric.
 //
-// Return every group so paginated selectors and tables can reach accounts
-// outside the former top fifty. Break ties by id to keep paging stable.
+// The column and label are chosen from a fixed set rather than interpolated
+// from a caller's string, so no request parameter reaches the query text.
+// Every group is returned, so paginated selectors and tables can reach
+// accounts outside the former top fifty; ties break by id to keep paging
+// stable.
 func (s *Store) GroupBy(ctx context.Context, dimension, metric string, filter Filter) ([]Breakdown, error) {
-	var keyColumn, labelExpr, from, prefix string
+	var keyColumn, labelExpr, detailExpr, from, prefix string
 
 	switch dimension {
 	case "model":
-		keyColumn, labelExpr, from = "model_id", "MAX(model_name)", "usage_records"
+		keyColumn, labelExpr, detailExpr = "model_id", "MAX(model_name)", "MAX(provider_name)"
+		from = "usage_records"
 	case "provider":
-		keyColumn, labelExpr, from = "provider_id", "MAX(provider_name)", "usage_records"
+		keyColumn, labelExpr, detailExpr = "provider_id", "MAX(provider_name)", "''"
+		from = "usage_records"
 	case "status":
-		keyColumn, labelExpr, from = "status", "MAX(status)", "usage_records"
+		keyColumn, labelExpr, detailExpr = "status", "MAX(status)", "''"
+		from = "usage_records"
 	case "user":
 		// Joined for the name: the ledger stores the id, and a list of ULIDs
-		// answers "who used the most" only in principle.
+		// answers "who used the most" only in principle. The nickname leads
+		// because it is what the person chose to be called; the handle goes
+		// underneath because it is the one that is unique.
 		keyColumn = "r.user_id"
-		labelExpr = "MAX(COALESCE(u.username, r.user_id))"
+		labelExpr = "MAX(COALESCE(NULLIF(u.nickname, ''), u.username, r.user_id))"
+		detailExpr = "MAX(COALESCE(u.username, ''))"
 		from = "usage_records r LEFT JOIN users u ON u.id = r.user_id"
+		prefix = "r."
+	case "group":
+		// Joined for the name, as accounts are. The ledger keeps the group a
+		// turn was billed to, so somebody who has since moved is still counted
+		// where they were at the time, which is what the bill said too.
+		keyColumn = "r.group_id"
+		labelExpr = "MAX(COALESCE(g.name, r.group_id))"
+		detailExpr = "''"
+		from = "usage_records r LEFT JOIN user_groups g ON g.id = r.group_id"
 		prefix = "r."
 	default:
 		return nil, fmt.Errorf("usage: unknown dimension %q", dimension)
 	}
 
 	where, args := filter.where(prefix)
-	rank := rankBy(metric)
-	query := `SELECT ` + keyColumn + `, ` + labelExpr + `,
-		COUNT(*),
-		COALESCE(SUM(` + prefix + `input_tokens), 0), COALESCE(SUM(` + prefix + `output_tokens), 0),
-		COALESCE(SUM(` + prefix + `reasoning_tokens), 0), COALESCE(SUM(` + prefix + `total_tokens), 0),
-		COALESCE(SUM(` + prefix + `credits), 0),
-		COALESCE(SUM(CASE WHEN ` + prefix + `status = 'error' THEN 1 ELSE 0 END), 0)
+	query := `SELECT ` + keyColumn + `, ` + labelExpr + `, ` + detailExpr + `,
+		COALESCE(MAX(` + prefix + `started_at), 0), ` + aggregates(prefix) + `
 		FROM ` + from + where + `
 		GROUP BY ` + keyColumn + `
-		ORDER BY ` + rank + ` DESC, COUNT(*) DESC, ` + keyColumn
+		ORDER BY ` + rankBy(metric, prefix) + ` DESC, COUNT(*) DESC, ` + keyColumn
 
 	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
@@ -277,9 +328,8 @@ func (s *Store) GroupBy(ctx context.Context, dimension, metric string, filter Fi
 	out := []Breakdown{}
 	for rows.Next() {
 		var entry Breakdown
-		if err := rows.Scan(&entry.Key, &entry.Label, &entry.Requests,
-			&entry.InputTokens, &entry.OutputTokens, &entry.ReasoningTokens,
-			&entry.TotalTokens, &entry.Credits, &entry.Errors); err != nil {
+		targets := append([]any{&entry.Key, &entry.Label, &entry.Detail, &entry.LastAt}, entry.targets()...)
+		if err := rows.Scan(targets...); err != nil {
 			return nil, fmt.Errorf("usage: group scan: %w", err)
 		}
 		if entry.Label == "" {
@@ -288,6 +338,84 @@ func (s *Store) GroupBy(ctx context.Context, dimension, metric string, filter Fi
 		out = append(out, entry)
 	}
 	return out, rows.Err()
+}
+
+// Cell is where two breakdowns meet: one account's use of one model, say.
+type Cell struct {
+	Row string `json:"row"`
+	Col string `json:"col"`
+	Totals
+}
+
+// crossColumns are the dimensions a cross-tabulation may pair. Bare columns,
+// with no join: the names are already in the breakdowns the caller holds, so
+// there is nothing here to keep in step with GroupBy's labels.
+var crossColumns = map[string]string{
+	"model":    "model_id",
+	"user":     "user_id",
+	"provider": "provider_id",
+	"group":    "group_id",
+}
+
+// Cross totals the ledger along two dimensions at once — which accounts used
+// which models — restricted to the keys named on each side.
+//
+// Restricted, because the whole grid is every account times every model, and
+// an instance with a few thousand accounts would answer with more cells than
+// any screen can draw. The caller names the rows and columns it is going to
+// show, which in practice is the top of each breakdown, so the answer is
+// bounded by the product of the two lists however large the ledger is.
+func (s *Store) Cross(ctx context.Context, rows, cols string, rowKeys, colKeys []string, filter Filter) ([]Cell, error) {
+	rowColumn, ok := crossColumns[rows]
+	if !ok {
+		return nil, fmt.Errorf("usage: unknown dimension %q", rows)
+	}
+	colColumn, ok := crossColumns[cols]
+	if !ok || cols == rows {
+		return nil, fmt.Errorf("usage: cannot cross %q with %q", rows, cols)
+	}
+	if len(rowKeys) == 0 || len(colKeys) == 0 {
+		return []Cell{}, nil
+	}
+
+	where, args := filter.where("")
+	keys := rowColumn + " IN (" + placeholders(len(rowKeys)) + ") AND " +
+		colColumn + " IN (" + placeholders(len(colKeys)) + ")"
+	if where == "" {
+		where = " WHERE " + keys
+	} else {
+		where += " AND " + keys
+	}
+	for _, key := range rowKeys {
+		args = append(args, key)
+	}
+	for _, key := range colKeys {
+		args = append(args, key)
+	}
+
+	result, err := s.db.Query(ctx, `SELECT `+rowColumn+`, `+colColumn+`, `+aggregates("")+`
+		FROM usage_records`+where+`
+		GROUP BY `+rowColumn+`, `+colColumn, args...)
+	if err != nil {
+		return nil, fmt.Errorf("usage: cross %s by %s: %w", rows, cols, err)
+	}
+	defer result.Close()
+
+	out := []Cell{}
+	for result.Next() {
+		var cell Cell
+		if err := result.Scan(append([]any{&cell.Row, &cell.Col}, cell.targets()...)...); err != nil {
+			return nil, fmt.Errorf("usage: cross scan: %w", err)
+		}
+		out = append(out, cell)
+	}
+	return out, result.Err()
+}
+
+// placeholders is n bound parameters for an IN list: the keys are values, and
+// values are never spliced into the text of a query.
+func placeholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?, ", n), ", ")
 }
 
 // List returns individual records, newest first — the admin audit view.
@@ -307,7 +435,7 @@ func (s *Store) List(ctx context.Context, filter Filter) ([]Record, int64, error
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	query := `SELECT r.id, r.user_id, COALESCE(u.username, ''), r.group_id,
+	query := `SELECT r.id, r.user_id, COALESCE(u.username, ''), COALESCE(u.nickname, ''), r.group_id,
 		r.provider_id, r.provider_name, r.model_id, r.model_name, r.model_ref,
 		r.conversation_id, r.message_id, r.request_id,
 		r.input_tokens, r.output_tokens, r.reasoning_tokens, r.total_tokens, r.credits, r.usage_estimated,
@@ -325,7 +453,7 @@ func (s *Store) List(ctx context.Context, filter Filter) ([]Record, int64, error
 	out := []Record{}
 	for rows.Next() {
 		var record Record
-		if err := rows.Scan(&record.ID, &record.UserID, &record.Username, &record.GroupID,
+		if err := rows.Scan(&record.ID, &record.UserID, &record.Username, &record.Nickname, &record.GroupID,
 			&record.ProviderID, &record.ProviderName, &record.ModelID, &record.ModelName, &record.ModelRef,
 			&record.ConversationID, &record.MessageID, &record.RequestID,
 			&record.InputTokens, &record.OutputTokens, &record.ReasoningTokens,
@@ -358,28 +486,26 @@ type Point struct {
 // The step is chosen here, never by a caller, so folding it into the text
 // would be safe — it is bound anyway, because there is no reason for this to
 // be the one query in the package that concatenates a value.
-func (s *Store) Series(ctx context.Context, filter Filter, bucket time.Duration) ([]Point, error) {
+//
+// offset is the reader's distance from UTC. Without it a day bucket starts at
+// Greenwich midnight, which for a reader in Beijing is eight in the morning:
+// "yesterday" on their chart would hold the end of one day and the start of
+// the next. Shifting the boundary rather than the timestamps keeps every
+// point an instant, so the browser still formats it in whatever zone it is in.
+func (s *Store) Series(ctx context.Context, filter Filter, bucket, offset time.Duration) ([]Point, error) {
 	if bucket <= 0 {
 		bucket = time.Hour
 	}
 	where, filterArgs := filter.where("")
-	step := bucket.Milliseconds()
 
 	// Ordered as the placeholders appear: the two in the select list, then
 	// whatever the filter added to the WHERE. Grouping and ordering are by
 	// position, which saves repeating the expression and is understood by
 	// both engines.
-	args := append([]any{step, string(StatusError)}, filterArgs...)
+	args := append([]any{offset.Milliseconds(), bucket.Milliseconds()}, filterArgs...)
 
 	rows, err := s.db.Query(ctx,
-		`SELECT started_at - (started_at % ?) AS bucket,
-		        COUNT(*),
-		        COALESCE(SUM(input_tokens), 0),
-		        COALESCE(SUM(output_tokens), 0),
-		        COALESCE(SUM(reasoning_tokens), 0),
-		        COALESCE(SUM(total_tokens), 0),
-		        COALESCE(SUM(credits), 0),
-		        COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0)
+		`SELECT started_at - ((started_at + ?) % ?) AS bucket, `+aggregates("")+`
 		 FROM usage_records`+where+`
 		 GROUP BY 1
 		 ORDER BY 1`, args...)
@@ -391,9 +517,7 @@ func (s *Store) Series(ctx context.Context, filter Filter, bucket time.Duration)
 	out := []Point{}
 	for rows.Next() {
 		var point Point
-		if err := rows.Scan(&point.At, &point.Requests,
-			&point.InputTokens, &point.OutputTokens, &point.ReasoningTokens,
-			&point.TotalTokens, &point.Credits, &point.Errors); err != nil {
+		if err := rows.Scan(append([]any{&point.At}, point.targets()...)...); err != nil {
 			return nil, fmt.Errorf("usage: series scan: %w", err)
 		}
 		out = append(out, point)
@@ -402,4 +526,51 @@ func (s *Store) Series(ctx context.Context, filter Filter, bucket time.Duration)
 		return nil, err
 	}
 	return out, nil
+}
+
+// Slot is one hour of one day of the week, on the reader's clock.
+type Slot struct {
+	// 0 is Sunday, which is how the browser that draws it counts.
+	Weekday     int   `json:"weekday"`
+	Hour        int   `json:"hour"`
+	Requests    int64 `json:"requests"`
+	TotalTokens int64 `json:"total_tokens"`
+}
+
+// Heatmap folds the ledger onto one week: every turn counted against the
+// weekday and hour it started in, offset from UTC the way Series is.
+//
+// Integer arithmetic, for the reason Series gives: started_at is epoch
+// milliseconds, so the day and the hour are a division and a remainder, and
+// neither engine's date functions — spelled differently, and in disagreement
+// about time zones — are needed. The epoch fell on a Thursday, which is the 4.
+func (s *Store) Heatmap(ctx context.Context, filter Filter, offset time.Duration) ([]Slot, error) {
+	where, filterArgs := filter.where("")
+	shift := offset.Milliseconds()
+	args := append([]any{shift, shift}, filterArgs...)
+
+	rows, err := s.db.Query(ctx,
+		`SELECT ((started_at + ?) / 86400000 + 4) % 7,
+		        ((started_at + ?) / 3600000) % 24,
+		        COUNT(*),
+		        COALESCE(SUM(total_tokens), 0)
+		 FROM usage_records`+where+`
+		 GROUP BY 1, 2
+		 ORDER BY 1, 2`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("usage: heatmap: %w", err)
+	}
+	defer rows.Close()
+
+	out := []Slot{}
+	for rows.Next() {
+		var weekday, hour int64
+		var slot Slot
+		if err := rows.Scan(&weekday, &hour, &slot.Requests, &slot.TotalTokens); err != nil {
+			return nil, fmt.Errorf("usage: heatmap scan: %w", err)
+		}
+		slot.Weekday, slot.Hour = int(weekday), int(hour)
+		out = append(out, slot)
+	}
+	return out, rows.Err()
 }

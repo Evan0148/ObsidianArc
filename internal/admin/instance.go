@@ -23,6 +23,10 @@ import (
 func (h *Handlers) dashboard(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	now := time.Now()
+	zone, err := zoneFrom(r)
+	if err != nil {
+		return err
+	}
 
 	users, totalUsers, err := h.users.List(ctx, user.ListFilter{Limit: 5})
 	if err != nil {
@@ -56,9 +60,17 @@ func (h *Handlers) dashboard(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	day := usage.Filter{Since: now.Add(-24 * time.Hour).UnixMilli()}
+	// The day before that, so each of the day's figures can say which way it
+	// moved. A figure with no direction is a number to memorise; one with an
+	// arrow is a thing to act on.
+	dayBefore := usage.Filter{Since: now.Add(-48 * time.Hour).UnixMilli(), Until: day.Since}
 	week := usage.Filter{Since: now.AddDate(0, 0, -7).UnixMilli()}
 
 	today, err := h.usage.Totals(ctx, day)
+	if err != nil {
+		return httpx.Internal(err)
+	}
+	yesterday, err := h.usage.Totals(ctx, dayBefore)
 	if err != nil {
 		return httpx.Internal(err)
 	}
@@ -75,7 +87,13 @@ func (h *Handlers) dashboard(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return httpx.Internal(err)
 	}
-	series, err := h.usage.Series(ctx, week, 6*time.Hour)
+	series, err := h.usage.Series(ctx, week, 6*time.Hour, zone)
+	if err != nil {
+		return httpx.Internal(err)
+	}
+	// When in the week people use it: the shape an operator plans
+	// maintenance around, and the one a total over seven days hides.
+	heatmap, err := h.usage.Heatmap(ctx, week, zone)
 	if err != nil {
 		return httpx.Internal(err)
 	}
@@ -95,11 +113,13 @@ func (h *Handlers) dashboard(w http.ResponseWriter, r *http.Request) error {
 		},
 		"newest_users": users,
 		"last_24h":     today,
+		"prev_24h":     yesterday,
 		"last_7d":      thisWeek,
 		"top_models":   topModels,
 		"top_users":    topUsers,
 		"series":       series,
 		"bucket_ms":    (6 * time.Hour).Milliseconds(),
+		"heatmap":      heatmap,
 		"recent":       recent,
 	})
 }

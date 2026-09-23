@@ -122,33 +122,68 @@ func filterFrom(r *http.Request) (usage.Filter, error) {
 	return filter, nil
 }
 
+// zoneFrom reads the reader's distance from UTC, in minutes east — which is
+// what a browser's -getTimezoneOffset() gives — so that a day on their chart
+// starts at their midnight. Nowhere on Earth is more than fourteen hours out,
+// and a value past that is a malformed request rather than a place.
+func zoneFrom(r *http.Request) (time.Duration, error) {
+	raw := r.URL.Query().Get("tz")
+	if raw == "" {
+		return 0, nil
+	}
+	minutes, err := strconv.Atoi(raw)
+	if err != nil || minutes < -14*60 || minutes > 14*60 {
+		return 0, httpx.BadRequest("Malformed tz.")
+	}
+	return time.Duration(minutes) * time.Minute, nil
+}
+
+// How much of each side the account-by-model grid shows. Enough to see who
+// leans on what; past that the cells are too small to read and the answer is
+// in the tables instead.
+const (
+	matrixUsers  = 10
+	matrixModels = 8
+)
+
+// Matrix is the account-by-model grid: which of the heaviest accounts use
+// which of the busiest models. The keys are sent with the cells so the
+// browser draws exactly the rows the cells were counted for, rather than
+// re-deriving them from a breakdown that may have been ranked differently.
+type Matrix struct {
+	Rows  []string     `json:"rows"`
+	Cols  []string     `json:"cols"`
+	Cells []usage.Cell `json:"cells"`
+}
+
 func (h *Handlers) usageSummary(w http.ResponseWriter, r *http.Request) error {
 	filter, err := filterFrom(r)
 	if err != nil {
 		return err
 	}
+	zone, err := zoneFrom(r)
+	if err != nil {
+		return err
+	}
+	ctx := r.Context()
 
-	totals, err := h.usage.Totals(r.Context(), filter)
+	totals, err := h.usage.Totals(ctx, filter)
 	if err != nil {
 		return httpx.Internal(err)
 	}
 
 	// What "the most" means is the caller's to choose: the most requests, the
-	// most tokens, or the most money. The ranking happens in SQL, so a top
-	// fifty is the top fifty of the thing that was asked for.
+	// most tokens, the most money, or the most people. The ranking happens in
+	// SQL, so a top fifty is the top fifty of the thing that was asked for.
 	metric := r.URL.Query().Get("metric")
 
-	byModel, err := h.usage.GroupBy(r.Context(), "model", metric, filter)
-	if err != nil {
-		return httpx.Internal(err)
-	}
-	byProvider, err := h.usage.GroupBy(r.Context(), "provider", metric, filter)
-	if err != nil {
-		return httpx.Internal(err)
-	}
-	byUser, err := h.usage.GroupBy(r.Context(), "user", metric, filter)
-	if err != nil {
-		return httpx.Internal(err)
+	breakdowns := map[string][]usage.Breakdown{}
+	for _, dimension := range []string{"model", "provider", "user", "group", "status"} {
+		rows, err := h.usage.GroupBy(ctx, dimension, metric, filter)
+		if err != nil {
+			return httpx.Internal(err)
+		}
+		breakdowns[dimension] = rows
 	}
 
 	// Hourly for a short range, daily for a long one: a month of hourly
@@ -169,25 +204,91 @@ func (h *Handlers) usageSummary(w http.ResponseWriter, r *http.Request) error {
 	if span > 3*24*time.Hour {
 		bucket = 24 * time.Hour
 	}
-	series, err := h.usage.Series(r.Context(), filter, bucket)
+	series, err := h.usage.Series(ctx, filter, bucket, zone)
 	if err != nil {
 		return httpx.Internal(err)
 	}
 
-	rpm, err := h.usage.CurrentRPM(r.Context(), filter)
+	// The same length of time immediately before, so a figure can say which
+	// way it moved. Only for a bounded window: "all time" has no before.
+	var previous *usage.Totals
+	if filter.Since > 0 {
+		before := filter
+		before.Until = filter.Since
+		before.Since = filter.Since - span.Milliseconds()
+		earlier, err := h.usage.Totals(ctx, before)
+		if err != nil {
+			return httpx.Internal(err)
+		}
+		previous = &earlier
+	}
+
+	heatmap, err := h.usage.Heatmap(ctx, filter, zone)
+	if err != nil {
+		return httpx.Internal(err)
+	}
+
+	matrix := Matrix{Rows: keysOf(breakdowns["user"], matrixUsers), Cols: keysOf(breakdowns["model"], matrixModels)}
+	if matrix.Cells, err = h.usage.Cross(ctx, "user", "model", matrix.Rows, matrix.Cols, filter); err != nil {
+		return httpx.Internal(err)
+	}
+
+	rpm, err := h.usage.CurrentRPM(ctx, filter)
 	if err != nil {
 		return httpx.Internal(err)
 	}
 
 	return httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"totals":      totals,
-		"by_model":    byModel,
-		"by_provider": byProvider,
-		"by_user":     byUser,
+		"previous":    previous,
+		"by_model":    breakdowns["model"],
+		"by_provider": breakdowns["provider"],
+		"by_user":     breakdowns["user"],
+		"by_group":    breakdowns["group"],
+		"by_status":   breakdowns["status"],
 		"series":      series,
 		"bucket_ms":   bucket.Milliseconds(),
+		"heatmap":     heatmap,
+		"matrix":      matrix,
 		"current_rpm": rpm,
 	})
+}
+
+// keysOf is the first n keys of a ranked breakdown, skipping the empty one a
+// turn refused before its model was known is filed under.
+func keysOf(rows []usage.Breakdown, n int) []string {
+	keys := make([]string, 0, n)
+	for _, row := range rows {
+		if len(keys) == n {
+			break
+		}
+		if row.Key != "" {
+			keys = append(keys, row.Key)
+		}
+	}
+	return keys
+}
+
+// usageBreakdown is one dimension of the summary on its own: who used a model,
+// or what an account used, without the dozen other aggregates the summary
+// computes. It is what a panel about one model or one account asks, and it
+// should not cost what the whole page does.
+func (h *Handlers) usageBreakdown(w http.ResponseWriter, r *http.Request) error {
+	filter, err := filterFrom(r)
+	if err != nil {
+		return err
+	}
+	dimension := r.URL.Query().Get("dimension")
+	switch dimension {
+	case "model", "provider", "user", "group", "status":
+	default:
+		return httpx.BadRequest("Unknown dimension.")
+	}
+	rows, err := h.usage.GroupBy(r.Context(), dimension, r.URL.Query().Get("metric"), filter)
+	if err != nil {
+		return httpx.Internal(err)
+	}
+	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"rows": rows})
 }
 
 func (h *Handlers) currentRPM(w http.ResponseWriter, r *http.Request) error {
