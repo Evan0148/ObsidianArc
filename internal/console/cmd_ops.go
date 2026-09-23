@@ -264,7 +264,7 @@ func init() {
 		Examples: []string{
 			"usage summary", "usage summary --since 0 --model gpt-4o",
 		},
-		SeeAlso:    []string{"usage rpm", "usage records"},
+		SeeAlso:    []string{"usage breakdown", "usage rpm", "usage records"},
 		Permission: "usage",
 		Endpoints:  []string{"GET /api/admin/usage"},
 		Run: func(_ context.Context, rt *Runtime) error {
@@ -300,6 +300,78 @@ func init() {
 			fmt.Fprintln(rt.Out, "\nby user:")
 			RenderTable(rt.Out, rt.Session.Width, rt.Session.Colour, []string{"user", "requests", "tokens", "credits"}, breakdownRows(m["by_user"]))
 			return nil
+		},
+	})
+
+	registerCommand(Command{
+		Name:    "usage breakdown",
+		Group:   "operations",
+		Summary: Text{EN: "Rank usage along one dimension: who uses a model, what an account uses", ZH: "按一个维度排行用量：某个模型谁在用，某个账户在用什么"},
+		Usage:   "usage breakdown <model|provider|user|group|status> [filters] [--metric requests|tokens|credits|users]",
+		Args:    []Arg{{Name: "dimension", Hint: Text{EN: "model, provider, user, group or status", ZH: "model、provider、user、group 或 status"}, Required: true}},
+		Flags: append(append([]Flag{}, usageFilterFlags...), Flag{
+			Name:  "--metric",
+			Hint:  Text{EN: "ranks the rows; default credits; users ranks by how many accounts", ZH: "排行依据；默认按 credits；users 按使用人数排"},
+			Value: "METRIC",
+		}),
+		Examples: []string{
+			"usage breakdown user --model gpt-4o",
+			"usage breakdown model --user alice",
+			"usage breakdown model --metric users --since 0",
+		},
+		SeeAlso:    []string{"usage summary", "usage records"},
+		Permission: "usage",
+		Endpoints:  []string{"GET /api/admin/usage/breakdown"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			if rt.NArg() == 0 {
+				if rt.Session.Lang == "zh" {
+					return rt.Errorf("需要维度：model、provider、user、group 或 status")
+				}
+				return rt.Errorf("a dimension is required: model, provider, user, group or status")
+			}
+			dimension := rt.Arg(0)
+			q, err := buildUsageQuery(rt)
+			if err != nil {
+				return err
+			}
+			// The dimension is passed through rather than checked here: the
+			// server's list is the one that decides, and a copy of it in this
+			// file would be a second list to forget when the first one grows.
+			q.Set("dimension", dimension)
+			if v := rt.String("metric"); v != "" {
+				q.Set("metric", v)
+			}
+			data, _, err := rt.Call(http.MethodGet, "/api/admin/usage/breakdown?"+q.Encode(), nil)
+			if err != nil {
+				return err
+			}
+			// Every row but an account's counts the accounts that used it —
+			// how widely something is used, rather than how heavily. An
+			// account's own row would always say one, so it counts the models
+			// that account moves between instead.
+			reach := "users"
+			if dimension == "user" {
+				reach = "models"
+			}
+			var rows [][]string
+			for _, raw := range asSlice(asMap(data)["rows"]) {
+				b := asMap(raw)
+				label := asStr(b["label"])
+				if label == "" {
+					label = asStr(b["key"])
+				}
+				// Nicknames are not unique and two providers may each serve a
+				// model of the same name; the detail is what tells those rows
+				// apart.
+				if detail := asStr(b["detail"]); detail != "" {
+					label += " (" + detail + ")"
+				}
+				rows = append(rows, []string{
+					label, fmt.Sprint(asNum(b["requests"])), fmt.Sprint(asNum(b["total_tokens"])),
+					fmt.Sprintf("%.2f", asNum(b["credits"])), fmt.Sprint(asNum(b[reach])), formatMS(b["last_at"]),
+				})
+			}
+			return rt.Table([]string{dimension, "requests", "tokens", "credits", reach, "last used"}, rows)
 		},
 	})
 
