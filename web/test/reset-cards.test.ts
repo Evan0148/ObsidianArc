@@ -120,9 +120,13 @@ describe('held reset cards', () => {
     const rows = cardRows();
     expect(rows).toHaveLength(2);
     expect(rows[0]!.textContent).toContain('× 3');
+    expect(rows[0]!.classList.contains('oa-card-stacked')).toBe(true);
+    expect(rows[0]!.classList.contains('oa-card-stacked-deep')).toBe(true);
     // A lone card is not "× 1": the multiplier exists to make a pile legible
     // and says nothing on a row that is already one thing.
     expect(rows[1]!.textContent).not.toContain('×');
+    expect(rows[1]!.classList.contains('oa-card-stacked')).toBe(false);
+    expect(rows[1]!.classList.contains('oa-card-stacked-deep')).toBe(false);
   });
 
   it('says how many are left beside the heading', async () => {

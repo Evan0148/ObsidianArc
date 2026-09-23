@@ -437,33 +437,53 @@ useIntervalFn(refreshQuietly, REFRESH_MS);
 
       <p class="oa-field-hint">{{ cardFlash }}</p>
 
-      <div class="oa-card-list">
+      <div class="oa-card-list oa-usage-cards">
         <p v-if="cardsError" class="oa-field-hint">{{ cardsError }}</p>
         <p v-else-if="!cards.length" class="oa-field-hint">{{ t('cardNone') }}</p>
-        <div v-for="stack in cardStacks" v-else :key="stack.key" class="oa-card-row">
-          <div>
-            <span class="oa-card-title">
-              {{ t('cardFullReset') }}
-              <!-- Only when there is more than one. "× 1" is noise on the
-                   row it was added to make legible. -->
-              <em v-if="stack.count > 1" class="oa-card-times">&times; {{ stack.count }}</em>
-            </span>
-            <!-- A stack spans a day, so it is dated to the day. A lone card
-                 keeps its time: that is the one somebody is deciding whether
-                 to spend before it runs out this evening. -->
-            <span class="oa-card-sub">{{
-              stack.count > 1
-                ? t('cardExpires', { when: expiryDay(stack.first.expires_at) })
-                : t('cardExpires', { when: expiry(stack.first.expires_at) })
-            }}</span>
+        <div
+          v-for="stack in cardStacks"
+          v-else
+          :key="stack.key"
+          class="oa-card-deck"
+          :class="{ 'oa-card-deck-stacked': stack.count > 1 }"
+        >
+          <!-- 底层卡片 2（3张及以上时露出） -->
+          <div v-if="stack.count > 2" class="oa-card-layer oa-card-layer-deep" />
+          <!-- 底层卡片 1（2张及以上时露出） -->
+          <div v-if="stack.count > 1" class="oa-card-layer oa-card-layer-mid" />
+
+          <!-- 最上面的主卡：卡片边框、背景、高光与文字绝对绑定在同一实体容器上 -->
+          <div
+            class="oa-card-row"
+            :class="{
+              'oa-card-stacked': stack.count > 1,
+              'oa-card-stacked-deep': stack.count > 2,
+            }"
+          >
+            <div>
+              <span class="oa-card-title">
+                {{ t('cardFullReset') }}
+                <!-- Only when there is more than one. "× 1" is noise on the
+                     row it was added to make legible. -->
+                <em v-if="stack.count > 1" class="oa-card-times">&times; {{ stack.count }}</em>
+              </span>
+              <!-- A stack spans a day, so it is dated to the day. A lone card
+                   keeps its time: that is the one somebody is deciding whether
+                   to spend before it runs out this evening. -->
+              <span class="oa-card-sub">{{
+                stack.count > 1
+                  ? t('cardExpires', { when: expiryDay(stack.first.expires_at) })
+                  : t('cardExpires', { when: expiry(stack.first.expires_at) })
+              }}</span>
+            </div>
+            <span class="oa-header-spacer" />
+            <button
+              type="button"
+              class="oa-btn"
+              :disabled="spending === stack.first.id"
+              @click="spend(stack.first)"
+            >{{ t('cardUse') }}</button>
           </div>
-          <span class="oa-header-spacer" />
-          <button
-            type="button"
-            class="oa-btn"
-            :disabled="spending === stack.first.id"
-            @click="spend(stack.first)"
-          >{{ t('cardUse') }}</button>
         </div>
       </div>
 

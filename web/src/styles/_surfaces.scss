@@ -663,16 +663,170 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 10px;
+  margin-bottom: 20px;
+}
+
+.oa-card-deck {
+  position: relative;
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  margin-bottom: 12px;
+}
+
+/* Reserve clearance on the right when stacked so peeking layers and hover fan-out never overlap the scrollbar */
+.oa-card-deck.oa-card-deck-stacked,
+.oa-card-deck:has(.oa-card-layer),
+.oa-card-list > .oa-card-row.oa-card-stacked {
+  width: calc(100% - 16px);
+  margin-right: 16px;
+}
+
+.oa-card-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  border-radius: 12px;
+  pointer-events: none;
+  transform-origin: bottom center;
+  transition: transform 0.28s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.25s ease, opacity 0.2s ease;
+}
+
+/* Layer 1 (middle): step 1: exactly 4.5px right, 3.5px up */
+.oa-card-layer-mid {
+  bottom: 5px;
+  z-index: 1;
+  background: color-mix(in srgb, var(--ai-surface-container-low) 88%, black);
+  border: 1px solid var(--ai-border);
+  border-top-color: rgba(255, 255, 255, 0.22);
+  border-right-color: rgba(255, 255, 255, 0.18);
+  transform: translate(4.5px, -3.5px);
+  opacity: 0.95;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.22);
+}
+
+/* Layer 2 (deepest): step 2: exactly 9px right, 7px up (identical 4.5px/3.5px equal step) */
+.oa-card-layer-deep {
+  bottom: 10px;
+  z-index: 0;
+  background: color-mix(in srgb, var(--ai-surface-container-low) 76%, black);
+  border: 1px solid var(--ai-border);
+  border-top-color: rgba(255, 255, 255, 0.18);
+  border-right-color: rgba(255, 255, 255, 0.14);
+  transform: translate(9px, -7px);
+  opacity: 0.88;
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.32);
+}
+
+/* Hover dynamic fan-out: symmetrical proportional expansion */
+.oa-card-deck:hover .oa-card-layer-mid {
+  transform: translate(7px, -5px) rotate(-0.5deg);
+  opacity: 1;
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.3);
+}
+
+.oa-card-deck:hover .oa-card-layer-deep {
+  transform: translate(14px, -10px) rotate(-1.0deg);
+  opacity: 0.95;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
 }
 
 .oa-card-row {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 14px;
-  border-radius: 14px;
+  margin: 0;
+  padding: 12px 16px;
+  min-height: 48px;
+  border-radius: 12px;
   background: var(--ai-surface-container-low);
+  border: 1px solid var(--ai-border);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.16);
+  font-size: 13px;
+  transform-origin: bottom center;
+  transition: transform 0.28s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.25s ease;
+}
+
+.oa-usage-cards .oa-card-row {
+  padding: 12px 16px;
+  min-height: 48px;
+  font-size: 13px;
+}
+
+/* Stacked reset cards: simulated card deck with peeking top-right corners */
+.oa-card-row.oa-card-stacked {
+  margin: 0;
+  padding: 12px 16px;
+  min-height: 48px;
+  font-size: 13px;
+  transform-origin: bottom center;
+  transform: none;
+}
+
+/* Fallback pseudo-elements when rendered standalone without .oa-card-layer */
+.oa-card-deck:has(.oa-card-layer) .oa-card-row.oa-card-stacked::before,
+.oa-card-deck:has(.oa-card-layer) .oa-card-row.oa-card-stacked-deep::after {
+  display: none;
+}
+
+.oa-card-row.oa-card-stacked::before,
+.oa-card-row.oa-card-stacked-deep::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  border-radius: 12px;
+  pointer-events: none;
+  transform-origin: bottom center;
+  transition: transform 0.28s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.25s ease, opacity 0.2s ease;
+}
+
+.oa-card-row.oa-card-stacked::before {
+  bottom: 5px;
+  z-index: -1;
+  background: color-mix(in srgb, var(--ai-surface-container-low) 88%, black);
+  border: 1px solid var(--ai-border);
+  border-top-color: rgba(255, 255, 255, 0.22);
+  border-right-color: rgba(255, 255, 255, 0.18);
+  transform: translate(4.5px, -3.5px);
+  opacity: 0.95;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.22);
+}
+
+.oa-card-row.oa-card-stacked-deep::after {
+  bottom: 10px;
+  z-index: -2;
+  background: color-mix(in srgb, var(--ai-surface-container-low) 76%, black);
+  border: 1px solid var(--ai-border);
+  border-top-color: rgba(255, 255, 255, 0.18);
+  border-right-color: rgba(255, 255, 255, 0.14);
+  transform: translate(9px, -7px);
+  opacity: 0.88;
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.32);
+}
+
+/* Hover: unified card face rotation directly rotating text, border, and background */
+.oa-card-deck:hover .oa-card-row.oa-card-stacked,
+.oa-card-row.oa-card-stacked:hover {
+  transform: translateY(-2px) rotate(-1.2deg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.36);
+}
+
+.oa-card-row.oa-card-stacked:hover::before {
+  transform: translate(5.5px, -4px) rotate(-0.8deg);
+  opacity: 1;
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.3);
+}
+
+.oa-card-row.oa-card-stacked-deep:hover::after {
+  transform: translate(11px, -7.5px) rotate(-1.8deg);
+  opacity: 0.95;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
 }
 
 .oa-card-title {
