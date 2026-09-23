@@ -77,6 +77,9 @@ type Stats struct {
 	OutputTokens    *int     `json:"output_tokens,omitempty"`
 	ReasoningTokens *int     `json:"reasoning_tokens,omitempty"`
 	TPS             *float64 `json:"tps,omitempty"`
+	// The provider said nothing about usage and the counts were estimated
+	// from the text, so the line under the answer can say "about".
+	Estimated bool `json:"estimated,omitempty"`
 }
 
 // ToolCall is one command a work turn ran, kept with the answer it

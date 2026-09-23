@@ -7,7 +7,7 @@ import OaCellStack from '@/components/OaCellStack.vue';
 import OaIconButton from '@/components/OaIconButton.vue';
 import { currentLanguage, t } from '@/composables/useI18n';
 import { IconSpark, IconUsers, IconServer } from '@/icons';
-import { compactNumber, relativeTime } from '@/lib/format';
+import { compactNumber, relativeTime, tokenFigure } from '@/lib/format';
 import { fold, type ChartShape } from '@/lib/chart';
 import { canAdmin } from '@/stores/session';
 import AdminDashboardTrend from './AdminDashboardTrend.vue';
@@ -199,7 +199,7 @@ let dashboardShape: ChartShape = 'bar';
             <tr v-for="row in data.recent" :key="row.id">
               <td><span class="oa-dashboard-user"><span class="oa-dashboard-avatar" aria-hidden="true">{{ (row.username || row.user_id).slice(0, 1).toLocaleUpperCase() }}</span><span>{{ row.username || row.user_id }}</span></span></td>
               <td><OaCellStack :title="row.model_name || '—'" :sub="row.provider_name" /></td>
-              <td class="oa-dashboard-numeric" :title="row.total_tokens.toLocaleString(locale)">{{ compactNumber(row.total_tokens) }}</td>
+              <td class="oa-dashboard-numeric" :title="row.estimated ? t('tokensEstimatedHint') : row.total_tokens.toLocaleString(locale)">{{ tokenFigure(row.total_tokens, row.estimated) }}</td>
               <td><StatusBadge :status="row.status" :error-code="row.error_code" /></td>
               <td class="oa-dashboard-when" :title="new Date(row.started_at).toLocaleString(locale)">{{ relativeTime(row.started_at) }}</td>
             </tr>

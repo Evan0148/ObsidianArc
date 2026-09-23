@@ -117,9 +117,12 @@ function describe(value: MessageStats): string {
     parts.push(t('statsFirstToken', { seconds: seconds(value.first_token_ms) }));
   }
   if (value.output_tokens !== undefined) {
+    // Estimated figures say so, or the reader compares a guess against a
+    // count from another provider and concludes one of them is broken.
+    const estimated = value.estimated === true;
     parts.push(value.input_tokens === undefined
-      ? t('statsOutputOnly', { output: value.output_tokens })
-      : t('statsTokens', { input: value.input_tokens, output: value.output_tokens }));
+      ? t(estimated ? 'statsOutputOnlyEstimated' : 'statsOutputOnly', { output: value.output_tokens })
+      : t(estimated ? 'statsTokensEstimated' : 'statsTokens', { input: value.input_tokens, output: value.output_tokens }));
   }
   if (value.tps !== undefined) parts.push(t('statsSpeed', { tps: value.tps }));
   return parts.join(' · ');
@@ -248,7 +251,11 @@ function describe(value: MessageStats): string {
               >{{ t('regenerate') }}</button>
               <button type="button" class="ai-chat-mini-btn" @click="copy">{{ t('copy') }}</button>
             </div>
-            <div v-if="stats" class="ai-msg-stats">{{ stats }}</div>
+            <div
+              v-if="stats"
+              class="ai-msg-stats"
+              :title="props.message.stats?.estimated ? t('tokensEstimatedHint') : undefined"
+            >{{ stats }}</div>
           </template>
         </template>
       </template>

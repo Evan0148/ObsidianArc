@@ -33,7 +33,7 @@ import type { Stat } from '@/components/stat';
 import { celebrate } from '@/composables/useConfetti';
 import { t, type StringKey } from '@/composables/useI18n';
 import type { ChartShape } from '@/lib/chart';
-import { compactNumber, relativeTime } from '@/lib/format';
+import { compactNumber, relativeTime, tokenFigure } from '@/lib/format';
 import AdminFailure from './AdminFailure.vue';
 import CreditsField from './CreditsField.vue';
 import StatusBadge from './StatusBadge.vue';
@@ -191,8 +191,8 @@ const recordColumns = computed<Array<Column<UsageRecord>>>(() => [
   { key: 'when', header: t('colWhen'), text: (row) => relativeTime(row.started_at) },
   { key: 'user', header: t('colUser'), text: (row) => row.username || row.user_id },
   { key: 'model', header: t('colModel'), secondary: true },
-  { key: 'in', header: t('colIn'), text: (row) => compactNumber(row.input_tokens), numeric: true, secondary: true },
-  { key: 'out', header: t('colOut'), text: (row) => compactNumber(row.output_tokens), numeric: true, secondary: true },
+  { key: 'in', header: t('colIn'), text: (row) => tokenFigure(row.input_tokens, row.estimated), numeric: true, secondary: true },
+  { key: 'out', header: t('colOut'), text: (row) => tokenFigure(row.output_tokens, row.estimated), numeric: true, secondary: true },
   { key: 'credits', header: t('colCredits'), text: (row) => compactNumber(row.credits), numeric: true },
   { key: 'took', header: t('colTook'), text: (row) => `${(row.duration_ms / 1000).toFixed(1)}s`, numeric: true, secondary: true },
   { key: 'status', header: t('colStatus') },

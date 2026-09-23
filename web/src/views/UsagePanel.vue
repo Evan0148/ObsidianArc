@@ -27,7 +27,7 @@ import type { Stat } from '@/components/stat';
 import { celebrate } from '@/composables/useConfetti';
 import { t } from '@/composables/useI18n';
 import { IconClose, IconLock, IconPlus, IconRefresh } from '@/icons';
-import { absoluteTime, compactNumber, relativeTime } from '@/lib/format';
+import { absoluteTime, compactNumber, relativeTime, tokenFigure } from '@/lib/format';
 import { currentPreferences, currentUser, siteInfo, syncPreferences } from '@/stores/session';
 
 interface Totals {
@@ -56,6 +56,8 @@ interface Turn {
   reasoning_tokens: number;
   total_tokens: number;
   credits: number;
+  /** The provider reported no usage; the tokens were estimated from the text. */
+  estimated?: boolean;
   status: 'ok' | 'error' | 'aborted' | 'rejected';
   error_code?: string;
   started_at: number;
@@ -132,7 +134,7 @@ const statCards = computed<Stat[]>(() => {
 const columns = computed<Array<Column<Turn>>>(() => [
   { key: 'model', header: t('colModel'), text: (row) => row.model_name },
   { key: 'when', header: t('colWhen'), text: (row) => relativeTime(row.started_at), secondary: true, width: '110px' },
-  { key: 'tokens', header: t('statTokens'), text: (row) => compactNumber(row.total_tokens), numeric: true, width: '80px' },
+  { key: 'tokens', header: t('statTokens'), text: (row) => tokenFigure(row.total_tokens, row.estimated), numeric: true, width: '80px' },
   {
     key: 'credits',
     header: t('statCredits'),

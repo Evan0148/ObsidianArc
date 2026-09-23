@@ -47,6 +47,9 @@ type Record struct {
 	ReasoningTokens int     `json:"reasoning_tokens"`
 	TotalTokens     int     `json:"total_tokens"`
 	Credits         float64 `json:"credits"`
+	// The provider reported no usage and the figures above were estimated
+	// from the text. See adapter.EstimatePrompt.
+	Estimated bool `json:"estimated,omitempty"`
 
 	Status     Status `json:"status"`
 	ErrorCode  string `json:"error_code,omitempty"`
@@ -79,14 +82,14 @@ func (s *Store) Write(ctx context.Context, record Record) error {
 	_, err := s.db.Exec(ctx, `INSERT INTO usage_records
 		(id, user_id, group_id, provider_id, provider_name, model_id, model_name, model_ref,
 		 conversation_id, message_id, request_id,
-		 input_tokens, output_tokens, reasoning_tokens, total_tokens, credits,
+		 input_tokens, output_tokens, reasoning_tokens, total_tokens, credits, usage_estimated,
 		 status, error_code, started_at, finished_at, duration_ms)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.ID, record.UserID, record.GroupID, record.ProviderID, record.ProviderName,
 		record.ModelID, record.ModelName, record.ModelRef,
 		record.ConversationID, record.MessageID, record.RequestID,
 		record.InputTokens, record.OutputTokens, record.ReasoningTokens,
-		record.TotalTokens, record.Credits,
+		record.TotalTokens, record.Credits, record.Estimated,
 		record.Status, record.ErrorCode, record.StartedAt, record.FinishedAt, record.DurationMS)
 	if err != nil {
 		return fmt.Errorf("usage: write: %w", err)
@@ -307,7 +310,7 @@ func (s *Store) List(ctx context.Context, filter Filter) ([]Record, int64, error
 	query := `SELECT r.id, r.user_id, COALESCE(u.username, ''), r.group_id,
 		r.provider_id, r.provider_name, r.model_id, r.model_name, r.model_ref,
 		r.conversation_id, r.message_id, r.request_id,
-		r.input_tokens, r.output_tokens, r.reasoning_tokens, r.total_tokens, r.credits,
+		r.input_tokens, r.output_tokens, r.reasoning_tokens, r.total_tokens, r.credits, r.usage_estimated,
 		r.status, r.error_code, r.started_at, r.finished_at, r.duration_ms
 		FROM usage_records r
 		LEFT JOIN users u ON u.id = r.user_id` + joinedWhere +
@@ -326,7 +329,7 @@ func (s *Store) List(ctx context.Context, filter Filter) ([]Record, int64, error
 			&record.ProviderID, &record.ProviderName, &record.ModelID, &record.ModelName, &record.ModelRef,
 			&record.ConversationID, &record.MessageID, &record.RequestID,
 			&record.InputTokens, &record.OutputTokens, &record.ReasoningTokens,
-			&record.TotalTokens, &record.Credits,
+			&record.TotalTokens, &record.Credits, &record.Estimated,
 			&record.Status, &record.ErrorCode, &record.StartedAt, &record.FinishedAt,
 			&record.DurationMS); err != nil {
 			return nil, 0, fmt.Errorf("usage: list scan: %w", err)

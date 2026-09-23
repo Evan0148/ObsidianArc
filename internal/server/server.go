@@ -241,6 +241,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 			OutputTokens:    record.Usage.OutputTokens,
 			ReasoningTokens: record.Usage.ReasoningTokens,
 			Credits:         record.Credits,
+			Estimated:       record.Usage.Estimated,
 			Status:          usage.Status(record.Status),
 			ErrorCode:       record.ErrorCode,
 			StartedAt:       record.StartedAt.UnixMilli(),

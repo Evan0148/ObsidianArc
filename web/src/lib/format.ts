@@ -7,6 +7,16 @@
 
 import { t } from '@/composables/useI18n';
 
+/**
+ * A token figure the provider never reported, marked as the estimate it is.
+ * The mark goes in front of the number rather than in a column of its own:
+ * a whole column that is almost always empty is noise, and "≈" is read before
+ * the digits it qualifies.
+ */
+export function tokenFigure(value: number, estimated?: boolean): string {
+  return estimated ? `≈${compactNumber(value)}` : compactNumber(value);
+}
+
 /** 12345 → "12.3k". Tables are read at a glance, not audited in. */
 export function compactNumber(value: number): string {
   if (!Number.isFinite(value)) return '—';

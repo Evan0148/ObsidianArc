@@ -718,6 +718,85 @@ func TestProviderAuthFailureSaysNothingAboutTheProvider(t *testing.T) {
 	}
 }
 
+// A provider that answers without saying what the answer cost. Several
+// gateways in front of web products do this for some models.
+const silentAnswer = `{"choices":[{"message":{"content":"hello there, this is a reply"},"finish_reason":"stop"}]}`
+
+// The price of a model changes what a turn costs and nothing else.
+//
+// This is the complaint the test exists for: an operator saw expensive models
+// carry large token counts and free ones carry zero, and read it as the
+// weight scaling the tokens. The zeros were providers that never reported
+// usage — and those happened to be where the free models lived. So the same
+// silent answer is sent twice, once at a weight of zero and once at ten, and
+// the tokens must come out identical, non-zero and marked as an estimate,
+// while the credits alone follow the weight.
+func TestAWeightChangesTheCostNotTheTokens(t *testing.T) {
+	f := newFixture(t)
+	f.upstream.reply(silentAnswer)
+
+	send := func(weight float64) chat.TurnRecord {
+		t.Helper()
+		if _, err := f.models.Update(context.Background(), f.model.ID, model.Update{
+			RequestWeight: ptrTo(0.0), InputTokenWeight: ptrTo(weight),
+			OutputTokenWeight: ptrTo(weight), ReasoningTokenWeight: ptrTo(weight),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		before := len(f.turns())
+		w := f.do(t, http.MethodPost, "/v1/chat/completions", f.token, completionBody(f.model.ID))
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+		}
+		// The caller is told the same figures the ledger keeps.
+		if usage, ok := decodeJSON(t, w)["usage"].(map[string]any); !ok || usage["total_tokens"] == float64(0) {
+			t.Errorf("the response carried no usage: %s", w.Body.String())
+		}
+		records := f.turns()
+		if len(records) != before+1 {
+			t.Fatalf("recorded %d turns, want %d", len(records), before+1)
+		}
+		return records[len(records)-1]
+	}
+
+	free := send(0)
+	priced := send(10)
+
+	if free.Usage.Total() == 0 {
+		t.Fatal("a model priced at zero recorded zero tokens")
+	}
+	if free.Usage.InputTokens != priced.Usage.InputTokens || free.Usage.OutputTokens != priced.Usage.OutputTokens {
+		t.Errorf("tokens moved with the weight: %+v at 0, %+v at 10", free.Usage, priced.Usage)
+	}
+	if !free.Usage.Estimated || !priced.Usage.Estimated {
+		t.Error("figures the provider never reported were not marked as estimated")
+	}
+	if free.Credits != 0 {
+		t.Errorf("a weight of zero cost %v credits", free.Credits)
+	}
+	want := float64(priced.Usage.Total()) * 10 / 1000
+	if diff := priced.Credits - want; diff > 1e-9 || diff < -1e-9 {
+		t.Errorf("a weight of ten cost %v credits, want %v", priced.Credits, want)
+	}
+}
+
+// Counts a provider did report are never replaced with a guess.
+func TestReportedUsageIsNotEstimated(t *testing.T) {
+	f := newFixture(t)
+	f.upstream.reply(answer)
+
+	if w := f.do(t, http.MethodPost, "/v1/chat/completions", f.token,
+		completionBody(f.model.ID)); w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+	record := f.turns()[0]
+	if record.Usage.Estimated || record.Usage.InputTokens != 11 || record.Usage.OutputTokens != 7 {
+		t.Errorf("usage = %+v, want the reported 11 and 7, not an estimate", record.Usage)
+	}
+}
+
+func ptrTo[T any](value T) *T { return &value }
+
 func TestUsageIsRecordedAgainstTheAccount(t *testing.T) {
 	f := newFixture(t)
 	f.upstream.reply(answer)

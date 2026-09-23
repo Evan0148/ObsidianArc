@@ -277,6 +277,10 @@ type Usage struct {
 	InputTokens     int
 	OutputTokens    int
 	ReasoningTokens int
+	// Set when the provider reported nothing and these figures were worked
+	// out from the text instead. Carried all the way to the ledger, so an
+	// estimate is never passed off as a count.
+	Estimated bool
 }
 
 func (u Usage) Total() int { return u.InputTokens + u.OutputTokens + u.ReasoningTokens }
@@ -294,6 +298,9 @@ func (u Usage) Merge(next Usage) Usage {
 	if next.ReasoningTokens > 0 {
 		u.ReasoningTokens = next.ReasoningTokens
 	}
+	// Once any part of a turn is estimated, the whole figure is: a real
+	// count for one round and a guess for the next add up to a guess.
+	u.Estimated = u.Estimated || next.Estimated
 	return u
 }
 
@@ -420,15 +427,43 @@ func NewRegistry(cfg config.Upstream) *Registry {
 	}
 }
 
+// Chat sends one request to one provider.
+//
+// This is also the one place a missing token count is filled in, so every
+// caller — the transcript and all three API shapes — gets the same answer
+// without each re-deciding it. Only a call that succeeded is estimated: one
+// that failed or was stopped part-way has its own accounting, and guessing
+// at a half-finished answer would change what a cancelled turn costs.
 func (r *Registry) Chat(ctx context.Context, p Provider, req ChatRequest, sink Sink) (Result, error) {
 	adapter, ok := r.adapters[p.Kind]
 	if !ok {
 		return Result{}, &Error{Kind: ErrorInvalidRequest, Message: "Unknown provider type " + string(p.Kind) + "."}
 	}
-	if needsToolEmulation(req) {
-		return emulatedChat(ctx, adapter, r.client, p, req, sink)
+
+	// Watched rather than read off the result afterwards: an adapter can
+	// report through events alone, and an estimate written over counts it
+	// already streamed would replace a real number with a guess.
+	var reported Usage
+	watched := func(event Event) error {
+		if event.Type == EventUsage {
+			reported = reported.Merge(event.Usage)
+		}
+		return sink(event)
 	}
-	return adapter.Chat(ctx, r.client, p, req, sink)
+
+	var (
+		result Result
+		err    error
+	)
+	if needsToolEmulation(req) {
+		result, err = emulatedChat(ctx, adapter, r.client, p, req, watched)
+	} else {
+		result, err = adapter.Chat(ctx, r.client, p, req, watched)
+	}
+	if err == nil && reported.Total() == 0 && result.Usage.Total() == 0 {
+		result.Usage = estimateResult(req, result)
+	}
+	return result, err
 }
 
 func (r *Registry) ListModels(ctx context.Context, p Provider) ([]RemoteModel, error) {

@@ -904,8 +904,9 @@ func (s *Service) record(ctx context.Context, f finished, messageID string, stat
 func buildStats(f finished) *conversation.Stats {
 	elapsed := time.Since(f.startedAt)
 	stats := &conversation.Stats{
-		MS:       elapsed.Milliseconds(),
-		Streamed: f.streamed,
+		MS:        elapsed.Milliseconds(),
+		Streamed:  f.streamed,
+		Estimated: f.usage.Estimated,
 	}
 	if !f.firstToken.IsZero() {
 		first := f.firstToken.Sub(f.startedAt).Milliseconds()

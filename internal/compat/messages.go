@@ -698,12 +698,8 @@ func messageID(requestID string) string { return "msg_" + requestID }
 // countTokens answers /v1/messages/count_tokens, which agent clients call to
 // decide when to compact a conversation.
 //
-// It is an estimate and cannot be anything else. A real count needs the
-// tokeniser of the model that will answer, which differs per family, and
-// carrying one would be both a dependency this project does not take and a
-// second thing to keep in step with every model an operator adds. Four bytes
-// to the token is the usual approximation and is within a fifth or so for
-// English and for code.
+// It is an estimate and cannot be anything else; adapter.EstimatePrompt says
+// why, and is the same rule used when a provider reports no usage at all.
 //
 // A 404 was the alternative, and it is worse: a client that cannot ask gets
 // no number at all, where this one gets a number that is close. Being off by
@@ -724,47 +720,8 @@ func (h *Handlers) countTokens(w http.ResponseWriter, r *http.Request, who calle
 	}
 
 	return writeJSON(w, http.StatusOK, map[string]any{
-		"input_tokens": estimateTokens(request),
+		"input_tokens": adapter.EstimatePrompt(request),
 	})
-}
-
-// The divisor above, and a small allowance for the framing every message and
-// every block carries on the wire.
-const (
-	bytesPerToken   = 4
-	perMessageTax   = 4
-	perToolCallTax  = 8
-	imageTokenGuess = 1600
-)
-
-func estimateTokens(request adapter.ChatRequest) int {
-	bytes := len(request.System)
-
-	for _, tool := range request.Tools {
-		// An agent's tool definitions are often most of its prompt, so
-		// leaving them out would understate the total badly.
-		bytes += len(tool.Name) + len(tool.Description) + len(tool.Parameters)
-	}
-
-	tokens := 0
-	for _, message := range request.Messages {
-		tokens += perMessageTax
-		for _, part := range message.Parts {
-			switch part.Kind {
-			case adapter.PartImage:
-				// Rather than the bytes, which are base64 and say nothing
-				// about how the model will see the picture.
-				tokens += imageTokenGuess
-			case adapter.PartToolCall:
-				bytes += len(part.ToolName) + len(part.ToolArgs)
-				tokens += perToolCallTax
-			default:
-				bytes += len(part.Text) + len(part.ToolCallID)
-			}
-		}
-	}
-
-	return tokens + bytes/bytesPerToken
 }
 
 // --- errors -------------------------------------------------------------------

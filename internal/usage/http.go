@@ -45,6 +45,7 @@ type Public struct {
 	ReasoningTokens int     `json:"reasoning_tokens"`
 	TotalTokens     int     `json:"total_tokens"`
 	Credits         float64 `json:"credits"`
+	Estimated       bool    `json:"estimated,omitempty"`
 	Status          Status  `json:"status"`
 	ErrorCode       string  `json:"error_code,omitempty"`
 	StartedAt       int64   `json:"started_at"`
@@ -61,6 +62,7 @@ func toPublic(record Record) Public {
 		ReasoningTokens: record.ReasoningTokens,
 		TotalTokens:     record.TotalTokens,
 		Credits:         record.Credits,
+		Estimated:       record.Estimated,
 		Status:          record.Status,
 		ErrorCode:       record.ErrorCode,
 		StartedAt:       record.StartedAt,

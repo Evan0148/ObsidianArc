@@ -30,6 +30,8 @@ export interface MessageStats {
   output_tokens?: number;
   reasoning_tokens?: number;
   tps?: number;
+  /** The provider reported no usage; the counts were estimated from the text. */
+  estimated?: boolean;
 }
 
 export interface AttachmentRef {

@@ -188,6 +188,8 @@ export interface UsageRecord {
   reasoning_tokens: number;
   total_tokens: number;
   credits: number;
+  /** The provider reported no usage; the tokens were estimated from the text. */
+  estimated?: boolean;
   status: 'ok' | 'error' | 'aborted' | 'rejected';
   error_code: string;
   started_at: number;
