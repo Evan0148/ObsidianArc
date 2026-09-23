@@ -282,12 +282,13 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .ai-chat-list-wrap .oa-overlay-track {
   top: 8px;
   bottom: 8px;
+  right: -8px;
 }
 
 .ai-chat-list {
@@ -540,6 +541,12 @@
 @keyframes aiChatRowMark {
   from { opacity: 0.4; transform: translateX(-5px); }
   to { opacity: 1; transform: translateX(0); }
+}
+
+.ai-chat-transcript {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
 }
 
 .ai-msg {
@@ -1406,6 +1413,15 @@
   resize: none;
 }
 
+.ai-chat-input::placeholder {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.ai-chat-input:placeholder-shown::selection {
+  background: transparent;
+}
+
 .ai-chat-input:focus {
   border-color: var(--ai-primary);
   outline: none;
@@ -1525,7 +1541,7 @@
 }
 
 .ai-chat-wide .ai-chat-scroll {
-  padding: 26px 14px 18px;
+  padding: 26px 14px 20px;
 }
 
 /* On wide screens, the transcript scroller starts at the top edge of
@@ -1624,6 +1640,7 @@
 }
 
 .ai-chat-wide .ai-chat-composer {
+  margin-top: 5px;
   margin-bottom: 20px;
   padding: 7px 7px 7px 8px;
   border: none;
@@ -1729,6 +1746,7 @@
   }
 
   .ai-chat-wide .ai-chat-composer {
+    margin-top: 4px;
     margin-bottom: 14px;
   }
 

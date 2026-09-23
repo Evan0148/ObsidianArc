@@ -6,6 +6,7 @@
 // than covering it.
 
 import { nextTick, ref, watch } from 'vue';
+import { useResizeObserver } from '@vueuse/core';
 import OaIconButton from '@/components/OaIconButton.vue';
 import OaScrollArea from '@/components/OaScrollArea.vue';
 import { t } from '@/composables/useI18n';
@@ -31,30 +32,51 @@ const emit = defineEmits<{ (event: 'open-setup'): void }>();
 
 const scroll = ref<InstanceType<typeof OaScrollArea> | null>(null);
 const composer = ref<InstanceType<typeof ChatComposer> | null>(null);
+const transcriptRef = ref<HTMLElement | null>(null);
+const autoScroll = ref(true);
 const rising = ref(false);
 
 function scroller(): HTMLElement | null {
   return scroll.value?.scroller ?? null;
 }
 
-/**
- * Only auto-scroll when the reader is already at the bottom: yanking the view
- * back while somebody is reading an earlier part of the answer is worse than
- * letting it run off screen.
- */
-watch(scrollTick, () => {
+function scrollToBottom(): void {
   const node = scroller();
   if (!node) return;
-  const atEnd = node.scrollHeight - node.scrollTop - node.clientHeight < 40;
-  if (!atEnd && busy.value) return;
-  void nextTick(() => { node.scrollTop = node.scrollHeight; });
+  node.scrollTop = node.scrollHeight;
+}
+
+function onScroll(): void {
+  const node = scroller();
+  if (!node) return;
+  autoScroll.value = node.scrollHeight - node.scrollTop - node.clientHeight < 60;
+}
+
+// Auto-follow when content grows (streaming deltas, MathML equations upgraded, images loaded).
+useResizeObserver(transcriptRef, () => {
+  if (autoScroll.value) {
+    scrollToBottom();
+  }
+});
+
+/**
+ * Auto-scroll when the reader is following at the bottom or when
+ * completing a turn: yanking the view back while somebody is reading an earlier
+ * part of the answer is avoided.
+ */
+watch(scrollTick, () => {
+  if (autoScroll.value || !busy.value) {
+    void nextTick(scrollToBottom);
+  }
 });
 
 // A short rise says "a different conversation" instead of leaving the
 // transcript to flicker into something else within one frame.
 watch(switchTick, () => {
+  autoScroll.value = true;
   rising.value = false;
   void nextTick(() => {
+    scrollToBottom();
     rising.value = true;
     window.setTimeout(() => { rising.value = false; }, 400);
   });
@@ -117,6 +139,7 @@ defineExpose({ focus: () => composer.value?.focus() });
       ref="scroll"
       wrap-class="ai-chat-scroll-wrap"
       :scroll-class="rising ? 'ai-chat-scroll ai-chat-switching' : 'ai-chat-scroll'"
+      @scroll.passive="onScroll"
     >
       <div v-if="!status.configured" class="ai-chat-setup">
         <h3 class="ai-chat-setup-title">{{ t('setupTitle') }}</h3>
@@ -129,7 +152,10 @@ defineExpose({ focus: () => composer.value?.focus() });
         >{{ t('setupAction') }}</button>
       </div>
 
-      <ChatMessage v-for="message in messages" :key="message.id" :message="message" />
+      <div ref="transcriptRef" class="ai-chat-transcript">
+        <ChatMessage v-for="message in messages" :key="message.id" :message="message" />
+        <ChatPending v-if="showPending && pending" :pending="pending" />
+      </div>
 
       <div v-if="!messages.length && status.configured" class="ai-chat-empty">
         <!-- Only on the empty state, because that is the only moment the
@@ -161,8 +187,6 @@ defineExpose({ focus: () => composer.value?.focus() });
           >{{ t(key) }}</button>
         </div>
       </div>
-
-      <ChatPending v-if="showPending && pending" :pending="pending" />
     </OaScrollArea>
 
     <div class="ai-chat-flash" :class="{ visible: !!flash }" role="status" aria-live="polite">

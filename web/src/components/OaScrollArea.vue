@@ -22,6 +22,10 @@ const props = defineProps<{
   scrollClass?: string;
 }>();
 
+const emit = defineEmits<{
+  (event: 'scroll', e: Event): void;
+}>();
+
 const container = ref<HTMLElement | null>(null);
 const scroller = ref<HTMLElement | null>(null);
 const track = ref<HTMLElement | null>(null);
@@ -71,7 +75,8 @@ function update(): void {
 }
 
 let idleTimer = 0;
-function onScroll(): void {
+function onScroll(event: Event): void {
+  emit('scroll', event);
   update();
   scrolling.value = true;
   window.clearTimeout(idleTimer);
