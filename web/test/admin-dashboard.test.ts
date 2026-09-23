@@ -51,6 +51,25 @@ describe('dashboard overview', () => {
     expect(button(ranking, t('statUsers')).getAttribute('aria-pressed')).toBe('true');
   });
 
+  // Tokens, not credits. A model priced at zero carries real load and cost
+  // nothing, so a chart of credits left it off entirely; this one puts it
+  // first when it has the most tokens. The pair below is chosen so the two
+  // metrics disagree about the order.
+  it('ranks by tokens, so a model priced at zero still shows its load', async () => {
+    const fixture = dashboardFixture();
+    fixture.top_models = [
+      { ...fixture.top_models[0]!, key: 'priced', label: 'Priced model', total_tokens: 1_000_000, credits: 900_000 },
+      { ...fixture.top_models[1]!, key: 'free', label: 'Free model', total_tokens: 9_000_000, credits: 0 },
+    ];
+    const load = vi.spyOn(adminApi, 'dashboard').mockResolvedValue(fixture);
+    await mountDashboard();
+
+    expect(load).toHaveBeenCalledWith('tokens');
+    const rows = [...host.querySelectorAll('#secBusiestModels .oa-dashboard-rank-list li')];
+    expect(rows.map((row) => row.querySelector('.oa-dashboard-rank-label span')?.textContent)).toEqual(['Free model', 'Priced model']);
+    expect(rows[0]!.textContent).toContain('90.0%');
+  });
+
   it('keeps the last snapshot on refresh failure and allows a retry', async () => {
     const load = vi.spyOn(adminApi, 'dashboard').mockResolvedValueOnce(dashboardFixture()).mockRejectedValueOnce(new Error('Temporarily unavailable')).mockResolvedValueOnce({ ...dashboardFixture(), counts: { ...dashboardFixture().counts, users: 200 } });
     await mountDashboard();

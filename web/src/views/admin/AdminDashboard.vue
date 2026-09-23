@@ -44,8 +44,13 @@ const resources = computed(() => {
   ];
 });
 const rankedRows = computed(() => ranking.value === 'models' ? data.value?.top_models ?? [] : data.value?.top_users ?? []);
+// Ranked by tokens, not credits. Credits are tokens times a price the
+// operator set per model, so a free model — weight 0 — carrying half the
+// traffic vanished from this chart entirely, and a pricey one looked busier
+// than it was. "Where the load goes" is a question about tokens; what it
+// cost is still in the breakdown table underneath.
 const rankedSlices = computed(() => fold(rankedRows.value.map((row) => ({
-  key: row.key, label: row.label || row.key || '—', value: row.credits,
+  key: row.key, label: row.label || row.key || '—', value: row.total_tokens,
 })), 5, t('chartOther')));
 const rankedTotal = computed(() => rankedSlices.value.reduce((sum, row) => sum + row.value, 0));
 function share(value: number): string {
@@ -53,7 +58,7 @@ function share(value: number): string {
 }
 function rowNote(key: string): string {
   const row = rankedRows.value.find((entry) => entry.key === key);
-  return row ? t('dashboardRankNote', { requests: compactNumber(row.requests), tokens: compactNumber(row.total_tokens) }) : '';
+  return row ? t('dashboardRankNote', { requests: compactNumber(row.requests), credits: compactNumber(row.credits) }) : '';
 }
 function exactCredits(row: UsageBreakdown): string { return row.credits.toLocaleString(locale.value, { maximumFractionDigits: 2 }); }
 function onShape(next: ChartShape): void { shape.value = next; dashboardShape = next; }
@@ -63,7 +68,9 @@ async function load(): Promise<void> {
   busy.value = true;
   error.value = '';
   try {
-    data.value = await adminApi.dashboard();
+    // The server orders the breakdown table; asking for the same metric the
+    // chart draws keeps the two in the same order.
+    data.value = await adminApi.dashboard('tokens');
     updatedAt.value = Date.now();
   } catch (failure) {
     error.value = failure instanceof Error ? failure.message : String(failure);
