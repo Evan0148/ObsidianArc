@@ -217,9 +217,13 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
 | Binary (SQLite + embedded SPA) | < 30 MB | 20.6 MB (16.9 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 135 kB | 168.80 kB to open the chat (140.69 JS + 28.11 CSS) |
+| Frontend, on the wire | < 135 kB | 168.83 kB to open the chat (140.72 JS + 28.11 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
+
+The 2026-09-24 stream handoff fix adds 0.03 kB of gzipped chat JavaScript;
+the CSS and separately loaded chunks are unchanged. The wire figures above
+and below include that change.
 
 Remeasured on 2026-09-24 (UTC), after the usage analytics (who uses which
 model, a user × model cross-table, a weekday × hour heatmap) and a pass over
@@ -296,10 +300,10 @@ What each reader actually downloads:
 
 | | gzipped |
 | --- | --- |
-| English, not an administrator | 168.80 kB |
-| Chinese, not an administrator | 197.57 kB |
-| …and a conversation containing a formula | 201.22 kB |
-| Chinese administrator, backoffice open | 276.71 kB |
+| English, not an administrator | 168.83 kB |
+| Chinese, not an administrator | 197.60 kB |
+| …and a conversation containing a formula | 201.25 kB |
+| Chinese administrator, backoffice open | 276.74 kB |
 
 Route-level splitting would shave the first paint further and is deliberately
 switched off for everything but the backoffice: /settings, /keys, /usage and

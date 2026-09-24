@@ -18,7 +18,7 @@ import ChatThinking from './ChatThinking.vue';
 import ChatToolCall from './ChatToolCall.vue';
 import {
   MAX_MESSAGE_CHARS, activeID, busy, editingID, justSentID, messages,
-  runTurn, setFlash, statsWanted,
+  recentReasoningID, runTurn, setFlash, statsWanted,
 } from './useChat';
 
 const props = defineProps<{ message: Message }>();
@@ -193,7 +193,11 @@ function describe(value: MessageStats): string {
         </div>
 
         <template v-else>
-          <ChatThinking v-if="props.message.reasoning" :text="props.message.reasoning" />
+          <ChatThinking
+            v-if="props.message.reasoning"
+            :text="props.message.reasoning"
+            :initial-open="props.message.id === recentReasoningID"
+          />
 
           <div v-if="editing" class="ai-msg-editor">
             <textarea

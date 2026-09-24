@@ -83,6 +83,7 @@ export const messages = ref<Message[]>([]);
 export const busy = ref(false);
 export const editingID = ref('');
 export const justSentID = ref('');
+export const recentReasoningID = ref('');
 export const historyOpen = ref(false);
 export const flash = ref('');
 export const pending = ref<Pending | null>(null);
@@ -330,6 +331,7 @@ export const chatChallengeError = ref('');
 
 export async function runTurn(turn: TurnOptions, turnstile = ''): Promise<'done' | 'challenge'> {
   if (busy.value || !status.value.configured) return 'done';
+  recentReasoningID.value = '';
   const conversationID = turn.conversationID ?? activeID.value;
 
   // Optimistic local rewind, so the transcript reacts before the server
@@ -437,6 +439,7 @@ export async function runTurn(turn: TurnOptions, turnstile = ''): Promise<'done'
           // over a conversation the reader switched to, it would be about
           // something they cannot see.
           if (!watching()) return;
+          recentReasoningID.value = payload.message_id;
           if (payload.stream_fallback) setFlash(t('streamFallback', { reason: payload.stream_fallback }));
           else if (payload.stopped) setFlash(t('stopped'));
         },
@@ -468,20 +471,22 @@ export async function runTurn(turn: TurnOptions, turnstile = ''): Promise<'done'
     }
   } finally {
     settleDeltas();
-    busy.value = false;
-    pending.value = null;
-    pendingID.value = '';
     controller = null;
   }
 
-  // The server owns the transcript, so the authoritative version is read back
-  // rather than reconstructed from what streamed. It also fills in the message
-  // ids, the stats and — when a turn failed — the error row. Only when that
-  // conversation is what is on screen: the reader may have moved on, and their
-  // transcript is not this turn's to overwrite.
-  if (activeID.value === turnID) {
-    await reloadActive();
-    scrollToEnd();
+  try {
+    // Keep the streamed block on screen until the saved row is ready. Clearing
+    // it before the read left an empty answer for the duration of that request.
+    // Only reload the conversation that owns this turn: the reader may have
+    // moved on while it was streaming.
+    if (activeID.value === turnID) {
+      await reloadActive();
+      scrollToEnd();
+    }
+  } finally {
+    busy.value = false;
+    pending.value = null;
+    pendingID.value = '';
   }
   if (!failed) setFlash(flash.value);
   void refreshList();
@@ -600,6 +605,7 @@ export async function openConversation(id: string): Promise<void> {
   activeID.value = id;
   editingID.value = '';
   justSentID.value = '';
+  recentReasoningID.value = '';
   historyOpen.value = false;
   messages.value = [];
   // A short rise says "a different conversation" instead of leaving the
@@ -619,6 +625,7 @@ export function startNewConversation(): void {
   messages.value = [];
   editingID.value = '';
   justSentID.value = '';
+  recentReasoningID.value = '';
   historyOpen.value = false;
   // A running turn already holds its own copy of what it sent, so this drops
   // only what is still staged in the composer — and nothing can be staged
@@ -634,6 +641,7 @@ export function startProjectConversation(projectID: string): void {
   messages.value = [];
   editingID.value = '';
   justSentID.value = '';
+  recentReasoningID.value = '';
   historyOpen.value = false;
   clearAttachments();
   switchTick.value += 1;
@@ -715,6 +723,7 @@ export function resetChat(): void {
   activeID.value = '';
   editingID.value = '';
   justSentID.value = '';
+  recentReasoningID.value = '';
   draft.value = '';
   flash.value = '';
   chatChallenge.value = null;
