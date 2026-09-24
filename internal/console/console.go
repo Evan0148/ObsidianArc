@@ -304,14 +304,14 @@ func (c *Console) Banner(s *Session) string {
 
 	var b strings.Builder
 	if s.Lang == "zh" {
-		fmt.Fprintf(&b, "%s — 管理控制台\n", site)
+		fmt.Fprintf(&b, "%s — 终端\n", site)
 		fmt.Fprintf(&b, "已登录：%s（%s）\n", s.Actor.DisplayName(), roleLabel(s.Actor.Role, s.Lang))
 		if c.opts.SSH.Enabled {
 			fmt.Fprintf(&b, "SSH：%s，主机指纹 %s\n", c.opts.SSH.Addr, c.opts.SSH.Fingerprint)
 		}
 		b.WriteString("输入 'help' 开始，或 'help -k <关键字>' 搜索命令。")
 	} else {
-		fmt.Fprintf(&b, "%s — Admin Console\n", site)
+		fmt.Fprintf(&b, "%s — Terminal\n", site)
 		fmt.Fprintf(&b, "Signed in as %s (%s)\n", s.Actor.DisplayName(), roleLabel(s.Actor.Role, s.Lang))
 		if c.opts.SSH.Enabled {
 			fmt.Fprintf(&b, "SSH: %s, host fingerprint %s\n", c.opts.SSH.Addr, c.opts.SSH.Fingerprint)
@@ -322,6 +322,14 @@ func (c *Console) Banner(s *Session) string {
 }
 
 func roleLabel(role user.Role, lang string) string {
+	// Every account has a terminal now, so the banner names what the reader
+	// is rather than assuming an administrator.
+	if role == user.RoleUser {
+		if lang == "zh" {
+			return "成员"
+		}
+		return "member"
+	}
 	if role == user.RoleSuperAdmin {
 		if lang == "zh" {
 			return "超级管理员"

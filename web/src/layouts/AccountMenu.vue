@@ -6,7 +6,7 @@ import OaAvatar from '@/components/OaAvatar.vue';
 import OaMenu from '@/components/OaMenu.vue';
 import OaMenuItem from '@/components/OaMenuItem.vue';
 import { t } from '@/composables/useI18n';
-import { IconArchive, IconChart, IconGear, IconImage, IconInfo, IconKey, IconLogout, IconMessage, IconPulse, IconSliders } from '@/icons';
+import { IconArchive, IconChart, IconGear, IconImage, IconInfo, IconKey, IconLogout, IconMessage, IconPulse, IconSliders, IconTerminal } from '@/icons';
 import { displayName } from '@/lib/account';
 import { feedbackUnread, forgetFeedbackUnread, refreshFeedbackUnread } from '@/stores/feedback';
 import { forget, siteInfo, isAdmin, canAdmin } from '@/stores/session';
@@ -100,6 +100,16 @@ async function signOut(close: () => void): Promise<void> {
       </OaMenuItem>
       <OaMenuItem :title="t('apiKeys')" @click="go(close, '/keys')">
         <template #leading><IconKey :size="14" /></template>
+      </OaMenuItem>
+      <!-- Beside the keys, the other thing here for somebody who works from a
+           keyboard. Hidden only when the group has it switched off; a server
+           too old to say is not a refusal. -->
+      <OaMenuItem
+        v-if="props.account.allow_terminal !== false"
+        :title="t('navTerminal')"
+        @click="go(close, '/terminal')"
+      >
+        <template #leading><IconTerminal :size="14" /></template>
       </OaMenuItem>
       <OaMenuItem :title="t('feedback')" @click="go(close, '/feedback')">
         <template #leading><IconMessage :size="14" /></template>

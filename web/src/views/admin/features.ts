@@ -17,11 +17,10 @@ export interface AdminPageSpec {
   /**
    * The grant this section needs, when it is not simply the slug.
    *
-   * `'*'` means any administrator. Exactly one section uses it — the console,
-   * which is a second view onto the grants an account already holds rather
-   * than a grant of its own, and which hides every command the actor cannot
-   * run. Giving it a grant of its own would be a second access rule to keep
-   * in step with the first.
+   * `'*'` means any administrator. No section uses it today: the console did,
+   * as a second view onto the grants an account already holds, until it moved
+   * out of the backoffice into every account's menu. It stays for the next
+   * section of that kind, so that one does not invent a grant of its own.
    */
   permission?: string;
 }
@@ -566,22 +565,6 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     titleKey: 'feedbackMine',
     searchKeys: ['feedbackResolve', 'feedbackReopen', 'feedbackEmpty'],
     keywords: ['处理反馈', '标记已处理', '删除反馈', 'mark resolved', 'reopen feedback'],
-  },
-
-  // --- Terminal
-  //
-  // One entry, not one per command: the console's own `help` is the index of
-  // what it can do, in both languages and filtered to what the reader may
-  // actually run. Seventy-four rows here would duplicate it and go stale.
-  {
-    id: 'terminalConsole',
-    pageSlug: 'terminal',
-    titleKey: 'navTerminal',
-    searchKeys: ['terminalSettings', 'terminalSSHHint', 'terminalShortcutsHint'],
-    keywords: [
-      '终端', '命令行', '控制台', '命令', '脚本', 'ssh', '远程管理',
-      'terminal', 'console', 'shell', 'command line', 'cli',
-    ],
   },
 ];
 

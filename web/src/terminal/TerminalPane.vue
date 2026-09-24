@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // One tab's scrollback and prompt line: CONTRACT.md #5.2.
 //
-// Only the active tab's pane is mounted (`AdminTerminal.vue` keys it behind
+// Only the active tab's pane is mounted (`TerminalPanel.vue` keys it behind
 // a `v-if`) — a background tab's command keeps running because the fetch
 // lives in its `TerminalSession`, not in this component, and switching back
 // just renders whatever the session's refs already hold. That is also why

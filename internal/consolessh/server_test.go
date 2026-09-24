@@ -274,6 +274,32 @@ func TestPasswordCallbackSucceedsForAnAdministrator(t *testing.T) {
 	}
 }
 
+// The web terminal is open to any account whose group allows it, and SSH has
+// to agree: the rule is handed in as Permitted and asked at the handshake. A
+// refusal still looks exactly like a wrong password, so the prompt cannot be
+// used to find out whose group has the terminal switched off.
+func TestPasswordCallbackAsksPermittedWhoMayHaveAConsole(t *testing.T) {
+	accounts := map[string]testAccount{
+		"member":   {password: "correct-horse", account: regularUser("member")},
+		"outsider": {password: "correct-horse", account: regularUser("outsider")},
+	}
+	srv := &Server{cfg: Config{
+		Authenticate: fakeAuthenticate(accounts),
+		Permitted:    func(_ context.Context, account user.User) bool { return account.Username == "member" },
+	}}
+
+	perm, err := srv.passwordCallback(fakeConnMetadata{user: "member"}, []byte("correct-horse"))
+	if err != nil {
+		t.Fatalf("a permitted regular account was refused: %v", err)
+	}
+	if account, ok := actorFromPermissions(perm); !ok || account.Username != "member" {
+		t.Fatalf("actor = %+v, %v", account, ok)
+	}
+	if _, err := srv.passwordCallback(fakeConnMetadata{user: "outsider"}, []byte("correct-horse")); !errors.Is(err, errAuthFailed) {
+		t.Errorf("an account Permitted refuses: got %v, want errAuthFailed", err)
+	}
+}
+
 // --- end to end, over a real listener and a real ssh client ---
 
 func TestSSHEndToEndAuthentication(t *testing.T) {

@@ -17,7 +17,7 @@ import OaSearchField from '@/components/OaSearchField.vue';
 import { t } from '@/composables/useI18n';
 import {
   IconChart, IconChevron, IconCpu, IconFile, IconHome, IconKey, IconLayers, IconLock,
-  IconMenu, IconMessage, IconPulse, IconServer, IconSliders, IconSpark, IconTerminal,
+  IconMenu, IconMessage, IconPulse, IconServer, IconSliders, IconSpark,
   IconUsers,
 } from '@/icons';
 import AppShell from '@/layouts/AppShell.vue';
@@ -43,7 +43,6 @@ import AdminSecurity from './AdminSecurity.vue';
 import AdminSettings from './AdminSettings.vue';
 import AdminAnnouncements from './AdminAnnouncements.vue';
 import AdminFeedback from './AdminFeedback.vue';
-import AdminTerminal from './AdminTerminal.vue';
 
 // Labels are looked up at render rather than stored, because this table is
 // evaluated at import time — before the language is known.
@@ -62,7 +61,6 @@ const PAGES: AdminPageSpec[] = [
   { slug: 'settings', label: 'navSettings', icon: IconSliders, component: markRaw(AdminSettings) },
   { slug: 'announcements', label: 'announcements', icon: IconFile, component: markRaw(AdminAnnouncements) },
   { slug: 'feedback', label: 'navFeedback', icon: IconMessage, component: markRaw(AdminFeedback) },
-  { slug: 'terminal', label: 'navTerminal', icon: IconTerminal, component: markRaw(AdminTerminal), permission: '*' },
 ];
 
 const route = useRoute();
@@ -156,7 +154,7 @@ const current = computed(() => PAGES.find((entry) => entry.slug === (segments.va
 // A section's grant is its slug unless it says otherwise. `canAdmin('')` is
 // false for a delegated administrator — the empty string matches no grant —
 // so "any administrator" has to be asked as `isAdmin`, not as an empty
-// permission. The console is the only section that asks it.
+// permission. No section asks it since the console moved to the account menu.
 const allowed = computed(() => {
   const needs = current.value.permission ?? (current.value.slug || 'dashboard');
   return needs === '*' ? isAdmin.value : canAdmin(needs);

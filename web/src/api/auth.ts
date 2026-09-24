@@ -33,6 +33,9 @@ export interface Account {
   allow_stats: boolean;
   allow_delete_conversations: boolean;
   allow_archive_conversations?: boolean;
+  /** Whether the account menu offers the terminal. Optional because an
+   *  older server never sent it, and absent must not read as refused. */
+  allow_terminal?: boolean;
   /** A user-level brake over the group's API permission. A zero expiry means
    *  the restriction remains until an administrator lifts it. */
   api_restricted: boolean;

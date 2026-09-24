@@ -59,6 +59,10 @@ func ensureGroup(ctx context.Context, db *database.DB, groups *group.Store) erro
 			// rather than appearing to be broken until they find the
 			// permissions screen.
 			AllowAllModels: true,
+			// The terminal runs only what an account can already do by
+			// clicking, so a new instance offers it the way an upgraded one
+			// does through the column default.
+			AllowTerminal: true,
 		})
 		if err != nil {
 			return fmt.Errorf("bootstrap: create default group: %w", err)

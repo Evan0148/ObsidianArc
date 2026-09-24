@@ -101,6 +101,7 @@ func init() {
 				{"is_default", yesNo(asBoolVal(g["is_default"]))}, {"allow_all_models", yesNo(asBoolVal(g["allow_all_models"]))},
 				{"api_access", yesNo(asBoolVal(g["api_access"]))}, {"allow_stats", yesNo(asBoolVal(g["allow_stats"]))},
 				{"allow_delete_conversations", yesNo(asBoolVal(g["allow_delete_conversations"]))},
+				{"allow_terminal", yesNo(asBoolVal(g["allow_terminal"]))},
 				{"sort_order", fmt.Sprint(asNum(g["sort_order"]))}, {"members", fmt.Sprint(asNum(g["members"]))},
 				{"created_at", formatMS(g["created_at"])}, {"updated_at", formatMS(g["updated_at"])},
 			}); err != nil {
@@ -147,6 +148,7 @@ func init() {
 			{Name: "--api-access", Hint: Text{EN: "allow API key use, default true", ZH: "允许使用 API 密钥，默认 true"}, Value: "BOOL", Default: "true"},
 			{Name: "--stats", Hint: Text{EN: "allow viewing usage stats, default true", ZH: "允许查看用量统计，默认 true"}, Value: "BOOL", Default: "true"},
 			{Name: "--delete-conversations", Hint: Text{EN: "allow deleting conversations, default true", ZH: "允许删除对话，默认 true"}, Value: "BOOL", Default: "true"},
+			{Name: "--terminal", Hint: Text{EN: "allow members to open the terminal, default true", ZH: "允许成员使用终端，默认 true"}, Value: "BOOL", Default: "true"},
 			{Name: "--sort-order", Hint: Text{EN: "lower sorts first", ZH: "数值越小越靠前"}, Value: "N"},
 			{Name: "--models", Hint: Text{EN: "comma list of model refs, granted 'use'", ZH: "逗号分隔的模型引用，授予 use"}, Value: "LIST"},
 			{Name: "--grants", Hint: Text{EN: "comma list of model:access pairs, wins over --models", ZH: "逗号分隔的 model:access 对，优先于 --models"}, Value: "LIST"},
@@ -169,6 +171,7 @@ func init() {
 			body.boolv(rt, "api-access", "api_access")
 			body.boolv(rt, "stats", "allow_stats")
 			body.boolv(rt, "delete-conversations", "allow_delete_conversations")
+			body.boolv(rt, "terminal", "allow_terminal")
 			body.intv(rt, "sort-order", "sort_order")
 
 			if rt.Present("grants") {
@@ -217,6 +220,7 @@ func init() {
 			{Name: "--api-access", Hint: Text{EN: "allow API key use", ZH: "允许使用 API 密钥"}, Value: "BOOL"},
 			{Name: "--stats", Hint: Text{EN: "allow viewing usage stats", ZH: "允许查看用量统计"}, Value: "BOOL"},
 			{Name: "--delete-conversations", Hint: Text{EN: "allow deleting conversations", ZH: "允许删除对话"}, Value: "BOOL"},
+			{Name: "--terminal", Hint: Text{EN: "allow members to open the terminal", ZH: "允许成员使用终端"}, Value: "BOOL"},
 			{Name: "--sort-order", Hint: Text{EN: "lower sorts first", ZH: "数值越小越靠前"}, Value: "N"},
 			{Name: "--models", Hint: Text{EN: "comma list of model refs, replaces grants, all 'use'", ZH: "逗号分隔的模型引用，替换授权，均为 use"}, Value: "LIST"},
 			{Name: "--grants", Hint: Text{EN: "comma list of model:access pairs, wins over --models", ZH: "逗号分隔的 model:access 对，优先于 --models"}, Value: "LIST"},
@@ -241,6 +245,7 @@ func init() {
 			body.boolv(rt, "api-access", "api_access")
 			body.boolv(rt, "stats", "allow_stats")
 			body.boolv(rt, "delete-conversations", "allow_delete_conversations")
+			body.boolv(rt, "terminal", "allow_terminal")
 			body.intv(rt, "sort-order", "sort_order")
 
 			if rt.Present("grants") {

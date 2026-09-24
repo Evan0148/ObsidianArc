@@ -3,7 +3,7 @@
 //
 // Every field here reports two moments, mirroring `OaRangeField`'s own
 // `update:modelValue` / `commit` split: `preview` repaints the open tabs
-// immediately (through the CSS custom properties `AdminTerminal.vue` sets),
+// immediately (through the CSS custom properties `TerminalPanel.vue` sets),
 // and `commit` is the one that reaches `localStorage` — so dragging the font
 // size does not write on every pixel, but every other field, which has no
 // drag phase, commits the moment it changes.

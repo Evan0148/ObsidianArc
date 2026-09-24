@@ -1,22 +1,20 @@
-// The admin console: CONTRACT.md #5. Imported last from index.scss, after
+// The terminal: CONTRACT.md #5. Imported last from index.scss, after
 // surfaces — nothing else in the app depends on load order here, but this is
 // where a rule that turns out to need overriding one of surfaces' own goes
 // without a specificity fight.
 //
 // No rule in this file sets its own opacity or backdrop-filter. The card the
-// terminal is drawn inside — .oa-admin-main, by way of the selector list in
-// _base.scss — already carries the wallpaper's translucency and blur, and
-// AGENTS.md is explicit that this feature must never define a second one.
+// terminal is drawn inside — the panel beside the chat — already carries the
+// wallpaper's translucency and blur, and AGENTS.md is explicit that this
+// feature must never define a second one.
 
-// The admin body is ordinarily the scrolling element (_surfaces.scss), with
+// A panel's body is ordinarily the scrolling element (_surfaces.scss), with
 // its own padding. A terminal that let it scroll would grow a second
-// scrollbar around the pane's own — so for this one page it is turned back
-// into a plain flex container with nothing of its own to overflow, and every
-// pixel of scrolling happens inside .oa-terminal-scroll instead. :has() is
-// what lets this rule apply to exactly this page without a class the router
-// would have to add.
-.oa-admin-body:has(> .oa-terminal) {
-  display: flex;
+// scrollbar around the pane's own — so for this panel it is a plain flex
+// container with nothing of its own to overflow, and every pixel of
+// scrolling happens inside .oa-terminal-scroll instead.
+.oa-panel-body.oa-terminal-body {
+  gap: 0;
   padding: 0;
   overflow: hidden;
 }
@@ -37,15 +35,15 @@
    its own horizontal scrollbar instead of pushing the settings button out of
    reach. */
 
-/* The same thirty-pixel gutter every other section's body has, so the tabs
-   start under the page title rather than twenty pixels to the left of it. */
+/* The panel body's own eighteen-pixel gutter, so the tabs start under the
+   panel's title rather than beside it. */
 .oa-terminal-tabstrip {
   display: flex;
   align-items: center;
   flex-shrink: 0;
   gap: 8px;
   height: 34px;
-  padding: 2px 30px 8px;
+  padding: 2px 18px 8px;
 }
 
 .oa-terminal-tabs {
@@ -199,7 +197,7 @@
   min-height: 0;
   min-width: 0;
   position: relative;
-  margin: 0 30px 30px;
+  margin: 0 18px 18px;
   border-radius: 14px;
   /* A flat token, not a color-mix: the card behind it already carries the
      wallpaper's translucency, and AGENTS.md forbids a second, independent
@@ -422,18 +420,6 @@
 
 @keyframes oa-terminal-spin {
   to { transform: rotate(360deg); }
-}
-
-/* The narrow layout's gutter, which the other sections' bodies shrink to at
-   the same width. */
-@media (max-width: 900px) {
-  .oa-terminal-tabstrip {
-    padding: 2px 16px 8px;
-  }
-
-  .oa-terminal-pane {
-    margin: 0 16px 16px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

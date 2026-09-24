@@ -9,7 +9,7 @@ import {
   createAnsiTokenizer,
   initialAnsiState,
   tokenizeAnsiChunk,
-} from '../src/views/admin/terminal/ansi';
+} from '../src/terminal/ansi';
 import {
   DEFAULT_TERMINAL_FONT_FAMILY,
   TERMINAL_CURSOR_STYLES,
@@ -18,12 +18,12 @@ import {
   saveTerminalPrefs,
   terminalCSSVariables,
   type TerminalPrefs,
-} from '../src/views/admin/terminal/prefs';
+} from '../src/terminal/prefs';
 import {
   createTerminalSession,
   terminalHistorySnapshot,
   type TerminalSession,
-} from '../src/views/admin/terminal/session';
+} from '../src/terminal/session';
 
 const PREFS_KEY = 'obsidian-arc-terminal-prefs';
 
@@ -265,7 +265,7 @@ describe('terminal session', () => {
 
   it('runs a line, threading SSE output through the ANSI tokeniser into the scrollback', async () => {
     stubFetch((url) => {
-      expect(url).toContain('/api/admin/console/exec');
+      expect(url).toContain('/api/console/exec');
       return sseResponse([
         { event: 'out', data: { text: 'hello ' } },
         { event: 'out', data: { text: '\x1b[31mred\x1b[0m' } },

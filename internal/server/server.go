@@ -847,6 +847,9 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 
 	consoleHandlers := console.NewHandlers(consoleEngine)
 	consoleHandlers.ClientIP = func(r *http.Request) string { return httpx.ClientIP(r, proxyTrust) }
+	consoleHandlers.Allowed = func(ctx context.Context, account user.User) error {
+		return terminalAllowed(ctx, groups, account)
+	}
 	consoleHandlers.Routes(mux)
 
 	// The same engine, reachable without a browser. Off unless an address was
@@ -863,6 +866,12 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 			// here and guessing at the sign-in form cannot be spread across
 			// two limits.
 			Authenticate: authService.VerifyCredential,
+			// The web terminal's rule, so the two doors agree about who may
+			// have a console: any account whose group allows it, and every
+			// administrator.
+			Permitted: func(ctx context.Context, account user.User) bool {
+				return terminalAllowed(ctx, groups, account) == nil
+			},
 			// What the cookie does for the browser: the account is read
 			// again before every command, so revoking a grant, disabling an
 			// account or deleting it reaches a session that is already open
@@ -999,6 +1008,24 @@ func deleteAllowed(ctx context.Context, groups *group.Store, account user.User) 
 	}
 	return httpx.ForbiddenCode("delete_not_permitted",
 		"Your group cannot delete conversations.")
+}
+
+// terminalAllowed answers whether this account's group lets it open the
+// terminal. An administrator always may, whatever their group says: the
+// terminal is where some of the backoffice's own work is done.
+//
+// Unlike deleteAllowed, a group that cannot be read refuses. The terminal is
+// a way in rather than a thing somebody owns, and a lookup that failed is not
+// a reason to open it.
+func terminalAllowed(ctx context.Context, groups *group.Store, account user.User) error {
+	if account.IsAdmin() {
+		return nil
+	}
+	membership, err := groups.ByID(ctx, nil, account.GroupID)
+	if err == nil && membership.AllowTerminal {
+		return nil
+	}
+	return httpx.ForbiddenCode("terminal_not_permitted", "Your group cannot use the terminal.")
 }
 
 // archiveAllowed answers whether the instance's global settings permit archiving

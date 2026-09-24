@@ -76,6 +76,61 @@ func TestEveryAdminRouteIsClaimedByACommand(t *testing.T) {
 	}
 }
 
+// consoleExempt is every account-facing route no command reaches, and why.
+//
+// The terminal is in every account's menu, and its promise is that anything
+// a person can set or change about their own account from the screens can be
+// done from here too. These are the routes that are not a setting or a
+// change: signing in and out, the OAuth hand-offs a browser has to follow,
+// holding a conversation or drawing a picture, and moving files the terminal
+// has no way to show or pick. A route belongs here only with a reason that
+// is still true; anything else wants a command.
+var consoleExempt = map[string]string{
+	"POST /api/auth/login":                    "signing in — the terminal is already signed in",
+	"POST /api/auth/logout":                   "signing out would end the session the terminal itself runs in",
+	"POST /api/auth/register":                 "creating an account happens before there is a terminal",
+	"POST /api/auth/verify":                   "followed from the link in the verification email",
+	"GET /api/auth/oauth/start/{provider}":    "a browser redirect to the identity provider",
+	"GET /api/auth/oauth/callback/{provider}": "a browser redirect back from the identity provider",
+	"GET /api/auth/oauth/signup":              "part of signing up through an identity provider",
+	"POST /api/auth/oauth/signup":             "part of signing up through an identity provider",
+	"GET /api/site":                           "public instance details for the sign-in page, not a setting",
+	"POST /api/chat":                          "holding a conversation — the chat is where that happens",
+	"POST /api/images/generate":               "drawing a picture — the terminal cannot show one",
+	"POST /api/attachments":                   "uploading an image, which the terminal cannot pick",
+	"GET /api/attachments/{id}":               "downloading an image, which the terminal cannot show",
+	"GET /api/preferences/wallpaper":          "the wallpaper image itself; pref wallpaper-clear removes it",
+	"PUT /api/preferences/wallpaper":          "uploading a wallpaper image, which the terminal cannot pick",
+}
+
+// TestEveryAccountRouteIsClaimedOrExempt is the account-side twin of the
+// admin route-parity test above: a route an account's own screens call is
+// either reachable from a command or listed in consoleExempt with a reason.
+// A new setting added to the interface and not to the terminal fails here,
+// which is the point — the two drifted apart once already.
+func TestEveryAccountRouteIsClaimedOrExempt(t *testing.T) {
+	claimed := map[string]bool{}
+	for _, cmd := range allCommands {
+		for _, ep := range cmd.Endpoints {
+			claimed[ep] = true
+		}
+	}
+	routes := userRoutesFromSource(t)
+	for route := range routes {
+		if claimed[route] && consoleExempt[route] != "" {
+			t.Errorf("route %q is both claimed by a command and exempt; drop the exemption", route)
+		}
+		if !claimed[route] && consoleExempt[route] == "" {
+			t.Errorf("route %q is not claimed by any command and has no exemption", route)
+		}
+	}
+	for route := range consoleExempt {
+		if !routes[route] {
+			t.Errorf("exemption %q names a route no package mounts any more", route)
+		}
+	}
+}
+
 // TestCommandPermissionMatchesItsEndpoints is the permission-parity test
 // (§1.8.2): a command's declared Permission must be copied verbatim from
 // the permission string its endpoints are actually mounted with in

@@ -8,17 +8,20 @@ import (
 )
 
 // The eleven session commands: help, clear, exit, quit, whoami, version,
-// history, watch, lang, format, echo. None of them call the admin API —
-// Permission is "" (any administrator) and none is Destructive — which is
+// history, watch, lang, format, echo. None of them call the API, so they are
+// open to every account that can open the terminal at all — help lists only
+// what the caller may run, and watch repeats a command that is checked again
+// each time — and none is Destructive, which is
 // also exactly registry.go's unaudited list, echo and watch aside: echo is
 // audited-exempt because it calls nothing, and watch is deliberately NOT
 // exempt because every command it repeats is worth its own record.
 func init() {
 	registerCommand(Command{
-		Name:    "help",
-		Group:   "session",
-		Summary: Text{EN: "List commands, or explain one", ZH: "列出命令，或说明某个命令"},
-		Usage:   "help [<command>|<noun>|ssh|keys] [-k <word>]",
+		Name:       "help",
+		Group:      "session",
+		Permission: Anyone,
+		Summary:    Text{EN: "List commands, or explain one", ZH: "列出命令，或说明某个命令"},
+		Usage:      "help [<command>|<noun>|ssh|keys] [-k <word>]",
 		Help: Text{
 			EN: "With nothing after it, help lists every command you may run, grouped by area. " +
 				"help <command> (or <command> --help) explains one command in full. help <noun> " +
@@ -67,11 +70,12 @@ func init() {
 	})
 
 	registerCommand(Command{
-		Name:     "clear",
-		Group:    "session",
-		Summary:  Text{EN: "Clear the screen", ZH: "清屏"},
-		Usage:    "clear",
-		Examples: []string{"clear"},
+		Name:       "clear",
+		Group:      "session",
+		Permission: Anyone,
+		Summary:    Text{EN: "Clear the screen", ZH: "清屏"},
+		Usage:      "clear",
+		Examples:   []string{"clear"},
 		Run: func(_ context.Context, rt *Runtime) error {
 			if rt.Session.Colour {
 				fmt.Fprint(rt.Out, "\x1b[H\x1b[2J")
@@ -81,10 +85,11 @@ func init() {
 	})
 
 	registerCommand(Command{
-		Name:    "exit",
-		Group:   "session",
-		Summary: Text{EN: "End this session", ZH: "结束本次会话"},
-		Usage:   "exit",
+		Name:       "exit",
+		Group:      "session",
+		Permission: Anyone,
+		Summary:    Text{EN: "End this session", ZH: "结束本次会话"},
+		Usage:      "exit",
 		Help: Text{
 			EN: "Same as Ctrl-D on an empty line over SSH, or closing the tab on the web terminal.",
 			ZH: "效果与在 SSH 中于空行按 Ctrl-D，或在网页终端关闭该标签页相同。",
@@ -95,20 +100,22 @@ func init() {
 	})
 
 	registerCommand(Command{
-		Name:     "quit",
-		Group:    "session",
-		Summary:  Text{EN: "End this session", ZH: "结束本次会话"},
-		Usage:    "quit",
-		Examples: []string{"quit"},
-		SeeAlso:  []string{"exit"},
-		Run:      func(_ context.Context, _ *Runtime) error { return errExit },
+		Name:       "quit",
+		Group:      "session",
+		Permission: Anyone,
+		Summary:    Text{EN: "End this session", ZH: "结束本次会话"},
+		Usage:      "quit",
+		Examples:   []string{"quit"},
+		SeeAlso:    []string{"exit"},
+		Run:        func(_ context.Context, _ *Runtime) error { return errExit },
 	})
 
 	registerCommand(Command{
-		Name:    "whoami",
-		Group:   "session",
-		Summary: Text{EN: "Show who you are signed in as", ZH: "显示当前登录身份"},
-		Usage:   "whoami",
+		Name:       "whoami",
+		Group:      "session",
+		Permission: Anyone,
+		Summary:    Text{EN: "Show who you are signed in as", ZH: "显示当前登录身份"},
+		Usage:      "whoami",
 		Examples: []string{
 			"whoami",
 			"whoami --json",
@@ -139,10 +146,11 @@ func init() {
 	})
 
 	registerCommand(Command{
-		Name:    "version",
-		Group:   "session",
-		Summary: Text{EN: "Show the running build version", ZH: "显示当前运行的构建版本"},
-		Usage:   "version",
+		Name:       "version",
+		Group:      "session",
+		Permission: Anyone,
+		Summary:    Text{EN: "Show the running build version", ZH: "显示当前运行的构建版本"},
+		Usage:      "version",
 		Examples: []string{
 			"version",
 		},
@@ -157,10 +165,11 @@ func init() {
 	})
 
 	registerCommand(Command{
-		Name:    "history",
-		Group:   "session",
-		Summary: Text{EN: "Where your command history lives", ZH: "历史记录保存在哪里"},
-		Usage:   "history",
+		Name:       "history",
+		Group:      "session",
+		Permission: Anyone,
+		Summary:    Text{EN: "Where your command history lives", ZH: "历史记录保存在哪里"},
+		Usage:      "history",
 		Help: Text{
 			EN: "History belongs to your own terminal, not to the server: the web terminal keeps it " +
 				"per tab, and an SSH client keeps it per connection with Ctrl-R to search it.",
@@ -179,10 +188,11 @@ func init() {
 	})
 
 	registerCommand(Command{
-		Name:    "watch",
-		Group:   "session",
-		Summary: Text{EN: "Repeat a command until stopped", ZH: "反复执行某个命令，直到停止"},
-		Usage:   "watch [--interval DURATION] [--count N] <command...>",
+		Name:       "watch",
+		Group:      "session",
+		Permission: Anyone,
+		Summary:    Text{EN: "Repeat a command until stopped", ZH: "反复执行某个命令，直到停止"},
+		Usage:      "watch [--interval DURATION] [--count N] <command...>",
 		Help: Text{
 			EN: "Re-runs the given command, clearing between runs, until the connection is cancelled " +
 				"(Ctrl-C / closing the tab) or --count is reached. A flag meant for the wrapped " +
@@ -247,10 +257,11 @@ func init() {
 	})
 
 	registerCommand(Command{
-		Name:    "lang",
-		Group:   "session",
-		Summary: Text{EN: "Switch the console's language for this session", ZH: "切换本次会话的控制台语言"},
-		Usage:   "lang <en|zh>",
+		Name:       "lang",
+		Group:      "session",
+		Permission: Anyone,
+		Summary:    Text{EN: "Switch the console's language for this session", ZH: "切换本次会话的控制台语言"},
+		Usage:      "lang <en|zh>",
 		Args: []Arg{
 			{Name: "language", Hint: Text{EN: "en or zh", ZH: "en 或 zh"}, Required: true},
 		},
@@ -267,10 +278,11 @@ func init() {
 	})
 
 	registerCommand(Command{
-		Name:    "format",
-		Group:   "session",
-		Summary: Text{EN: "Switch between table and JSON output for this session", ZH: "切换本次会话的输出格式：表格或 JSON"},
-		Usage:   "format <table|json>",
+		Name:       "format",
+		Group:      "session",
+		Permission: Anyone,
+		Summary:    Text{EN: "Switch between table and JSON output for this session", ZH: "切换本次会话的输出格式：表格或 JSON"},
+		Usage:      "format <table|json>",
 		Help: Text{
 			EN: "Changes how list and show commands render for the rest of this session. A single " +
 				"command's own --json flag does the same for one line without changing this default.",
@@ -296,10 +308,11 @@ func init() {
 	})
 
 	registerCommand(Command{
-		Name:    "echo",
-		Group:   "session",
-		Summary: Text{EN: "Print the given text back", ZH: "原样输出给定文本"},
-		Usage:   "echo <text...>",
+		Name:       "echo",
+		Group:      "session",
+		Permission: Anyone,
+		Summary:    Text{EN: "Print the given text back", ZH: "原样输出给定文本"},
+		Usage:      "echo <text...>",
 		Help: Text{
 			EN: "Mostly useful for testing quoting and a script's own output, not for anything the " +
 				"admin API does.",

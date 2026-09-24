@@ -66,6 +66,7 @@ const form = ref({
   apiAccess: true,
   allowStats: true,
   allowDelete: true,
+  allowTerminal: true,
   showExpiry: true,
   sortOrder: 0 as number | null,
   grants: {} as Record<string, 'use' | 'view'>,
@@ -153,6 +154,7 @@ function open(row: Group | null): void {
     // existing one can until somebody takes it away.
     allowStats: row?.allow_stats ?? true,
     allowDelete: row?.allow_delete_conversations ?? true,
+    allowTerminal: row?.allow_terminal ?? true,
     showExpiry: row?.show_expiry ?? true,
     sortOrder: row?.sort_order ?? 0,
     grants,
@@ -184,6 +186,7 @@ async function save(): Promise<void> {
       api_access: form.value.apiAccess,
       allow_stats: form.value.allowStats,
       allow_delete_conversations: form.value.allowDelete,
+      allow_terminal: form.value.allowTerminal,
       show_expiry: form.value.showExpiry,
       sort_order: form.value.sortOrder ?? 0,
       model_ids: modelIDs,
@@ -358,6 +361,11 @@ onMounted(load);
       v-model="form.allowDelete"
       :label="t('groupAllowDelete')"
       :hint="t('groupAllowDeleteHint')"
+    />
+    <OaSwitchField
+      v-model="form.allowTerminal"
+      :label="t('groupAllowTerminal')"
+      :hint="t('groupAllowTerminalHint')"
     />
     <OaSwitchField
       v-model="form.showExpiry"

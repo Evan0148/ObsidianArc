@@ -1,4 +1,4 @@
-// The admin console's HTTP client: CONTRACT.md #4.
+// The terminal's HTTP client: CONTRACT.md #4.
 //
 // Three endpoints, one of which streams. `exec` is deliberately the same
 // shape as `sendTurn` in `api/chat.ts` — fetch + ReadableStream, not
@@ -11,7 +11,7 @@ import { currentLanguage, t } from '@/composables/useI18n';
 
 export interface ConsoleYou {
   username: string;
-  role: 'super_admin' | 'admin';
+  role: 'super_admin' | 'admin' | 'user';
   permissions: string[];
 }
 
@@ -51,7 +51,7 @@ export interface ConsoleCommandSpec {
   endpoints: string[];
 }
 
-/** `GET /api/admin/console/spec` — computed for the calling actor; a command they may not run is simply absent, not disabled. */
+/** `GET /api/console/spec` — computed for the calling actor; a command they may not run is simply absent, not disabled. */
 export interface ConsoleSpec {
   version: string;
   you: ConsoleYou;
@@ -63,7 +63,7 @@ export interface ConsoleSpec {
 
 export function fetchConsoleSpec(signal?: AbortSignal): Promise<ConsoleSpec> {
   const query = `?lang=${encodeURIComponent(currentLanguage())}`;
-  return api.get<ConsoleSpec>(`/api/admin/console/spec${query}`, signal ? { signal } : {});
+  return api.get<ConsoleSpec>(`/api/console/spec${query}`, signal ? { signal } : {});
 }
 
 export interface ConsoleCompletionItem {
@@ -72,7 +72,7 @@ export interface ConsoleCompletionItem {
   hint: string;
 }
 
-/** `POST /api/admin/console/complete` response. `from` is a byte offset into the line where the replacement starts, matching how the server sliced it. */
+/** `POST /api/console/complete` response. `from` is a byte offset into the line where the replacement starts, matching how the server sliced it. */
 export interface ConsoleCompletion {
   from: number;
   items: ConsoleCompletionItem[];
@@ -80,13 +80,13 @@ export interface ConsoleCompletion {
 
 export function completeConsoleLine(line: string, pos: number, signal?: AbortSignal): Promise<ConsoleCompletion> {
   return api.post<ConsoleCompletion>(
-    '/api/admin/console/complete',
+    '/api/console/complete',
     { line, pos, lang: currentLanguage() },
     signal ? { signal } : {},
   );
 }
 
-/** `POST /api/admin/console/exec` request body. `lang` is not a caller-supplied field — `execConsoleLine` fills it from `currentLanguage()`, the same way every other admin request does. */
+/** `POST /api/console/exec` request body. `lang` is not a caller-supplied field — `execConsoleLine` fills it from `currentLanguage()`, the same way every other admin request does. */
 export interface ConsoleExecRequest {
   line: string;
   /** Terminal columns, for the server's own table layout (`render.Table`). */
@@ -137,7 +137,7 @@ export async function execConsoleLine(
   handlers: ConsoleExecHandlers,
   signal: AbortSignal,
 ): Promise<void> {
-  const response = await fetch('/api/admin/console/exec', {
+  const response = await fetch('/api/console/exec', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },

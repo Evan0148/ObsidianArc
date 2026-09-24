@@ -14,13 +14,15 @@
 // check at the top of each screen. The server enforces the same rules on
 // every endpoint regardless — this only decides what to draw.
 //
-// Only the backoffice is loaded lazily, and everything else is imported
-// statically on purpose. Route-level splitting sounds free and is not: the
-// panels below are columns over a chat that is already on screen, so a chunk
-// per panel buys a round trip in the middle of a click and saves bytes
+// Only the backoffice and the terminal are loaded lazily, and everything else
+// is imported statically on purpose. Route-level splitting sounds free and is
+// not: the panels below are columns over a chat that is already on screen, so
+// a chunk per panel buys a round trip in the middle of a click and saves bytes
 // nobody was going to avoid downloading anyway. The backoffice is different —
 // it is a quarter of the application's code and most accounts can never
-// reach it.
+// reach it — and so is the terminal: every account may open it, but few ever
+// will, and its emulator, history and ANSI decoder would otherwise be on the
+// first paint of everyone who only came to chat.
 
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import { safeNext } from '@/lib/next';
@@ -69,8 +71,12 @@ const routes: RouteRecordRaw[] = [
       { path: 'about', component: AboutPanel, meta: { auth: true } },
       { path: 'image-lab', component: ImageLabPanel, meta: { auth: true } },
       { path: 'uptime', component: UptimePanel, meta: { auth: true } },
+      { path: 'terminal', component: () => import('@/views/TerminalPanel.vue'), meta: { auth: true } },
     ],
   },
+
+  // Where the terminal used to live, for a bookmark made before it moved.
+  { path: '/admin/terminal', redirect: '/terminal' },
 
   // Fetched when an administrator first opens the backoffice, rather than by
   // everyone who loads the chat. It is a quarter of the application's code
@@ -120,6 +126,12 @@ router.beforeEach((to) => {
   if (signedIn && (to.path === '/login' || to.path === '/register')) {
     const next = safeNext(to.query['next']);
     return { path: next || '/', replace: true };
+  }
+
+  // The terminal is offered by group. The server refuses the account either
+  // way; this only stops the panel opening onto a refusal.
+  if (to.path === '/terminal' && currentUser.value?.allow_terminal === false) {
+    return { path: '/', replace: true };
   }
 
   // Uptime is available to admins, and to readers only if published.

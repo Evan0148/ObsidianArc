@@ -1,6 +1,6 @@
 package console
 
-// Spec is what GET /api/admin/console/spec answers: everything the web
+// Spec is what GET /api/console/spec answers: everything the web
 // terminal needs to render help and complete locally, computed for one
 // actor — a command they may not run is never in Commands, exactly like
 // help and Complete.

@@ -39,6 +39,10 @@ type Group struct {
 	// Whether members may delete their own conversations. Off is for an
 	// instance that has to be able to answer for what was said on it.
 	AllowDeleteConversations bool `json:"allow_delete_conversations"`
+	// Whether members may open the terminal. It holds back the surface, not
+	// what is behind it: every command a member runs is a request to an
+	// endpoint their own screens already reach, and is checked there.
+	AllowTerminal bool `json:"allow_terminal"`
 	// Whether members of this group see their group expiry date in the usage panel.
 	ShowExpiry bool  `json:"show_expiry"`
 	SortOrder  int   `json:"sort_order"`
@@ -60,7 +64,7 @@ const (
 )
 
 const columns = `id, name, description, is_default, allow_all_models, api_access,
-	allow_stats, allow_delete_conversations, show_expiry, sort_order, created_at, updated_at`
+	allow_stats, allow_delete_conversations, allow_terminal, show_expiry, sort_order, created_at, updated_at`
 
 type Store struct{ db *database.DB }
 
@@ -82,6 +86,7 @@ type CreateInput struct {
 	// what it means, and the admin form ticks both to match.
 	AllowStats               bool
 	AllowDeleteConversations bool
+	AllowTerminal            bool
 	ShowExpiry               bool
 	SortOrder                int
 }
@@ -106,6 +111,7 @@ func (s *Store) Create(ctx context.Context, q database.Queryer, in CreateInput) 
 
 		AllowStats:               in.AllowStats,
 		AllowDeleteConversations: in.AllowDeleteConversations,
+		AllowTerminal:            in.AllowTerminal,
 		ShowExpiry:               in.ShowExpiry,
 
 		SortOrder: in.SortOrder,
@@ -113,9 +119,9 @@ func (s *Store) Create(ctx context.Context, q database.Queryer, in CreateInput) 
 		UpdatedAt: now,
 	}
 
-	_, err = q.Exec(ctx, `INSERT INTO user_groups (`+columns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err = q.Exec(ctx, `INSERT INTO user_groups (`+columns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.ID, record.Name, record.Description, record.IsDefault, record.AllowAllModels,
-		record.APIAccess, record.AllowStats, record.AllowDeleteConversations, record.ShowExpiry,
+		record.APIAccess, record.AllowStats, record.AllowDeleteConversations, record.AllowTerminal, record.ShowExpiry,
 		record.SortOrder, record.CreatedAt, record.UpdatedAt)
 	if err != nil {
 		if isUnique(err) {
@@ -194,6 +200,7 @@ type Update struct {
 	APIAccess                *bool
 	AllowStats               *bool
 	AllowDeleteConversations *bool
+	AllowTerminal            *bool
 	ShowExpiry               *bool
 	SortOrder                *int
 }
@@ -236,6 +243,10 @@ func (s *Store) Update(ctx context.Context, q database.Queryer, groupID string, 
 	if in.AllowDeleteConversations != nil {
 		sets = append(sets, "allow_delete_conversations = ?")
 		args = append(args, *in.AllowDeleteConversations)
+	}
+	if in.AllowTerminal != nil {
+		sets = append(sets, "allow_terminal = ?")
+		args = append(args, *in.AllowTerminal)
 	}
 	if in.ShowExpiry != nil {
 		sets = append(sets, "show_expiry = ?")
@@ -294,7 +305,7 @@ func scan(row rowScanner) (Group, error) {
 	var record Group
 	err := row.Scan(&record.ID, &record.Name, &record.Description, &record.IsDefault,
 		&record.AllowAllModels, &record.APIAccess, &record.AllowStats,
-		&record.AllowDeleteConversations, &record.ShowExpiry, &record.SortOrder, &record.CreatedAt, &record.UpdatedAt)
+		&record.AllowDeleteConversations, &record.AllowTerminal, &record.ShowExpiry, &record.SortOrder, &record.CreatedAt, &record.UpdatedAt)
 	if err != nil {
 		if database.IsNotFound(err) {
 			return Group{}, ErrNotFound

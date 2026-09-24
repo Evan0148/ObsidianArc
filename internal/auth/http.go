@@ -106,7 +106,13 @@ type accountPayload struct {
 	AllowStats                bool `json:"allow_stats"`
 	AllowDeleteConversations  bool `json:"allow_delete_conversations"`
 	AllowArchiveConversations bool `json:"allow_archive_conversations"`
-	GroupShowExpiry           bool `json:"group_show_expiry"`
+	// An administrator always has it: the terminal is where some of the
+	// backoffice's own work is done, and a group setting should not be able
+	// to lock the operator out of it. The one capability that is false when
+	// the group cannot be read, because that is what the terminal's own
+	// endpoints answer then; the menu should not offer a door that refuses.
+	AllowTerminal   bool `json:"allow_terminal"`
+	GroupShowExpiry bool `json:"group_show_expiry"`
 }
 
 func (h *Handlers) account(r *http.Request, account user.User) accountPayload {
@@ -115,6 +121,7 @@ func (h *Handlers) account(r *http.Request, account user.User) accountPayload {
 		AllowStats:                true,
 		AllowDeleteConversations:  true,
 		AllowArchiveConversations: account.IsAdmin() || (h.settings != nil && h.settings.Bool(settings.AllowArchive)),
+		AllowTerminal:             account.IsAdmin(),
 		GroupShowExpiry:           true,
 	}
 	if account.GroupID != "" {
@@ -123,6 +130,7 @@ func (h *Handlers) account(r *http.Request, account user.User) accountPayload {
 			payload.GroupDescription = found.Description
 			payload.AllowStats = found.AllowStats
 			payload.AllowDeleteConversations = found.AllowDeleteConversations
+			payload.AllowTerminal = account.IsAdmin() || found.AllowTerminal
 			payload.GroupShowExpiry = found.ShowExpiry
 		}
 	}

@@ -233,6 +233,69 @@ func init() {
 	})
 
 	registerCommand(Command{
+		Name:    "chat edit",
+		Group:   "chat",
+		Summary: Text{EN: "Rewrite one message in one of your conversations", ZH: "改写你某段对话中的一条消息"},
+		Usage:   "chat edit <conversation-id> <seq> --content TEXT",
+		Help: Text{
+			EN: "Replaces the text of the message at that position, as editing it in the chat does. " +
+				"It changes the record only: nothing is sent to a model, and the answers after it stay as they were.",
+			ZH: "替换该位置那条消息的文字，和在对话里编辑它一样。只改记录：不会再发给模型，后面的回答也保持原样。",
+		},
+		Args: []Arg{
+			{Name: "conversation-id", Hint: Text{EN: "from chat list", ZH: "来自 chat list"}, Required: true},
+			{Name: "seq", Hint: Text{EN: "the message's number, from chat show", ZH: "消息序号，来自 chat show"}, Required: true},
+		},
+		Flags:      []Flag{{Name: "--content", Hint: Text{EN: "the new text, required", ZH: "新的内容，必填"}, Value: "TEXT"}},
+		Examples:   []string{`chat edit 01H9Z… 3 --content "Use Go 1.27, not 1.26."`, `chat edit 01H9Z… 1 --content "Summarise this in English."`},
+		SeeAlso:    []string{"chat show"},
+		Permission: Anyone,
+		Endpoints:  []string{"GET /api/conversations/{id}", "PATCH /api/conversations/{id}/messages/{message_id}"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			ref, err := requireRef(rt, "conversation id")
+			if err != nil {
+				return err
+			}
+			if rt.NArg() < 2 {
+				if rt.Session.Lang == "zh" {
+					return rt.Errorf("需要消息序号（chat show 里的 seq）")
+				}
+				return rt.Errorf("a message number is required (seq, from chat show)")
+			}
+			// Addressed by the number chat show prints rather than by id:
+			// the transcript is what the reader has in front of them, and it
+			// does not print ids. The id is looked up from the same response.
+			data, _, err := rt.Call(http.MethodGet, "/api/conversations/"+url.PathEscape(ref), nil)
+			if err != nil {
+				return err
+			}
+			messageID := ""
+			for _, raw := range asSlice(asMap(data)["messages"]) {
+				msg := asMap(raw)
+				if fmt.Sprint(asNum(msg["seq"])) == rt.Arg(1) {
+					messageID = asStr(msg["id"])
+				}
+			}
+			if messageID == "" {
+				if rt.Session.Lang == "zh" {
+					return rt.Errorf("这段对话里没有序号为 %s 的消息", rt.Arg(1))
+				}
+				return rt.Errorf("there is no message %s in this conversation", rt.Arg(1))
+			}
+			path := "/api/conversations/" + url.PathEscape(ref) + "/messages/" + url.PathEscape(messageID)
+			if _, _, err := rt.Call(http.MethodPatch, path, map[string]any{"content": rt.String("content")}); err != nil {
+				return err
+			}
+			if rt.Session.Lang == "zh" {
+				rt.Printf("已修改。\n")
+			} else {
+				rt.Printf("edited.\n")
+			}
+			return nil
+		},
+	})
+
+	registerCommand(Command{
 		Name:    "chat archive",
 		Group:   "chat",
 		Summary: Text{EN: "Archive one of your conversations", ZH: "归档你的一段对话"},

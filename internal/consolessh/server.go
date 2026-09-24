@@ -38,11 +38,18 @@ type Config struct {
 	Console *console.Console
 
 	// Authenticate verifies a password against the same store the web login
-	// uses and returns the account. It must fail for non-administrators —
-	// consolessh checks IsAdmin() itself and folds that refusal into the
-	// same error a wrong password gets, so the prompt cannot be used to
-	// find out which accounts hold administrator rights.
+	// uses and returns the account. Whether that account may have a console
+	// is Permitted's question, asked by consolessh itself and folded into the
+	// same error a wrong password gets, so the prompt cannot be used to find
+	// out which accounts hold it.
 	Authenticate func(ctx context.Context, username, password, ip string) (user.User, error)
+
+	// Permitted answers whether an account may use the console at all: the
+	// same rule the web terminal applies, so the two doors cannot disagree
+	// about who is let in. Asked at the handshake and again before every
+	// command. Nil admits administrators only, which is what this transport
+	// did before the terminal was offered to every account.
+	Permitted func(ctx context.Context, account user.User) bool
 
 	// Reauthorize re-reads the account behind a live session.
 	//
@@ -253,8 +260,8 @@ func (s *Server) passwordCallback(conn ssh.ConnMetadata, password []byte) (*ssh.
 	}
 	// Checked here, not inside Authenticate: collapsing it into the same
 	// error a wrong password gets is what stops this prompt from being
-	// usable to enumerate which accounts are administrators.
-	if !account.IsAdmin() {
+	// usable to enumerate which accounts have a console.
+	if !s.permitted(context.Background(), account) {
 		return nil, errAuthFailed
 	}
 
@@ -465,7 +472,14 @@ func (sess *sshSession) closeChannel() {
 // errAccountNoLongerAdmin ends a session whose owner is no longer entitled to
 // one. Deliberately one error for every reason — demoted, disabled, deleted —
 // because the console has nothing useful to say about which.
-var errAccountNoLongerAdmin = errors.New("consolessh: the account is no longer an administrator")
+var errAccountNoLongerAdmin = errors.New("consolessh: the account no longer has console access")
+
+func (s *Server) permitted(ctx context.Context, account user.User) bool {
+	if s.cfg.Permitted == nil {
+		return account.IsAdmin()
+	}
+	return s.cfg.Permitted(ctx, account)
+}
 
 const revokedMessage = "\r\nThis account no longer has console access. Closing.\r\n"
 
@@ -676,7 +690,7 @@ func (sess *sshSession) currentSession(ctx context.Context, transport string) (*
 	if err != nil {
 		return nil, err
 	}
-	if !account.IsAdmin() || !account.IsActive() {
+	if !account.IsActive() || !sess.server.permitted(ctx, account) {
 		return nil, errAccountNoLongerAdmin
 	}
 

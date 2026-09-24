@@ -552,7 +552,8 @@ describe('what moves, and what does not', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await nextTick();
     expect(searchBox.classList.contains('expanded')).toBe(false);
-    expect(host.querySelectorAll('.oa-admin-nav')).toHaveLength(15);
+    // Fourteen: the terminal left the backoffice for the account menu.
+    expect(host.querySelectorAll('.oa-admin-nav')).toHaveLength(14);
     expect(host.querySelector('a[href="/admin/administrators"]')).toBeNull();
     expect(document.activeElement).toBe(trigger);
   });

@@ -745,6 +745,7 @@ type groupRequest struct {
 
 	AllowStats               *bool `json:"allow_stats"`
 	AllowDeleteConversations *bool `json:"allow_delete_conversations"`
+	AllowTerminal            *bool `json:"allow_terminal"`
 	ShowExpiry               *bool `json:"show_expiry"`
 
 	SortOrder   *int                `json:"sort_order"`
@@ -779,6 +780,7 @@ func (h *Handlers) createGroup(w http.ResponseWriter, r *http.Request) error {
 	// do what every existing group can until somebody says otherwise.
 	in.AllowStats = body.AllowStats == nil || *body.AllowStats
 	in.AllowDeleteConversations = body.AllowDeleteConversations == nil || *body.AllowDeleteConversations
+	in.AllowTerminal = body.AllowTerminal == nil || *body.AllowTerminal
 	in.ShowExpiry = body.ShowExpiry == nil || *body.ShowExpiry
 	if body.SortOrder != nil {
 		in.SortOrder = *body.SortOrder
@@ -819,6 +821,7 @@ func (h *Handlers) updateGroup(w http.ResponseWriter, r *http.Request) error {
 		APIAccess:                body.APIAccess,
 		AllowStats:               body.AllowStats,
 		AllowDeleteConversations: body.AllowDeleteConversations,
+		AllowTerminal:            body.AllowTerminal,
 		ShowExpiry:               body.ShowExpiry,
 		SortOrder:                body.SortOrder,
 	})

@@ -27,6 +27,7 @@ var groupTitles = map[string]Text{
 	"preferences": {EN: "Preferences", ZH: "偏好设置"},
 	"profile":     {EN: "Profile", ZH: "个人资料"},
 	"backup":      {EN: "Backup & Restore", ZH: "备份与恢复"},
+	"images":      {EN: "Images", ZH: "生图"},
 }
 
 func groupHeading(group, lang string) string {
@@ -287,7 +288,7 @@ func renderSSHHelp(out io.Writer, s *Session, c *Console) {
 	port := portOf(c.opts.SSH.Addr)
 
 	if lang == "zh" {
-		fmt.Fprintln(out, "这是管理控制台，不是服务器 shell —— 只能运行这里列出的命令。")
+		fmt.Fprintln(out, "这是 Arc 的终端，不是服务器 shell —— 只能运行这里列出的命令。")
 		fmt.Fprintf(out, "连接： ssh %s@<域名> -p %s\n", username, port)
 		fmt.Fprintf(out, "主机指纹： %s\n", c.opts.SSH.Fingerprint)
 		fmt.Fprintln(out, "单条命令，适合脚本：")

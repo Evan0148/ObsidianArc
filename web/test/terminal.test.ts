@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp, h, nextTick, ref, type App } from 'vue';
 import fs from 'node:fs';
 import path from 'node:path';
-import AdminTerminal from '../src/views/admin/AdminTerminal.vue';
+import { createMemoryHistory, createRouter } from 'vue-router';
+import TerminalPanel from '../src/views/TerminalPanel.vue';
 import { providePanelHost } from '../src/composables/usePanelHost';
-import { provideAdminView } from '../src/views/admin/adminView';
 import { changeLanguage, t } from '../src/composables/useI18n';
 import type { ConsoleExecHandlers, ConsoleSpec } from '../src/api/console';
 
-// `AdminTerminal.vue` and `session.ts` both talk to the server through
+// `TerminalPanel.vue` and `session.ts` both talk to the server through
 // `api/console.ts` alone, so mocking that one module is enough to drive the
 // whole page without a network stub — the shape `terminal-plumbing.test.ts`
 // (the other half of this feature) already exercises the real client
@@ -53,26 +53,18 @@ async function settle(): Promise<void> {
 async function mountTerminal(): Promise<void> {
   app = createApp({
     setup() {
-      // The minimal ancestor `useAdminView()` requires — CONTRACT.md's own
-      // `admin-members-codes.test.ts` model for mounting one admin page
-      // outside the full shell.
-      provideAdminView({
-        setTitle: () => {},
-        reload: () => {},
-        params: [],
-        actionsHost: document.createElement('div'),
-      });
-      // The other half of that ancestor: AppShell provides the row a side
-      // panel becomes a column of, and the appearance settings are one. A
-      // plain element rather than a template ref, set once and never
-      // cleared, for the reason AGENTS.md gives about refs during teardown.
+      // AppShell provides the row a side panel becomes a column of; the
+      // terminal is one, and its appearance settings are a second. A plain
+      // element rather than a template ref, set once and never cleared, for
+      // the reason AGENTS.md gives about refs during teardown.
       const row = document.createElement('div');
-      row.className = 'oa-admin';
       host.appendChild(row);
       providePanelHost(ref(row));
-      return () => h(AdminTerminal);
+      return () => h(TerminalPanel);
     },
   });
+  // Closing the panel navigates back to the chat.
+  app.use(createRouter({ history: createMemoryHistory(), routes: [{ path: '/:p(.*)*', component: { render: () => null } }] }));
   app.mount(host);
   await settle();
   await settle();
@@ -252,10 +244,11 @@ describe('the admin terminal', () => {
     await nextTick();
     await new Promise(requestAnimationFrame);
 
-    // A column of the backoffice row, not a sheet over the terminal: it is a
-    // sibling of the row's other cards rather than a descendant of the
-    // terminal card, which is the whole difference between the two.
-    const panel = host.querySelector<HTMLElement>('.oa-panel');
+    // A column of the chat row, not a sheet over the terminal: it is a
+    // sibling of the terminal's own card rather than a descendant of it,
+    // which is the whole difference between the two.
+    const panel = Array.from(host.querySelectorAll<HTMLElement>('.oa-panel'))
+      .find((node) => node.querySelector('.oa-terminal-settings')) ?? null;
     expect(panel).not.toBeNull();
     const terminal = host.querySelector<HTMLElement>('.oa-terminal')!;
     expect(terminal.contains(panel)).toBe(false);

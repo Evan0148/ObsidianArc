@@ -1,20 +1,29 @@
 package console
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/auth"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/httpx"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/user"
 )
 
 // Handlers is the HTTP transport for the web terminal: spec, exec and
-// complete, all behind auth.RequireAdmin. There is no per-route permission
-// string here — unlike every admin.Handlers route, these three are open to
-// any administrator, and it is the engine underneath (Execute, Spec,
-// Complete) that hides what one particular actor may not do.
+// complete, open to every signed-in account. There is no per-route permission
+// string here: it is the engine underneath (Execute, Spec, Complete) that
+// hides what one particular actor may not do, and every command is itself a
+// request to an endpoint that checks its caller again. An account without
+// the administrative grants sees the commands its own screens already offer
+// and nothing else.
 type Handlers struct {
 	console *Console
+	// Allowed decides whether an account may open the terminal at all — its
+	// group can take it away. Asked on every request rather than once, so a
+	// group switched off reaches a terminal that is already open. Nil allows
+	// everyone, which is what a test that is not about this wants.
+	Allowed func(context.Context, user.User) error
 	// ClientIP resolves the caller's address for the audit trail, set by
 	// the wiring the same way apiKeyHandlers.ClientIP is in server.New. A
 	// nil ClientIP simply means Session.IP is left empty.
@@ -27,9 +36,24 @@ func NewHandlers(c *Console) *Handlers { return &Handlers{console: c} }
 // mux.Handle("METHOD /path", ...) spelling admin.Handlers.Routes uses, so a
 // route-matrix scanner built the same way finds them.
 func (h *Handlers) Routes(mux *http.ServeMux) {
-	mux.Handle("GET /api/admin/console/spec", auth.RequireAdmin(httpx.Wrap(h.spec)))
-	mux.Handle("POST /api/admin/console/exec", auth.RequireAdmin(httpx.Wrap(h.exec)))
-	mux.Handle("POST /api/admin/console/complete", auth.RequireAdmin(httpx.Wrap(h.complete)))
+	mux.Handle("GET /api/console/spec", auth.RequireUser(httpx.Wrap(h.gate(h.spec))))
+	mux.Handle("POST /api/console/exec", auth.RequireUser(httpx.Wrap(h.gate(h.exec))))
+	mux.Handle("POST /api/console/complete", auth.RequireUser(httpx.Wrap(h.gate(h.complete))))
+}
+
+// gate refuses an account whose group has the terminal switched off, before
+// anything about the request is read. It sits in front of all three routes:
+// a spec or a completion would tell a refused account what it cannot run,
+// which is not something it needs to be told.
+func (h *Handlers) gate(next func(http.ResponseWriter, *http.Request) error) func(http.ResponseWriter, *http.Request) error {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		if h.Allowed != nil {
+			if err := h.Allowed(r.Context(), auth.MustUser(r.Context())); err != nil {
+				return err
+			}
+		}
+		return next(w, r)
+	}
 }
 
 func (h *Handlers) clientIP(r *http.Request) string {
@@ -46,7 +70,7 @@ func normalizeLang(v string) string {
 	return "en"
 }
 
-// GET /api/admin/console/spec?lang=en|zh
+// GET /api/console/spec?lang=en|zh
 func (h *Handlers) spec(w http.ResponseWriter, r *http.Request) error {
 	actor := auth.MustUser(r.Context())
 	s := &Session{
@@ -102,7 +126,7 @@ func (o sseOut) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// POST /api/admin/console/exec
+// POST /api/console/exec
 func (h *Handlers) exec(w http.ResponseWriter, r *http.Request) error {
 	actor := auth.MustUser(r.Context())
 
@@ -156,7 +180,7 @@ type completeRequest struct {
 	Lang string `json:"lang"`
 }
 
-// POST /api/admin/console/complete
+// POST /api/console/complete
 func (h *Handlers) complete(w http.ResponseWriter, r *http.Request) error {
 	actor := auth.MustUser(r.Context())
 

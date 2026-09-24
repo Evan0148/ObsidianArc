@@ -230,13 +230,6 @@ func TestAdminRoutesRequireAnAdministrator(t *testing.T) {
 		{http.MethodDelete, "/api/admin/quota/policies/global", nil},
 		{http.MethodPost, "/api/admin/settings/import", map[string]any{"settings": map[string]string{}}},
 		{http.MethodPost, "/api/admin/attachments/purge", nil},
-		// The console. Open to any administrator rather than carrying a
-		// permission of their own — the engine behind them refuses the
-		// individual commands — but still no use at all to a signed-out
-		// caller or a regular account, which is what this matrix checks.
-		{http.MethodGet, "/api/admin/console/spec", nil},
-		{http.MethodPost, "/api/admin/console/exec", map[string]any{"line": "whoami"}},
-		{http.MethodPost, "/api/admin/console/complete", map[string]any{"line": "user", "pos": 4}},
 	}
 
 	// The list above is the whole route table, not a sample of it. A new
@@ -699,9 +692,11 @@ func adminRoutes(t *testing.T) []string {
 	t.Helper()
 	pattern := regexp.MustCompile(`mux\.Handle\("((?:GET|POST|PATCH|PUT|DELETE) /api/admin/[^"]*)"`)
 	var out []string
+	// The console's own routes used to be listed here too. They moved to
+	// /api/console when the terminal was offered to every account, and
+	// console_test.go holds them to that account-level rule instead.
 	for _, source := range []string{
 		filepath.Join("..", "admin", "admin.go"),
-		filepath.Join("..", "console", "handlers.go"),
 	} {
 		body, err := os.ReadFile(source)
 		if err != nil {

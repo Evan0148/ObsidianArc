@@ -1,31 +1,40 @@
 <script setup lang="ts">
-// The administration console's web terminal: CONTRACT.md #0/#5.
+// The web terminal: CONTRACT.md #0/#5.
+//
+// A panel beside the chat, opened from the account menu, for every account
+// whose group allows it. What each account can run is the server's answer,
+// not this component's: the spec lists only the commands the caller may run,
+// and every command is a request to an endpoint that checks the caller again
+// — an ordinary account's terminal is its own screens, an administrator's is
+// the backoffice as well. It used to be a backoffice section; it moved here
+// when it stopped being only for administrators.
 //
 // Every tab is a `TerminalSession` (`terminal/session.ts`) — a line-oriented
-// client of `/api/admin/console/*` — so this component's only jobs are the
-// tab strip, wiring appearance preferences to CSS custom properties, and
-// disposing every tab's in-flight fetch when the page goes away. Command
+// client of `/api/console/*` — so this component's only jobs are the tab
+// strip, wiring appearance preferences to CSS custom properties, and
+// disposing every tab's in-flight fetch when the panel goes away. Command
 // execution, history and ANSI decoding all live one layer down.
 
 import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, type Raw } from 'vue';
+import { useRouter } from 'vue-router';
 import { useEventListener } from '@vueuse/core';
 import { fetchConsoleSpec, type ConsoleSpec } from '@/api/console';
 import OaIconButton from '@/components/OaIconButton.vue';
 import OaPanel from '@/components/OaPanel.vue';
 import { t } from '@/composables/useI18n';
-import { IconClose, IconGear, IconPlus } from '@/icons';
-import { useAdminView } from './adminView';
-import { loadTerminalPrefs, saveTerminalPrefs, terminalCSSVariables, type TerminalPrefs } from './terminal/prefs';
-import { createTerminalSession, type TerminalSession } from './terminal/session';
-import TerminalPane from './terminal/TerminalPane.vue';
-import TerminalSettings from './terminal/TerminalSettings.vue';
+import { IconClose, IconCollapse, IconExpand, IconGear, IconPlus } from '@/icons';
+import { loadTerminalPrefs, saveTerminalPrefs, terminalCSSVariables, type TerminalPrefs } from '@/terminal/prefs';
+import { createTerminalSession, type TerminalSession } from '@/terminal/session';
+import TerminalPane from '@/terminal/TerminalPane.vue';
+import TerminalSettings from '@/terminal/TerminalSettings.vue';
 
-// Synchronous, not in onMounted: `AdminView.setTitle` reads by the shell on
-// the same tick this component is created, and `:key="bodyKey"` in
-// `AdminPage.vue` remounts this component on every visit, so this runs again
-// each time the reader comes back to the section.
-const view = useAdminView();
-view.setTitle(t('navTerminal'), t('terminalSubtitle'));
+const router = useRouter();
+const panel = ref<InstanceType<typeof OaPanel> | null>(null);
+const fullscreen = ref(false);
+
+function toggleFullscreen(): void {
+  fullscreen.value = panel.value?.toggleFullscreen() ?? false;
+}
 
 interface TerminalTab {
   id: string;
@@ -201,94 +210,116 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="oa-terminal" :style="cssVars">
-    <div class="oa-terminal-tabstrip">
-      <div class="oa-terminal-tabs">
-        <div
-          v-for="tab in tabs"
-          :key="tab.id"
-          class="oa-terminal-tab"
-          :class="{ active: tab.id === activeId, running: tab.session.running.value }"
-          :title="tabLabel(tab)"
-          @click="activate(tab.id)"
-          @dblclick="startRename(tab)"
-          @mousedown.middle.prevent="closeTab(tab.id)"
-        >
-          <span v-if="tab.session.running.value" class="oa-terminal-tab-dot" aria-hidden="true" />
-          <span v-if="renamingId === tab.id" class="oa-terminal-tab-rename">
-            <input
-              :ref="setRenameInputRef"
-              v-model="renameDraft"
-              :aria-label="t('terminalRenameTab')"
-              @click.stop
-              @keydown.enter.prevent="commitRename(tab)"
-              @keydown.escape.prevent="cancelRename"
-              @blur="commitRename(tab)"
-            >
-          </span>
-          <span v-else class="oa-terminal-tab-label">{{ tabLabel(tab) }}</span>
-          <OaIconButton
-            class="oa-icon-btn oa-terminal-tab-close"
-            :label="t('terminalCloseTab')"
-            @click.stop="closeTab(tab.id)"
+  <!-- The widest a panel may be dragged, since a terminal is only useful when
+       a line fits; full screen is one button away for anything wider. -->
+  <OaPanel
+    ref="panel"
+    :title="t('navTerminal')"
+    :footer="false"
+    :width="720"
+    body-class="oa-terminal-body"
+    @close="router.replace('/')"
+  >
+    <template #actions>
+      <OaIconButton
+        class="oa-icon-btn"
+        :label="t(fullscreen ? 'exitFullscreen' : 'fullscreen')"
+        @click="toggleFullscreen"
+      >
+        <IconCollapse v-if="fullscreen" :size="16" />
+        <IconExpand v-else :size="16" />
+      </OaIconButton>
+    </template>
+
+    <div class="oa-terminal" :style="cssVars">
+      <div class="oa-terminal-tabstrip">
+        <div class="oa-terminal-tabs">
+          <div
+            v-for="tab in tabs"
+            :key="tab.id"
+            class="oa-terminal-tab"
+            :class="{ active: tab.id === activeId, running: tab.session.running.value }"
+            :title="tabLabel(tab)"
+            @click="activate(tab.id)"
+            @dblclick="startRename(tab)"
+            @mousedown.middle.prevent="closeTab(tab.id)"
           >
-            <IconClose :size="10" />
+            <span v-if="tab.session.running.value" class="oa-terminal-tab-dot" aria-hidden="true" />
+            <span v-if="renamingId === tab.id" class="oa-terminal-tab-rename">
+              <input
+                :ref="setRenameInputRef"
+                v-model="renameDraft"
+                :aria-label="t('terminalRenameTab')"
+                @click.stop
+                @keydown.enter.prevent="commitRename(tab)"
+                @keydown.escape.prevent="cancelRename"
+                @blur="commitRename(tab)"
+              >
+            </span>
+            <span v-else class="oa-terminal-tab-label">{{ tabLabel(tab) }}</span>
+            <OaIconButton
+              class="oa-icon-btn oa-terminal-tab-close"
+              :label="t('terminalCloseTab')"
+              @click.stop="closeTab(tab.id)"
+            >
+              <IconClose :size="10" />
+            </OaIconButton>
+          </div>
+          <OaIconButton
+            class="oa-icon-btn oa-terminal-tab-add"
+            :label="t('terminalNewTab')"
+            @click="createTab()"
+          >
+            <IconPlus :size="14" />
           </OaIconButton>
         </div>
+
+        <!-- A marker, not a sentence — CONTRACT.md's own `SSH` / `READ-ONLY`
+             precedent for `OaBadge`. Present only once the server confirms the
+             listener is actually up. -->
+        <span
+          v-if="spec?.ssh.enabled"
+          class="oa-badge oa-terminal-ssh-badge"
+          :title="sshConnectHint(spec.you.username, spec.ssh.addr)"
+        >SSH</span>
+
         <OaIconButton
-          class="oa-icon-btn oa-terminal-tab-add"
-          :label="t('terminalNewTab')"
-          @click="createTab()"
+          class="oa-icon-btn oa-terminal-settings-btn"
+          :label="t('terminalSettings')"
+          :aria-expanded="settingsOpen ? 'true' : 'false'"
+          @click="settingsOpen = !settingsOpen"
         >
-          <IconPlus :size="14" />
+          <IconGear :size="16" />
         </OaIconButton>
       </div>
 
-      <!-- A marker, not a sentence — CONTRACT.md's own `SSH` / `READ-ONLY`
-           precedent for `OaBadge`. Present only once the server confirms the
-           listener is actually up. -->
-      <span
-        v-if="spec?.ssh.enabled"
-        class="oa-badge oa-terminal-ssh-badge"
-        :title="sshConnectHint(spec.you.username, spec.ssh.addr)"
-      >SSH</span>
-
-      <OaIconButton
-        class="oa-icon-btn oa-terminal-settings-btn"
-        :label="t('terminalSettings')"
-        :aria-expanded="settingsOpen ? 'true' : 'false'"
-        @click="settingsOpen = !settingsOpen"
+      <!-- A column of the chat row, not a sheet over the terminal: the same
+           card the settings and keys screens open, so the terminal beside it
+           narrows instead of being covered. It teleports out to the row itself,
+           which is why it is written here rather than inside the strip the
+           button lives in. -->
+      <OaPanel
+        v-if="settingsOpen"
+        :title="t('terminalSettings')"
+        :width="360"
+        :footer="false"
+        @close="settingsOpen = false"
       >
-        <IconGear :size="16" />
-      </OaIconButton>
-    </div>
+        <TerminalSettings
+          :model-value="prefs"
+          @update:model-value="applyPrefs($event, false)"
+          @commit="applyPrefs($event, true)"
+        />
+      </OaPanel>
 
-    <!-- A column of the backoffice row, not a sheet over the terminal: the
-         same card the settings and keys screens open, so the terminal beside
-         it narrows instead of being covered. It teleports out to the row
-         itself, which is why it is written here rather than inside the strip
-         the button lives in. -->
-    <OaPanel
-      v-if="settingsOpen"
-      :title="t('terminalSettings')"
-      :width="360"
-      :footer="false"
-      @close="settingsOpen = false"
-    >
-      <TerminalSettings
-        :model-value="prefs"
-        @update:model-value="applyPrefs($event, false)"
-        @commit="applyPrefs($event, true)"
+      <TerminalPane
+        v-if="activeTab"
+        :key="activeTab.id"
+        :session="activeTab.session"
+        :font-size="prefs.fontSize"
+        :timestamps="prefs.timestamps"
+        @measure="(cols) => reportColumns(activeTab!.id, cols)"
       />
-    </OaPanel>
-
-    <TerminalPane
-      v-if="activeTab"
-      :key="activeTab.id"
-      :session="activeTab.session"
-      :font-size="prefs.fontSize"
-      :timestamps="prefs.timestamps"
-      @measure="(cols) => reportColumns(activeTab!.id, cols)"
-    />
-  </div>
+    </div>
+  </OaPanel>
 </template>
