@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TurnHandlers } from '../src/api/chat';
+import { getConversation } from '../src/api/chat';
 
 // Waiting for an answer used to mean waiting to read anything else: both
 // `openConversation` and `startNewConversation` returned early while a turn
@@ -31,7 +32,8 @@ vi.mock('@/api/chat', () => ({
   }),
 }));
 
-const { activeID, busy, justSentID, messages, openConversation, pendingID, resetChat, runTurn, showPending } =
+const { activeID, busy, flushDeltas, justSentID, messages, openConversation, pending, pendingID,
+  recentReasoningID, resetChat, runTurn, showPending } =
   await import('../src/chat/useChat');
 const { models, selectedID } = await import('../src/chat/useModels');
 
@@ -49,8 +51,40 @@ describe('switching conversations while a turn runs', () => {
   beforeEach(() => {
     resetChat();
     configureModel();
+    vi.mocked(getConversation).mockImplementation(async (id: string) => ({
+      conversation: { id, title: id, model_id: 'm', pinned: false, message_count: 1, created_at: 0, updated_at: 0 },
+      messages: [{ id: `${id}-row`, seq: 1, role: 'assistant', content: id, created_at: 0 }],
+    }));
     turn.handlers = null;
     turn.finish = null;
+  });
+
+  it('keeps the streamed answer and reasoning visible until the saved row arrives', async () => {
+    let finishReload: ((value: Awaited<ReturnType<typeof getConversation>>) => void) | undefined;
+    vi.mocked(getConversation).mockImplementationOnce(() => new Promise((resolve) => { finishReload = resolve; }));
+
+    const running = runTurn({ content: 'hi' });
+    start();
+    turn.handlers?.onDelta?.('answer');
+    turn.handlers?.onReasoning?.('thinking');
+    flushDeltas();
+    turn.handlers?.onDone?.({ message_id: 'saved', stopped: false, streamed: true });
+    turn.finish?.();
+    await vi.waitFor(() => expect(finishReload).toBeTypeOf('function'));
+
+    expect(showPending.value).toBe(true);
+    expect(pending.value).toMatchObject({ answer: 'answer', reasoning: 'thinking' });
+    expect(busy.value).toBe(true);
+
+    finishReload!({
+      conversation: { id: 'A', title: 'A', model_id: 'm', pinned: false, message_count: 2, created_at: 0, updated_at: 0 },
+      messages: [{ id: 'saved', seq: 2, role: 'assistant', content: 'answer', reasoning: 'thinking', created_at: 0 }],
+    });
+    await running;
+
+    expect(showPending.value).toBe(false);
+    expect(messages.value[0]).toMatchObject({ id: 'saved', content: 'answer', reasoning: 'thinking' });
+    expect(recentReasoningID.value).toBe('saved');
   });
 
   it('opens another conversation without waiting, and keeps the stream with its own', async () => {

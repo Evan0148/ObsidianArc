@@ -11,9 +11,10 @@ import { t } from '@/composables/useI18n';
 const props = defineProps<{
   text: string;
   live?: boolean;
+  initialOpen?: boolean;
 }>();
 
-const isOpen = ref(!!props.live);
+const isOpen = ref(!!props.live || !!props.initialOpen);
 const body = ref<HTMLElement | null>(null);
 
 watch(() => props.live, (live) => {
