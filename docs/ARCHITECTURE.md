@@ -216,8 +216,8 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | --- | --- | --- |
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
-| Binary (SQLite + embedded SPA) | < 30 MB | 20.6 MB (16.9 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 135 kB | 168.83 kB to open the chat (140.72 JS + 28.11 CSS) |
+| Binary (SQLite + embedded SPA) | < 30 MB | 20.7 MB (17.0 MB `-tags nosqlite`, Linux amd64) |
+| Frontend, on the wire | < 135 kB | 168.92 kB to open the chat (140.85 JS + 28.07 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
 
@@ -225,7 +225,20 @@ The 2026-09-24 stream handoff fix adds 0.03 kB of gzipped chat JavaScript;
 the CSS and separately loaded chunks are unchanged. The wire figures above
 and below include that change.
 
-Remeasured on 2026-09-24 (UTC), after the usage analytics (who uses which
+Remeasured again later on 2026-09-24 (UTC), when the terminal moved out of
+the backoffice into every account's menu. The first paint grew by 0.09 kB:
+the menu entry and its icon, the route, and the flag that decides whether to
+show it; the CSS shrank by 0.04 kB because the terminal's narrow-screen
+gutter went with the backoffice layout it belonged to. The terminal itself —
+7.31 kB — became a chunk of its own rather than landing on the first paint:
+every account may open it, but few ever will, so it is fetched by the reader
+who clicks it and by nobody else. That is the sixth file `test/bundle.test.ts`
+now expects. The backoffice chunk lost the same code and fell by 6.63 kB to
+72.51 kB. The binary grew by 37 kB with and without SQLite alike: the new
+commands, the group switch and its migration. Built with Go 1.27.1
+(20,676,768 bytes with SQLite; 16,969,888 without).
+
+Earlier the same day, after the usage analytics (who uses which
 model, a user × model cross-table, a weekday × hour heatmap) and a pass over
 the alignment of the backoffice's and the chat home's controls. Measured
 against the commit before that work, which was itself already 1.19 kB above
@@ -294,19 +307,20 @@ is whether this project's own code grows, not whether the framework does. It
 moved from 130 to 135 kB when the measured bundle reached 131.05 kB rather
 than leaving a target the shipped usage controls no longer met.
 
-The three pieces most people never need are still split off: the
-administration backoffice, the Chinese dictionary, and the LaTeX renderer.
+The four pieces most people never need are split off: the administration
+backoffice, the terminal, the Chinese dictionary, and the LaTeX renderer.
 What each reader actually downloads:
 
 | | gzipped |
 | --- | --- |
-| English, not an administrator | 168.83 kB |
-| Chinese, not an administrator | 197.60 kB |
-| …and a conversation containing a formula | 201.25 kB |
-| Chinese administrator, backoffice open | 276.74 kB |
+| English, not an administrator | 168.92 kB |
+| Chinese, not an administrator | 197.76 kB |
+| …and a conversation containing a formula | 201.41 kB |
+| Chinese administrator, backoffice open | 270.27 kB |
+| Anybody, once they open the terminal | +7.31 kB |
 
 Route-level splitting would shave the first paint further and is deliberately
-switched off for everything but the backoffice: /settings, /keys, /usage and
+switched off for everything but the backoffice and the terminal: /settings, /keys, /usage and
 /about are columns over a chat that is already on screen, so a chunk each buys
 a round trip in the middle of a click to defer bytes the reader was going to
 fetch anyway.

@@ -41,7 +41,7 @@
   - `POST /v1/images/generations`（图像生成）
   - `GET /v1/models` 与 `GET /v1/models/{id}`（模型列表与详情）
   - 支持工具调用（Tool Calling / Function Calling）的统一协议转换。
-- **管理工作台（Workbench）与控制台**：管理后台采用模块化工作台架构，提供清晰的分组导航、响应式选项卡与草稿自动暂存（`settingsDraft`）；后台内置全功能命令行控制台，覆盖所有管理端点与用户端点（包含 `user`、`group`、`model`、`health`、`chat`、`project`、`key`、`credit`、`pref`、`backup` 等命令），支持多标签页、双语 `help`、Tab 补全与 `--json` 输出；设置 `OBSIDIAN_SSH_ADDR` 后可通过 `ssh 管理员用户名@域名` 直接连接控制台（连上的是控制台，不是服务器 shell），并可作为单条命令被脚本调用。
+- **管理工作台（Workbench）与终端**：管理后台采用模块化工作台架构，提供清晰的分组导航、响应式选项卡与草稿自动暂存（`settingsDraft`）。右上角账户菜单里的**终端**是一个命令行界面，所有账号都能用（用户组可以关掉），每个人只能运行自己在页面上本来就能做的事：普通用户管理自己的资料、密钥、对话、项目、额度、反馈与生图记录，管理员另外获得其授权对应的全部后台命令（`user`、`group`、`model`、`health`、`usage` 等）。覆盖全部后台管理接口和账户侧所有可设置、可更改的接口，支持多标签页、双语 `help`、Tab 补全与 `--json` 输出；设置 `OBSIDIAN_SSH_ADDR` 后可通过 `ssh 用户名@域名` 直接连接（连上的是终端，不是服务器 shell），并可作为单条命令被脚本调用。
 - **服务健康与可用性监控**：实时记录运行时间与健康状态；对空闲模型进行定时探活；支持连续失败自动熔断与警告阈值（`health.warn_below`）；管理员可在系统设置中控制普通用户是否可见状态页面，对非管理员请求自动脱敏上游信息。
 - **图像实验室（Image Lab）**：支持图像生成模型调用、宽高比切换、灯箱缩放与图片下载；支持在后台独立标记模型的生图能力。
 - **用量核算与配额控制**：每次对话和 API 调用记录到用量账本；支持按 5 小时、周、月周期，针对请求次数、Token 消耗或积分设置限制；使用数据库行锁避免并发透支。
@@ -90,7 +90,7 @@ make docs
 | `OBSIDIAN_TRUST_PROXY` | `false` | 是否信任反向代理传递的 `X-Forwarded-For` 报头 |
 | `OBSIDIAN_PUBLIC_URL` | 空 | 站点公开访问地址（用于邮箱验证链接） |
 | `OBSIDIAN_SMTP_HOST` | 空 | SMTP 服务器地址（用于发送验证邮件） |
-| `OBSIDIAN_SSH_ADDR` | 空 | 控制台 SSH 监听地址（例如 `:2222`） |
+| `OBSIDIAN_SSH_ADDR` | 空 | 终端的 SSH 监听地址（例如 `:2222`） |
 
 #### Docker 部署
 
@@ -136,7 +136,7 @@ Online documentation is hosted on Cloudflare Pages:
   - `POST /v1/images/generations` (image generation)
   - `GET /v1/models` and `GET /v1/models/{id}` (model listings)
   - Unified tool calling and function calling format conversion.
-- **Admin Workbench & Console**: Modular administration workbench with categorized navigation, responsive tabs, and automatic form draft recovery (`settingsDraft`); embedded Web Terminal and SSH console covering both administrative endpoints and user-level self-service commands (`user`, `group`, `model`, `health`, `chat`, `project`, `key`, `credit`, `pref`, `backup`), with bilingual `help`, tab completion, and `--json` format. Setting `OBSIDIAN_SSH_ADDR` serves the same console over SSH (`ssh admin@host`), scriptable one command at a time.
+- **Admin Workbench & Terminal**: Modular administration workbench with categorized navigation, responsive tabs, and automatic form draft recovery (`settingsDraft`). The **Terminal** in the account menu is a command line every account can open (a group can switch it off), and it runs only what that account could already do on its own screens: an ordinary account manages its own profile, keys, conversations, projects, credit, feedback and image history, and an administrator also gets the backoffice commands their grants cover (`user`, `group`, `model`, `health`, `usage`, …). It covers every administrative endpoint and every account-side setting that can be changed, with bilingual `help`, tab completion, and `--json` output. Setting `OBSIDIAN_SSH_ADDR` serves the same terminal over SSH (`ssh user@host`), scriptable one command at a time.
 - **Uptime Monitoring and Circuit Breaking**: Uptime tracking and health status checks; automated periodic probe checks for idle models; automatic circuit breaking on consecutive upstream failures and warning thresholds (`health.warn_below`); configurable public visibility with credential stripping for non-admin requests.
 - **Image Lab**: Standalone image generation interface with aspect-ratio selection, lightbox zoom, and download controls; capability flags distinguish drawing models from text models.
 - **Usage Accounting and Rate Limits**: Per-turn usage recorded into an append-only ledger; supports request count, token, and credit limits across 5-hour, weekly, and monthly windows; row-level database locks prevent concurrent overdrafts.
@@ -150,11 +150,11 @@ Online documentation is hosted on Cloudflare Pages:
 
 | 指标 / Metric | 实测数据 / Measurement |
 | --- | --- |
-| 二进制体积 / Binary size | 20.6 MB（Linux amd64；使用 `-tags nosqlite` 为 16.9 MB） |
+| 二进制体积 / Binary size | 20.7 MB（Linux amd64；使用 `-tags nosqlite` 为 17.0 MB） |
 | 冷启动就绪时间 / Cold start | ~28 ms |
 | 空闲内存占用 / Idle RSS | ~16 MB |
 | 20 并发流式峰值 / Peak under 20 concurrency | ~54 MB 内存，11 个 OS 线程 |
-| 首次加载传输体积 / Wire payload | 打开对话界面传输 168.83 kB（140.72 kB JS + 28.11 kB CSS）；中文语言包 (28.77 kB)、管理后台 (79.14 kB)、公式渲染器 (3.65 kB) 按需分包加载 |
+| 首次加载传输体积 / Wire payload | 打开对话界面传输 168.92 kB（140.85 kB JS + 28.07 kB CSS）；中文语言包 (28.84 kB)、管理后台 (72.51 kB)、终端 (7.31 kB)、公式渲染器 (3.65 kB) 按需分包加载 |
 | 后台常驻协程 / Background goroutines | 1 个（10 分钟周期的系统清理协程） |
 | Go 直接依赖 / Direct Go dependencies | 3 个（SQLite 驱动、pgx、x/crypto） |
 | 前端运行时依赖 / Frontend runtime dependencies | 4 个（`vue`、`vue-router`、`@vueuse/core`、`lucide-vue-next`） |

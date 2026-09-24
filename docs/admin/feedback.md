@@ -72,3 +72,14 @@ feedback send --title "标题" --body "内容" [--kind idea] [--priority high]
 `feedback show` 会把整条会话按时间顺序打印出来，正文按 Markdown 原文显示——终端不是浏览器，而原文也正是你会粘回 issue 里的东西；每条回复前面带它自己的 id，`feedback reply delete` 要用的就是它。
 
 除 `feedback send` 外都需要 `feedback` 权限。`feedback send` 是以你自己的账号提交，和面板走同一个接口、同样的上限和校验，没有办法以别人的身份提交。
+
+提交反馈的人在自己的终端里也能跟进，和反馈面板一样，每个账号都能用：
+
+```
+feedback mine                       # 自己提交过的反馈，以及今天还能提交几条
+feedback thread <id>                # 查看一条反馈和全部回复，读过即标为已读
+feedback answer <id> --body "内容"   # 在自己的反馈下追加回复
+feedback unread                     # 有未读回复的反馈数
+```
+
+名字和管理员那一组不同是有意的：管理员在自己的反馈下回复，说话的身份是提交者，不是处理者，接口会分开记录。

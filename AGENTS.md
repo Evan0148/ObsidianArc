@@ -253,22 +253,23 @@ for a week. Do not write anything into the README that claims otherwise.
 change moves one of those numbers, re-measure and update it in the same change.
 They drifted to nearly double once because nobody re-ran the build.
 
-Current: 20.6 MB binary; 168.83 kB on the wire to open the chat, against a
+Current: 20.7 MB binary; 168.92 kB on the wire to open the chat, against a
 target of 135. The target used to be 80 and the figure used to be 59.5;
 adopting Vue moved both, and `docs/ARCHITECTURE.md` says so rather than
 quietly restating a target the build cannot meet.
 
-The backoffice, the Chinese dictionary and the LaTeX renderer are separate
-chunks, fetched only by the readers who need them — so a static import
-reaching into `views/admin/`, `i18n.zh` or `chat/math` from the main graph
-silently undoes one of those splits. `web/src/lib/format.ts` holds
+The backoffice, the terminal, the Chinese dictionary and the LaTeX renderer
+are separate chunks, fetched only by the readers who need them — so a static
+import reaching into `views/admin/`, `views/TerminalPanel.vue`, `terminal/`,
+`i18n.zh` or `chat/math` from the main graph silently undoes one of those
+splits. `web/src/lib/format.ts` holds
 `formatUptime` for exactly that reason: one import of one four-line helper
 used to pull the whole backoffice back into the main bundle.
 
-`test/bundle.test.ts` asserts the build produces exactly five files. Route-level
+`test/bundle.test.ts` asserts the build produces exactly six files. Route-level
 lazy loading produces a dozen and is switched off for everything but the
-backoffice; if that count changes, it should be because somebody decided it
-should.
+backoffice and the terminal; if that count changes, it should be because
+somebody decided it should.
 
 Responses are compressed by `httpx.Compress`, on an allowlist of content
 types. Adding `text/event-stream` to it would buffer streamed answers into

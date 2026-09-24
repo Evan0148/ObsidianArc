@@ -30,7 +30,7 @@ const sidebar = [
     { text: '公告与通知', link: '/admin/announcements' },
     { text: '用户反馈', link: '/admin/feedback' },
     { text: '第三方登录', link: '/admin/sign-in' },
-    { text: '管理控制台', link: '/admin/console' },
+    { text: '终端', link: '/admin/console' },
     { text: '备份与迁移', link: '/admin/backups-and-data' },
   ] },
   { text: 'API 参考', collapsed: false, items: [
