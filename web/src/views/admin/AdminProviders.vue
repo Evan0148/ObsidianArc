@@ -25,6 +25,7 @@ import { t, tn } from '@/composables/useI18n';
 import { IconCopy } from '@/icons';
 import { relativeTime } from '@/lib/format';
 import { canAdmin } from '@/stores/session';
+import { maskProvider, maskCredential } from '@/admin/safeMode';
 import AdminFailure from './AdminFailure.vue';
 import { reasoningLabel } from './reasoning-labels';
 import { useAdminView } from './adminView';
@@ -82,7 +83,7 @@ const addLabel = ref('');
 const columns = computed<Array<Column<Provider>>>(() => [
   { key: 'name', header: t('colName') },
   { key: 'type', header: t('colType'), width: '110px' },
-  { key: 'key', header: t('colKey'), text: (row) => row.api_key_hint || '—', secondary: true, width: '130px' },
+  { key: 'key', header: t('colKey'), text: (row) => row.api_key_hint ? maskCredential(row.api_key_hint) : '—', secondary: true, width: '130px' },
   { key: 'models', header: t('colModels'), text: (row) => String(row.model_count), numeric: true, width: '80px' },
   { key: 'state', header: t('colState'), width: '130px' },
   { key: 'updated', header: t('colUpdated'), text: (row) => relativeTime(row.updated_at), secondary: true, width: '110px' },
@@ -243,7 +244,7 @@ onMounted(load);
     @select="open($event)"
   >
     <template #cell-name="{ row }">
-      <OaCellStack :title="row.name" :sub="row.base_url" />
+      <OaCellStack :title="maskProvider(row.name)" :sub="maskProvider(row.base_url)" />
     </template>
     <template #cell-type="{ row }">
       <OaBadge tone="muted">
@@ -262,11 +263,11 @@ onMounted(load);
 
   <OaPanel
     v-if="panelOpen && meta"
-    :title="creating ? t('addProvider') : existing!.name"
+    :title="creating ? t('addProvider') : maskProvider(existing!.name)"
     :confirm-label="creating ? t('add') : t('save')"
     :destructive-label="existing ? t('deleteLabel') : undefined"
     :destructive-confirm="existing
-      ? tn(existing.model_count, 'confirmDeleteProviderOne', 'confirmDeleteProviderOther', { name: existing.name })
+      ? tn(existing.model_count, 'confirmDeleteProviderOne', 'confirmDeleteProviderOther', { name: maskProvider(existing.name) })
       : undefined"
     :busy="busy"
     :error="panelError"
@@ -311,7 +312,7 @@ onMounted(load);
     <OaTextField
       v-model="form.apiKey"
       :label="creating ? t('apiKey') : t('replaceAPIKey')"
-      :placeholder="creating ? 'sk-…' : t('apiKeyKeepHint', { hint: existing!.api_key_hint })"
+      :placeholder="creating ? 'sk-…' : t('apiKeyKeepHint', { hint: maskCredential(existing!.api_key_hint) })"
       :hint="t('apiKeyHint')"
       type="password"
     />

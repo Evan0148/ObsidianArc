@@ -41,6 +41,7 @@ import type { PageState } from '@/components/table-types';
 import { t } from '@/composables/useI18n';
 import { IconRefresh } from '@/icons';
 import { absoluteTime, relativeTime } from '@/lib/format';
+import { maskUser } from '@/admin/safeMode';
 import AdminFailure from './AdminFailure.vue';
 import { useAdminView } from './adminView';
 
@@ -271,7 +272,7 @@ function preview(body: string): string {
 }
 
 function authorOf(row: Feedback): string {
-  return row.nickname || row.username || row.user_id;
+  return maskUser(row.nickname || row.username || row.user_id);
 }
 
 onMounted(load);

@@ -32,6 +32,7 @@ import { celebrate } from '@/composables/useConfetti';
 import { t, tn, type StringKey } from '@/composables/useI18n';
 import { IconClose } from '@/icons';
 import { compactNumber, relativeTime, tokenFigure } from '@/lib/format';
+import { maskUser, maskProvider, maskBilling } from '@/admin/safeMode';
 import AdminFailure from './AdminFailure.vue';
 import CreditsField from './CreditsField.vue';
 import StatusBadge from './StatusBadge.vue';
@@ -453,9 +454,9 @@ const recordColumns = computed<Array<Column<UsageRecord>>>(() => [
   { key: 'when', header: t('colWhen'), text: (row) => relativeTime(row.started_at), width: '104px' },
   { key: 'user', header: t('colUser'), width: '180px' },
   { key: 'model', header: t('colModel'), width: '200px' },
-  { key: 'in', header: t('colIn'), text: (row) => tokenFigure(row.input_tokens, row.estimated), numeric: true, secondary: true, width: '84px' },
-  { key: 'out', header: t('colOut'), text: (row) => tokenFigure(row.output_tokens, row.estimated), numeric: true, secondary: true, width: '84px' },
-  { key: 'credits', header: t('colCredits'), text: (row) => compactNumber(row.credits), numeric: true, width: '88px' },
+  { key: 'in', header: t('colIn'), text: (row) => maskBilling(tokenFigure(row.input_tokens, row.estimated)), numeric: true, secondary: true, width: '84px' },
+  { key: 'out', header: t('colOut'), text: (row) => maskBilling(tokenFigure(row.output_tokens, row.estimated)), numeric: true, secondary: true, width: '84px' },
+  { key: 'credits', header: t('colCredits'), text: (row) => maskBilling(compactNumber(row.credits)), numeric: true, width: '88px' },
   { key: 'took', header: t('colTook'), text: (row) => formatDuration(row.duration_ms), numeric: true, secondary: true, width: '88px' },
   { key: 'status', header: t('colStatus'), width: '150px' },
 ]);
@@ -784,21 +785,21 @@ let savedCustomUntil = 0;
       </article>
       <article class="oa-kpi">
         <span class="oa-kpi-label">{{ t('statTokens') }}</span>
-        <strong class="oa-kpi-value" :title="figure(totals?.total_tokens).toLocaleString()">{{ compactNumber(figure(totals?.total_tokens)) }}</strong>
+        <strong class="oa-kpi-value" :title="figure(totals?.total_tokens).toLocaleString()">{{ maskBilling(compactNumber(figure(totals?.total_tokens))) }}</strong>
         <span v-if="tokenSplit.length" class="oa-kpi-split" aria-hidden="true">
           <span v-for="part in tokenSplit" :key="part.key" :class="part.key" :style="{ flexGrow: part.share }" />
         </span>
         <span class="oa-kpi-foot">
           <UsageDelta :current="figure(totals?.total_tokens)" :previous="previous?.total_tokens" />
-          <span v-if="tokenSplit.length">{{ tokenSplit.map((part) => `${part.label} ${compactNumber(part.value)}`).join(' · ') }}</span>
+          <span v-if="tokenSplit.length">{{ tokenSplit.map((part) => `${part.label} ${maskBilling(compactNumber(part.value))}`).join(' · ') }}</span>
         </span>
       </article>
       <article class="oa-kpi">
         <span class="oa-kpi-label">{{ t('statCredits') }}</span>
-        <strong class="oa-kpi-value" :title="figure(totals?.credits).toLocaleString()">{{ compactNumber(Math.round(figure(totals?.credits) * 100) / 100) }}</strong>
+        <strong class="oa-kpi-value" :title="figure(totals?.credits).toLocaleString()">{{ maskBilling(compactNumber(Math.round(figure(totals?.credits) * 100) / 100)) }}</strong>
         <span class="oa-kpi-foot">
           <UsageDelta :current="figure(totals?.credits)" :previous="previous?.credits" />
-          <span v-if="totals?.requests">{{ t('kpiPerRequest', { value: compactNumber(Math.round(figure(totals?.credits) / totals.requests * 100) / 100) }) }}</span>
+          <span v-if="totals?.requests">{{ t('kpiPerRequest', { value: maskBilling(compactNumber(Math.round(figure(totals?.credits) / totals.requests * 100) / 100)) }) }}</span>
         </span>
       </article>
       <!-- One account's page counts its models instead: "active accounts: 1"
@@ -937,10 +938,13 @@ let savedCustomUntil = 0;
         @page="changeRecords"
       >
         <template #cell-user="{ row }">
-          <OaCellStack :title="row.nickname || row.username || row.user_id" :sub="row.nickname && row.username ? `@${row.username}` : ''" />
+          <OaCellStack
+            :title="maskUser(row.nickname || row.username || row.user_id)"
+            :sub="row.nickname && row.username ? `@${maskUser(row.username)}` : ''"
+          />
         </template>
         <template #cell-model="{ row }">
-          <OaCellStack :title="row.model_name || '—'" :sub="row.provider_name" />
+          <OaCellStack :title="row.model_name || '—'" :sub="maskProvider(row.provider_name)" />
         </template>
         <template #cell-status="{ row }">
           <StatusBadge :status="row.status" :error-code="row.error_code" />

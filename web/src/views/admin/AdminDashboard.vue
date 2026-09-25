@@ -10,6 +10,7 @@ import { IconSpark, IconUsers, IconServer } from '@/icons';
 import { compactNumber, relativeTime, tokenFigure } from '@/lib/format';
 import { fold, type ChartShape } from '@/lib/chart';
 import { canAdmin } from '@/stores/session';
+import { maskUser, maskProvider, maskBilling } from '@/admin/safeMode';
 import AdminDashboardTrend from './AdminDashboardTrend.vue';
 import AdminFailure from './AdminFailure.vue';
 import StatusBadge from './StatusBadge.vue';
@@ -71,7 +72,9 @@ const rankedRows = computed(() => ranking.value === 'models' ? data.value?.top_m
 // than it was. "Where the load goes" is a question about tokens; what it
 // cost is still in the breakdown table underneath.
 const rankedSlices = computed(() => fold(rankedRows.value.map((row) => ({
-  key: row.key, label: row.label || row.key || '—', value: row.total_tokens,
+  key: row.key,
+  label: ranking.value === 'users' ? maskUser(row.label || row.key || '—') : (row.label || row.key || '—'),
+  value: row.total_tokens,
 })), 5, t('chartOther')));
 const rankedTotal = computed(() => rankedSlices.value.reduce((sum, row) => sum + row.value, 0));
 function share(value: number): string {
@@ -82,7 +85,7 @@ function rowOf(key: string): UsageBreakdown | undefined {
 }
 function rowNote(key: string): string {
   const row = rowOf(key);
-  return row ? t('dashboardRankNote', { requests: compactNumber(row.requests), credits: compactNumber(row.credits) }) : '';
+  return row ? t('dashboardRankNote', { requests: compactNumber(row.requests), credits: maskBilling(compactNumber(row.credits)) }) : '';
 }
 /** Under a model, how many people use it; under an account, how many models. */
 function rowReach(key: string): string {
@@ -155,19 +158,19 @@ let dashboardHeatMetric: 'requests' | 'total_tokens' = 'requests';
       </article>
       <article class="oa-dashboard-metric">
         <div class="oa-dashboard-metric-top"><span>{{ t('statTokens') }}</span><IconSpark :size="18" /></div>
-        <strong :title="data.last_24h.total_tokens.toLocaleString(locale)">{{ compactNumber(data.last_24h.total_tokens) }}</strong>
+        <strong :title="data.last_24h.total_tokens.toLocaleString(locale)">{{ maskBilling(compactNumber(data.last_24h.total_tokens)) }}</strong>
         <div class="oa-dashboard-metric-note oa-dashboard-token-split">
           <UsageDelta :current="data.last_24h.total_tokens" :previous="before?.total_tokens" />
-          <span><ArrowDownLeft :size="12" aria-hidden="true" />{{ compactNumber(data.last_24h.input_tokens) }}</span>
-          <span><ArrowUpLeft :size="12" aria-hidden="true" />{{ compactNumber(data.last_24h.output_tokens) }}</span>
+          <span><ArrowDownLeft :size="12" aria-hidden="true" />{{ maskBilling(compactNumber(data.last_24h.input_tokens)) }}</span>
+          <span><ArrowUpLeft :size="12" aria-hidden="true" />{{ maskBilling(compactNumber(data.last_24h.output_tokens)) }}</span>
         </div>
       </article>
       <article class="oa-dashboard-metric">
         <div class="oa-dashboard-metric-top"><span>{{ t('statCredits') }}</span><Coins :size="18" aria-hidden="true" /></div>
-        <strong :title="data.last_24h.credits.toLocaleString(locale)">{{ compactNumber(Math.round(data.last_24h.credits * 100) / 100) }}</strong>
+        <strong :title="data.last_24h.credits.toLocaleString(locale)">{{ maskBilling(compactNumber(Math.round(data.last_24h.credits * 100) / 100)) }}</strong>
         <div class="oa-dashboard-metric-note">
           <UsageDelta :current="data.last_24h.credits" :previous="before?.credits" />
-          <span>{{ t('dashboardWeeklyCredits', { value: compactNumber(Math.round(data.last_7d.credits)) }) }}</span>
+          <span>{{ t('dashboardWeeklyCredits', { value: maskBilling(compactNumber(Math.round(data.last_7d.credits))) }) }}</span>
         </div>
       </article>
       <article class="oa-dashboard-metric">
@@ -213,7 +216,7 @@ let dashboardHeatMetric: 'requests' | 'total_tokens' = 'requests';
           <li v-for="(row, index) in rankedSlices" :key="row.key || 'other'" :title="`${row.label} · ${rowNote(row.key)}`">
             <span class="oa-dashboard-rank-number">{{ String(index + 1).padStart(2, '0') }}</span>
             <div class="oa-dashboard-rank-main">
-              <div class="oa-dashboard-rank-label"><span>{{ row.label }}</span><strong :title="row.value.toLocaleString(locale)">{{ compactNumber(row.value) }}</strong></div>
+              <div class="oa-dashboard-rank-label"><span>{{ row.label }}</span><strong :title="row.value.toLocaleString(locale)">{{ maskBilling(compactNumber(row.value)) }}</strong></div>
               <div class="oa-dashboard-rank-bottom">
                 <span class="oa-dashboard-rank-track"><span :style="{ width: share(row.value) }" /></span>
                 <small>{{ share(row.value) }}</small>
@@ -228,7 +231,7 @@ let dashboardHeatMetric: 'requests' | 'total_tokens' = 'requests';
           <div class="oa-dashboard-table-wrap" tabindex="0" :aria-label="t('dashboardRankDetails')">
             <table class="oa-dashboard-table">
               <thead><tr><th>{{ ranking === 'models' ? t('colModel') : t('colUser') }}</th><th>{{ t('colRequests') }}</th><th>{{ t('colTokens') }}</th><th>{{ t('colCredits') }}</th></tr></thead>
-              <tbody><tr v-for="row in rankedRows" :key="row.key"><td>{{ row.label || row.key || '—' }}</td><td>{{ compactNumber(row.requests) }}</td><td>{{ compactNumber(row.total_tokens) }}</td><td>{{ exactCredits(row) }}</td></tr></tbody>
+              <tbody><tr v-for="row in rankedRows" :key="row.key"><td>{{ ranking === 'users' ? maskUser(row.label || row.key || '—') : (row.label || row.key || '—') }}</td><td>{{ compactNumber(row.requests) }}</td><td>{{ maskBilling(compactNumber(row.total_tokens)) }}</td><td>{{ maskBilling(exactCredits(row)) }}</td></tr></tbody>
             </table>
           </div>
         </details>
@@ -287,12 +290,12 @@ let dashboardHeatMetric: 'requests' | 'total_tokens' = 'requests';
             <tr v-for="row in data.recent" :key="row.id">
               <td>
                 <span class="oa-dashboard-user">
-                  <span class="oa-dashboard-avatar" aria-hidden="true">{{ initial(row.nickname || row.username || row.user_id) }}</span>
-                  <OaCellStack :title="row.nickname || row.username || row.user_id" :sub="row.nickname && row.username ? `@${row.username}` : ''" />
+                  <span class="oa-dashboard-avatar" aria-hidden="true">{{ maskUser(initial(row.nickname || row.username || row.user_id), '*') }}</span>
+                  <OaCellStack :title="maskUser(row.nickname || row.username || row.user_id)" :sub="row.nickname && row.username ? `@${maskUser(row.username)}` : ''" />
                 </span>
               </td>
-              <td><OaCellStack :title="row.model_name || '—'" :sub="row.provider_name" /></td>
-              <td class="oa-dashboard-numeric" :title="row.estimated ? t('tokensEstimatedHint') : row.total_tokens.toLocaleString(locale)">{{ tokenFigure(row.total_tokens, row.estimated) }}</td>
+              <td><OaCellStack :title="row.model_name || '—'" :sub="maskProvider(row.provider_name)" /></td>
+              <td class="oa-dashboard-numeric" :title="row.estimated ? t('tokensEstimatedHint') : row.total_tokens.toLocaleString(locale)">{{ maskBilling(tokenFigure(row.total_tokens, row.estimated)) }}</td>
               <td class="oa-dashboard-numeric">{{ formatDuration(row.duration_ms) }}</td>
               <td><StatusBadge :status="row.status" :error-code="row.error_code" /></td>
               <td class="oa-dashboard-when" :title="new Date(row.started_at).toLocaleString(locale)">{{ relativeTime(row.started_at) }}</td>

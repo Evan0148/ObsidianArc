@@ -30,6 +30,7 @@ import { copyToClipboard } from '@/chat/markdown';
 import { initials } from '@/lib/account';
 import { absoluteTime } from '@/lib/format';
 import { site } from '@/stores/session';
+import { maskUser, maskLog, maskCredential } from '@/admin/safeMode';
 import AdminFailure from './AdminFailure.vue';
 import { useAdminView } from './adminView';
 
@@ -723,7 +724,7 @@ onMounted(load);
         <div v-if="freshSecret" class="oa-app-secret">
           <span class="oa-app-secret-label">{{ t('applicationSecretOnce') }}</span>
           <button type="button" class="oa-app-secret-value mono" :title="t('copy')" @click="copy(freshSecret)">
-            <span>{{ freshSecret }}</span>
+            <span>{{ maskCredential(freshSecret) }}</span>
             <IconCheck v-if="copied === freshSecret" :size="13" />
             <IconCopy v-else :size="13" />
           </button>
@@ -766,10 +767,10 @@ onMounted(load);
               </div>
               <div class="oa-log-row-meta">
                 <span>{{ absoluteTime(event.at) }}</span>
-                <span v-if="event.username">@{{ event.username }}</span>
-                <span v-if="event.ip">{{ event.ip }}</span>
+                <span v-if="event.username">@{{ maskUser(event.username) }}</span>
+                <span v-if="event.ip">{{ maskLog(event.ip) }}</span>
                 <span v-if="event.actor_username">
-                  {{ t('securityLogActor', { name: `@${event.actor_username}` }) }}
+                  {{ t('securityLogActor', { name: `@${maskUser(event.actor_username)}` }) }}
                 </span>
               </div>
               <span v-if="event.reason" class="oa-field-hint">{{ event.reason }}</span>

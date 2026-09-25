@@ -26,6 +26,7 @@ import type { Choice } from '@/components/choice';
 import { RefreshCw } from 'lucide-vue-next';
 import { t, type StringKey } from '@/composables/useI18n';
 import { absoluteTime, relativeTime } from '@/lib/format';
+import { maskUser, maskLog } from '@/admin/safeMode';
 import AdminFailure from './AdminFailure.vue';
 import { useAdminView } from './adminView';
 
@@ -105,13 +106,16 @@ function listQuery(): string {
   return `?${params.toString()}`;
 }
 
-function withAny(options: LogOption[], anyLabel: string, fallbackValue?: string): Array<Choice<string>> {
+function withAny(options: LogOption[], anyLabel: string, fallbackValue?: string, maskFn?: (s: string) => string): Array<Choice<string>> {
   const choices: Array<Choice<string>> = [
     { value: '', label: anyLabel },
-    ...options.map((option) => ({ value: option.value, label: `${option.label} (${option.count})` })),
+    ...options.map((option) => ({
+      value: option.value,
+      label: `${maskFn ? maskFn(option.label) : option.label} (${option.count})`,
+    })),
   ];
   if (fallbackValue && !choices.some((c) => c.value === fallbackValue)) {
-    choices.push({ value: fallbackValue, label: fallbackValue });
+    choices.push({ value: fallbackValue, label: maskFn ? maskFn(fallbackValue) : fallbackValue });
   }
   return choices;
 }
@@ -186,13 +190,13 @@ const facts = computed<Array<[string, string]>>(() => {
     [t('logWhen'), absoluteTime(entry.at)],
     [t('logDuration'), `${entry.duration_ms} ms`],
     [t('logBytes'), String(entry.bytes)],
-    [t('logUser'), entry.username || t('logAnonymous')],
+    [t('logUser'), entry.username ? maskUser(entry.username) : t('logAnonymous')],
     [t('logChannel'), entry.channel || '—'],
     [t('logModel'), entry.model_name || '—'],
     [t('logErrorCode'), entry.error_code || '—'],
-    [t('logIP'), entry.ip || '—'],
+    [t('logIP'), entry.ip ? maskLog(entry.ip) : '—'],
     [t('logRequestID'), entry.request_id || '—'],
-    [t('logUserAgent'), entry.user_agent || '—'],
+    [t('logUserAgent'), entry.user_agent ? maskLog(entry.user_agent) : '—'],
   ];
 });
 
@@ -233,7 +237,7 @@ onMounted(reload);
           v-model="query.userID"
           searchable
           :label="t('logUser')"
-          :options="withAny(facets.users, t('logAnyUser'), query.userID)"
+          :options="withAny(facets.users, t('logAnyUser'), query.userID, maskUser)"
           @update:model-value="narrow"
         />
         <OaSelectField
@@ -313,7 +317,7 @@ onMounted(reload);
               <span class="oa-log-path">{{ entry.path }}</span>
               <span v-if="entry.error_code" class="oa-log-error">{{ entry.error_code }}</span>
             </span>
-            <span class="oa-log-cell" :class="{ quiet: !entry.username }">{{ entry.username || t('logAnonymous') }}</span>
+            <span class="oa-log-cell" :class="{ quiet: !entry.username }">{{ entry.username ? maskUser(entry.username) : t('logAnonymous') }}</span>
             <span class="oa-log-cell" :class="{ quiet: !entry.model_name }">{{ entry.model_name || '—' }}</span>
             <span class="oa-log-cell numeric">{{ entry.duration_ms }} ms</span>
             <span class="oa-log-cell numeric quiet" :title="absoluteTime(entry.at)">{{ relativeTime(entry.at) }}</span>

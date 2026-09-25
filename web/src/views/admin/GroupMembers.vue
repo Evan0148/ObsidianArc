@@ -11,6 +11,7 @@ import OaSelectField from '@/components/OaSelectField.vue';
 import OaTextField from '@/components/OaTextField.vue';
 import { t } from '@/composables/useI18n';
 import { absoluteTime } from '@/lib/format';
+import { maskUser } from '@/admin/safeMode';
 import ExpiryPresets from './ExpiryPresets.vue';
 
 const props = defineProps<{ group: Group; groups: Group[] }>();
@@ -38,8 +39,8 @@ const items = computed(() => accounts.value.map((account) => {
     : t('membershipPermanent');
   return {
     value: account.id,
-    label: account.nickname || account.username,
-    sub: `@${account.username} · ${groupName} · ${term}`,
+    label: maskUser(account.nickname || account.username),
+    sub: `@${maskUser(account.username)} · ${groupName} · ${term}`,
   };
 }));
 

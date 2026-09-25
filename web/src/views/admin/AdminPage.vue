@@ -43,6 +43,7 @@ import AdminSecurity from './AdminSecurity.vue';
 import AdminSettings from './AdminSettings.vue';
 import AdminAnnouncements from './AdminAnnouncements.vue';
 import AdminFeedback from './AdminFeedback.vue';
+import AdminSafeMode from './AdminSafeMode.vue';
 
 // Labels are looked up at render rather than stored, because this table is
 // evaluated at import time — before the language is known.
@@ -254,6 +255,10 @@ onMounted(() => {
         :label="t('backToChat')"
         @click="router.push('/')"
       ><IconChevron :size="16" /></OaIconButton>
+    </template>
+
+    <template #header>
+      <AdminSafeMode />
     </template>
 
     <div :ref="keepRail" class="oa-admin-rail">

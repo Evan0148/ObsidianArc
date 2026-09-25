@@ -29,6 +29,7 @@ import OaTierList from '@/components/OaTierList.vue';
 import type { ListItem } from '@/components/list-items';
 import type { Column } from '@/components/table-types';
 import { t, tn } from '@/composables/useI18n';
+import { maskProvider } from '@/admin/safeMode';
 import AdminFailure from './AdminFailure.vue';
 import CreditsField from './CreditsField.vue';
 import GroupMembers from './GroupMembers.vue';
@@ -80,7 +81,7 @@ const creating = computed(() => existing.value === null);
 const modelItems = computed<ListItem[]>(() => models.value.map((model) => ({
   value: model.id,
   label: model.display_name,
-  sub: `${model.provider_name} · ${model.model_id}`,
+  sub: `${maskProvider(model.provider_name)} · ${model.model_id}`,
 })));
 
 function windowLabel(kind: QuotaWindowKind): string {

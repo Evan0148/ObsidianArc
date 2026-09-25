@@ -13,6 +13,7 @@ import { t, tn } from '@/composables/useI18n';
 import { compactNumber, relativeTime } from '@/lib/format';
 import { formatDuration, percent } from './scale';
 import { metricOf, type BoardKind, type BoardMetric } from './shape';
+import { maskUser, maskProvider, maskBilling, isMasked } from '@/admin/safeMode';
 
 const props = withDefaults(defineProps<{
   rows: readonly UsageBreakdown[];
@@ -47,15 +48,22 @@ const shown = computed(() => expanded.value ? ranked.value : ranked.value.slice(
 
 function value(row: UsageBreakdown): string {
   const figure = metricOf(row, props.metric);
+  if (props.metric === 'credits' || props.metric === 'tokens') {
+    return maskBilling(compactNumber(figure));
+  }
   return props.metric === 'users' ? tn(figure, 'boardUsersOne', 'boardUsersOther', { count: figure }) : compactNumber(figure);
 }
 function share(row: UsageBreakdown): number {
   return total.value > 0 ? metricOf(row, props.metric) / total.value : 0;
 }
 function name(row: UsageBreakdown): string {
-  return row.label || row.key || '—';
+  const raw = row.label || row.key || '—';
+  if (props.kind === 'user') return maskUser(raw);
+  if (props.kind === 'provider') return maskProvider(raw);
+  return raw;
 }
 function initial(row: UsageBreakdown): string {
+  if (props.kind === 'user' && isMasked('users')) return '*';
   return Array.from(name(row))[0]?.toLocaleUpperCase() ?? '·';
 }
 
@@ -63,11 +71,11 @@ function initial(row: UsageBreakdown): string {
 function notes(row: UsageBreakdown): string[] {
   const out: string[] = [];
   if (props.kind === 'user') {
-    if (row.detail && row.detail !== row.label) out.push(`@${row.detail}`);
+    if (row.detail && row.detail !== row.label) out.push(`@${maskUser(row.detail)}`);
     if (props.favourites[row.key]) out.push(t('boardFavourite', { model: props.favourites[row.key]! }));
     else if (props.reach && row.models) out.push(tn(row.models, 'boardModelsOne', 'boardModelsOther', { count: row.models }));
   } else {
-    if (row.detail) out.push(row.detail);
+    if (row.detail) out.push(props.kind === 'provider' ? maskProvider(row.detail) : row.detail);
     if (props.reach && props.metric !== 'users' && row.users) out.push(tn(row.users, 'boardUsersOne', 'boardUsersOther', { count: row.users }));
   }
   if (props.metric !== 'requests') out.push(t('boardRequests', { count: compactNumber(row.requests) }));

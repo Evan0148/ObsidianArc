@@ -21,6 +21,7 @@ import { IconPulse, IconLock, IconSliders, IconTrash, IconUsers } from '@/icons'
 import OaNumberField from '@/components/OaNumberField.vue';
 import OaSwitchField from '@/components/OaSwitchField.vue';
 import { t } from '@/composables/useI18n';
+import { maskProvider } from '@/admin/safeMode';
 import AdminFailure from './AdminFailure.vue';
 import { useAdminView } from './adminView';
 
@@ -205,7 +206,7 @@ onMounted(load);
               {{ m.auto_disabled || m.status.state === 'down' ? t('uptimeOutage') : m.status.state === 'up' ? t('uptimeOperational') : t('uptimeNoData') }}
             </OaBadge>
           </div>
-          <p>{{ m.provider }}</p>
+          <p>{{ maskProvider(m.provider) }}</p>
           <div class="oa-health-model-value"><strong>{{ m.status.samples > 0 ? (m.status.uptime * 100).toFixed(1) + '%' : '—' }}</strong>
             <span>{{ m.status.samples }} {{ t('statRequests') }}</span></div>
           <div class="oa-health-meter" aria-hidden="true"><span :style="{ width: `${m.status.samples > 0 ? Math.min(100, Math.max(0, m.status.uptime * 100)) : 0}%` }" /></div>

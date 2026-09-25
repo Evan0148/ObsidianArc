@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import OaConfirmButton from '@/components/OaConfirmButton.vue';
 import OaMenu from '@/components/OaMenu.vue';
 import OaMenuItem from '@/components/OaMenuItem.vue';
@@ -55,6 +56,25 @@ watch(activeID, () => {
   window.clearTimeout(timer);
   timer = window.setTimeout(() => { switched.value = false; }, 400);
 });
+
+let route: ReturnType<typeof useRoute> | undefined;
+let router: ReturnType<typeof useRouter> | undefined;
+try {
+  route = useRoute();
+  router = useRouter();
+} catch {
+  // outside router context in tests
+}
+
+function onSelectConversation(id: string): void {
+  void openConversation(id);
+  if (route?.path === '/terminal') void router?.push('/');
+}
+
+function onNewChat(): void {
+  startNewConversation();
+  if (route?.path === '/terminal') void router?.push('/');
+}
 </script>
 
 <template>
@@ -91,7 +111,7 @@ watch(activeID, () => {
           class="ai-history-new-btn"
           :title="t('newChat')"
           :aria-label="t('newChat')"
-          @click="startNewConversation"
+          @click="onNewChat"
         >
           <IconPlus :size="16" />
         </button>
@@ -113,7 +133,7 @@ watch(activeID, () => {
           <button
             type="button"
             class="ai-chat-list-open"
-            @click="openConversation(conversation.id)"
+            @click="onSelectConversation(conversation.id)"
             @dblclick="rename(conversation)"
           >
             <span class="ai-chat-list-title">{{ conversation.title || t('newChat') }}</span>

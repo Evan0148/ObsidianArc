@@ -22,19 +22,13 @@ import { fetchConsoleSpec, type ConsoleSpec } from '@/api/console';
 import OaIconButton from '@/components/OaIconButton.vue';
 import OaPanel from '@/components/OaPanel.vue';
 import { t } from '@/composables/useI18n';
-import { IconClose, IconCollapse, IconExpand, IconGear, IconPlus } from '@/icons';
+import { IconClose, IconGear, IconPlus } from '@/icons';
 import { loadTerminalPrefs, saveTerminalPrefs, terminalCSSVariables, type TerminalPrefs } from '@/terminal/prefs';
 import { createTerminalSession, type TerminalSession } from '@/terminal/session';
 import TerminalPane from '@/terminal/TerminalPane.vue';
 import TerminalSettings from '@/terminal/TerminalSettings.vue';
 
 const router = useRouter();
-const panel = ref<InstanceType<typeof OaPanel> | null>(null);
-const fullscreen = ref(false);
-
-function toggleFullscreen(): void {
-  fullscreen.value = panel.value?.toggleFullscreen() ?? false;
-}
 
 interface TerminalTab {
   id: string;
@@ -213,23 +207,13 @@ onBeforeUnmount(() => {
   <!-- The widest a panel may be dragged, since a terminal is only useful when
        a line fits; full screen is one button away for anything wider. -->
   <OaPanel
-    ref="panel"
+    class="oa-terminal-panel"
     :title="t('navTerminal')"
     :footer="false"
     :width="720"
     body-class="oa-terminal-body"
     @close="router.replace('/')"
   >
-    <template #actions>
-      <OaIconButton
-        class="oa-icon-btn"
-        :label="t(fullscreen ? 'exitFullscreen' : 'fullscreen')"
-        @click="toggleFullscreen"
-      >
-        <IconCollapse v-if="fullscreen" :size="16" />
-        <IconExpand v-else :size="16" />
-      </OaIconButton>
-    </template>
 
     <div class="oa-terminal" :style="cssVars">
       <div class="oa-terminal-tabstrip">

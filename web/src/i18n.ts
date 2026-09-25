@@ -1665,6 +1665,24 @@ const en = {
   feedbackFrom: 'From {name}',
   feedbackViewAuthor: 'Open this account',
 
+  safeMode: 'Safe Mode',
+  safeModeActive: 'Safe Mode: On (sensitive info masked)',
+  safeModeInactive: 'Safe Mode: Off (click to mask sensitive info)',
+  safeModeHint: 'Mask sensitive backoffice data (turns into ******) for screen sharing or recordings.',
+  safeModeWhatToMask: 'Masking Options',
+  safeModeCategoryUsers: 'User Information',
+  safeModeCategoryUsersHint: 'Usernames, emails, QQ, avatars, and UIDs',
+  safeModeCategoryProviders: 'Provider Information',
+  safeModeCategoryProvidersHint: 'Provider names, endpoints, and Base URLs',
+  safeModeCategoryCredentials: 'Keys & Credentials',
+  safeModeCategoryCredentialsHint: 'API keys, redemption codes, and system secrets',
+  safeModeCategoryBilling: 'Usage & Billing',
+  safeModeCategoryBillingHint: 'Tokens, credits, and spend metrics',
+  safeModeCategoryLogs: 'Logs & Network',
+  safeModeCategoryLogsHint: 'Client IP addresses, user agents, and audit logs',
+  safeModeSelectAll: 'Select all',
+  safeModeClearAll: 'Clear all',
+  safeModeStatusActive: 'Active ({count}/{total})',
 } as const;
 
 export type StringKey = keyof typeof en;

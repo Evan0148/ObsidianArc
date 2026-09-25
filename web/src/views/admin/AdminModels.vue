@@ -35,6 +35,7 @@ import { t } from '@/composables/useI18n';
 import { IconCheck, IconCopy } from '@/icons';
 import { compactNumber } from '@/lib/format';
 import { canAdmin } from '@/stores/session';
+import { maskProvider } from '@/admin/safeMode';
 import AdminFailure from './AdminFailure.vue';
 import ReasoningTiers from './ReasoningTiers.vue';
 import { reasoningLabel } from './reasoning-labels';
@@ -134,7 +135,7 @@ const columns = computed<Array<Column<AdminModel>>>(() => [
   {
     key: 'provider',
     header: t('colProvider'),
-    text: (row) => row.provider_name,
+    text: (row) => maskProvider(row.provider_name),
     secondary: true,
     width: '130px',
     // The provider first, then the name, so the models of one provider arrive

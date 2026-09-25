@@ -5,7 +5,8 @@
 // side panel arrives — so /settings and /keys narrow the conversation rather
 // than covering it.
 
-import { nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { useResizeObserver } from '@vueuse/core';
 import OaIconButton from '@/components/OaIconButton.vue';
 import OaScrollArea from '@/components/OaScrollArea.vue';
@@ -27,6 +28,14 @@ import { currentUser, isAdmin } from '@/stores/session';
 // hand-written buttons so the strip cannot drift out of step with the store
 // that holds which one is chosen.
 const MODES: Mode[] = ['chat', 'work'];
+
+let route: ReturnType<typeof useRoute> | undefined;
+try {
+  route = useRoute();
+} catch {
+  // outside router context in tests
+}
+const isTerminal = computed(() => route?.path === '/terminal');
 
 const emit = defineEmits<{ (event: 'open-setup'): void }>();
 
@@ -160,7 +169,14 @@ defineExpose({ focus: () => composer.value?.focus() });
 <template>
   <ChatSidebar />
 
-  <div class="ai-chat-main" @dragenter="onDragOver" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
+  <div
+    v-show="!isTerminal"
+    class="ai-chat-main"
+    @dragenter="onDragOver"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDrop"
+  >
     <!-- The wide skin hides this bar in favour of the workspace header; it is
          the navigation on a narrow screen, where the rail is an overlay. -->
     <div class="ai-chat-bar">

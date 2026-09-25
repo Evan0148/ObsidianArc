@@ -38,6 +38,7 @@ import { t, tn } from '@/composables/useI18n';
 import { IconTrash } from '@/icons';
 import { absoluteTime, compactNumber, relativeTime } from '@/lib/format';
 import { currentUser, canAdmin, isSuperAdmin } from '@/stores/session';
+import { maskUser, maskLog, maskBilling, maskCredential } from '@/admin/safeMode';
 import AdminFailure from './AdminFailure.vue';
 import CreditsField from './CreditsField.vue';
 import ExpiryPresets from './ExpiryPresets.vue';
@@ -70,7 +71,7 @@ const filters = ref({ ...state });
 const columns = computed<Array<Column<Account>>>(() => [
   // No width: the name is the column that takes what the others leave.
   { key: 'account', header: t('colAccount') },
-  { key: 'email', header: t('colEmail'), text: (row) => row.email || '—', secondary: true, width: '160px' },
+  { key: 'email', header: t('colEmail'), text: (row) => row.email ? maskUser(row.email) : '—', secondary: true, width: '160px' },
   { key: 'group', header: t('colGroup'), text: (row) => groupName(row.group_id), width: '120px' },
   { key: 'role', header: t('colRole'), width: '120px' },
   { key: 'seen', header: t('colLastSeen'), text: (row) => relativeTime(row.last_active_at || row.last_login_at), secondary: true, width: '110px' },
@@ -227,9 +228,9 @@ const summaryStats = computed<Stat[]>(() => {
   const row = account.value;
   if (!totals || !row) return [];
   return [
-    { label: t('statRequests'), value: compactNumber(totals.requests), note: t('lifetimeAllTime') },
-    { label: t('statTokens'), value: compactNumber(totals.total_tokens) },
-    { label: t('statCredits'), value: compactNumber(totals.credits) },
+    { label: t('statRequests'), value: maskBilling(compactNumber(totals.requests)), note: t('lifetimeAllTime') },
+    { label: t('statTokens'), value: maskBilling(compactNumber(totals.total_tokens)) },
+    { label: t('statCredits'), value: maskBilling(compactNumber(totals.credits)) },
     {
       label: t('joined'),
       value: new Date(row.created_at).toLocaleDateString(),
@@ -251,14 +252,14 @@ const identity = computed<Array<[string, string, boolean]>>(() => {
   const row = account.value;
   if (!row) return [];
   const rows: Array<[string, string, boolean]> = [
-    [t('colUID'), row.id, true],
+    [t('colUID'), maskUser(row.id), true],
     [t('colRegistered'), absoluteTime(row.created_at), false],
     [t('colLastSeen'), (row.last_active_at || row.last_login_at) ? absoluteTime(row.last_active_at || row.last_login_at) : t('neverSignedIn'), false],
   ];
   // Only where it was recorded: accounts predating the column have none, and
   // an empty row reads as a missing value rather than an absent one.
-  if (row.signup_ip) rows.push([t('colSignupIP'), row.signup_ip, true]);
-  if (row.signup_user_agent) rows.push([t('registrationUserAgent'), row.signup_user_agent, true]);
+  if (row.signup_ip) rows.push([t('colSignupIP'), maskLog(row.signup_ip), true]);
+  if (row.signup_user_agent) rows.push([t('registrationUserAgent'), maskLog(row.signup_user_agent), true]);
   return rows;
 });
 
@@ -581,10 +582,11 @@ const panelTitle = computed(() => {
   if (mode.value === 'transcript') return transcriptTitle.value;
   const row = account.value;
   if (!row) return '';
+  const name = maskUser(row.nickname || row.username);
   if (mode.value === 'conversations') {
-    return t('someonesConversations', { name: row.nickname || row.username });
+    return t('someonesConversations', { name });
   }
-  return row.nickname || row.username;
+  return name;
 });
 
 async function load(): Promise<void> {
@@ -661,8 +663,8 @@ const state = { q: '', role: '', status: '', group: '' };
     >
       <template #cell-account="{ row }">
         <OaCellStack
-          :title="row.nickname || row.username"
-          :sub="row.qq ? `@${row.username} · QQ ${row.qq}` : `@${row.username}`"
+          :title="maskUser(row.nickname || row.username)"
+          :sub="row.qq ? `@${maskUser(row.username)} · QQ ${maskUser(row.qq)}` : `@${maskUser(row.username)}`"
         />
       </template>
       <template #cell-role="{ row }">
@@ -685,7 +687,7 @@ const state = { q: '', role: '', status: '', group: '' };
     :confirm-label="t('save')"
     :destructive-label="mode === 'account' && !self ? t('deleteLabel') : undefined"
     :destructive-confirm="mode === 'account' && !self
-      ? t('confirmDeleteUser', { name: account.username })
+      ? t('confirmDeleteUser', { name: maskUser(account.username) })
       : undefined"
     :back="mode !== 'account'"
     :busy="busy || loadingDetail"
@@ -949,7 +951,7 @@ const state = { q: '', role: '', status: '', group: '' };
               >{{ t('keyExpired') }}</OaBadge>
             </div>
             <div class="oa-key-meta">
-              <code class="oa-key-prefix">{{ key.prefix }}…</code>
+              <code class="oa-key-prefix">{{ maskCredential(key.prefix) }}…</code>
               <span>
                 {{ key.expires_at
                   ? t('keyExpiresAt', { when: absoluteTime(key.expires_at) })

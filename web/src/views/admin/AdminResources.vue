@@ -18,6 +18,7 @@ import OaTable from '@/components/OaTable.vue';
 import type { Column, SortState } from '@/components/table-types';
 import type { Stat } from '@/components/stat';
 import { t } from '@/composables/useI18n';
+import { maskUser } from '@/admin/safeMode';
 import { formatBytes } from '@/lib/format';
 import AdminFailure from './AdminFailure.vue';
 import { useAdminView } from './adminView';
@@ -71,7 +72,7 @@ const cpuStats = computed<Stat[]>(() => {
 });
 
 const columns = computed<Array<Column<UserStorage>>>(() => [
-  { key: 'account', header: t('colAccount'), text: (row) => row.name },
+  { key: 'account', header: t('colAccount'), text: (row) => maskUser(row.name) },
   { key: 'files', header: t('resFiles'), text: (row) => String(row.count), numeric: true, width: '90px' },
   {
     key: 'held',

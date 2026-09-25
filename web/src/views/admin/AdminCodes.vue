@@ -21,6 +21,7 @@ import OaTextField from '@/components/OaTextField.vue';
 import type { Column } from '@/components/table-types';
 import { t } from '@/composables/useI18n';
 import { relativeTime } from '@/lib/format';
+import { maskCredential, maskUser } from '@/admin/safeMode';
 import AdminFailure from './AdminFailure.vue';
 import { useAdminView } from './adminView';
 
@@ -86,7 +87,7 @@ const form = ref({
 const creating = computed(() => existing.value === null);
 
 const columns = computed<Array<Column<RedemptionCode>>>(() => [
-  { key: 'code', header: t('colCode') },
+  { key: 'code', header: t('colCode'), text: (row) => maskCredential(row.code) },
   {
     key: 'claimed',
     header: t('colClaimed'),
@@ -239,11 +240,11 @@ onMounted(load);
 
   <OaPanel
     v-if="panelOpen"
-    :title="minted ? t('codesMinted', { count: minted.length }) : creating ? t('addCode') : existing!.code"
+    :title="minted ? t('codesMinted', { count: minted.length }) : creating ? t('addCode') : maskCredential(existing!.code)"
     :footer="creating && !minted"
     :confirm-label="t('add')"
     :destructive-label="existing ? t('deleteLabel') : undefined"
-    :destructive-confirm="existing ? t('confirmDeleteCode', { code: existing.code }) : undefined"
+    :destructive-confirm="existing ? t('confirmDeleteCode', { code: maskCredential(existing.code) }) : undefined"
     :busy="busy"
     :error="panelError"
     @close="panelOpen = false"
@@ -257,7 +258,7 @@ onMounted(load);
         {{ copyLabel || t('copyAll') }}
       </button>
       <div class="oa-code-list">
-        <code v-for="entry in minted" :key="entry.id" class="oa-code-line">{{ entry.code }}</code>
+        <code v-for="entry in minted" :key="entry.id" class="oa-code-line">{{ maskCredential(entry.code) }}</code>
       </div>
     </template>
 
@@ -272,8 +273,8 @@ onMounted(load);
       <div v-else class="oa-card-list">
         <div v-for="redemption in redemptions" :key="redemption.user_id" class="oa-card-row">
           <OaCellStack
-            :title="redemption.nickname || redemption.username"
-            :sub="`@${redemption.username}`"
+            :title="maskUser(redemption.nickname || redemption.username)"
+            :sub="`@${maskUser(redemption.username)}`"
           />
           <span class="oa-card-expiry">{{ relativeTime(redemption.redeemed_at) }}</span>
         </div>
