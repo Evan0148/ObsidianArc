@@ -693,6 +693,12 @@
   gap: 6px;
 }
 
+.oa-card-head .oa-drawer-subhead,
+.oa-usage-head .oa-drawer-subhead {
+  margin: 0;
+  line-height: 18px;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .oa-icon-btn .is-refreshing {
     animation: ai-chat-spin 1s linear infinite;
@@ -741,7 +747,8 @@
 /* Beside the section name rather than over the list: it is the answer to the
    question that opened the section, so it belongs in the heading. */
 .oa-card-total {
-  margin-left: 8px;
+  margin: 0;
+  line-height: 18px;
   color: var(--ai-text-secondary);
   font-size: 12px;
 }
