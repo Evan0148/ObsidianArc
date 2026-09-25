@@ -32,6 +32,9 @@ type Session struct {
 	// Password proved, code not yet. Attach does not treat a session like
 	// this as signed in; only the second step reads it.
 	TwoFactorPending bool
+	// When this session last proved a code for the backoffice, or last used
+	// the backoffice after proving one; zero when it has not, or has left.
+	BackofficeAt int64
 }
 
 var ErrSessionNotFound = errors.New("auth: session not found")
@@ -111,11 +114,12 @@ func (s *SessionStore) GetWithUser(ctx context.Context, token string) (Session, 
 	var record Session
 	account, err := user.ScanRow(scanBoth{s.db.QueryRow(ctx,
 		`SELECT s.id, s.user_id, s.created_at, s.expires_at, s.last_seen_at, s.ip, s.user_agent,
-		 s.two_factor_pending, `+
+		 s.two_factor_pending, s.backoffice_at, `+
 			user.JoinColumns("u")+
 			` FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ?`, key),
 		[]any{&record.ID, &record.UserID, &record.CreatedAt, &record.ExpiresAt,
-			&record.LastSeenAt, &record.IP, &record.UserAgent, &record.TwoFactorPending}})
+			&record.LastSeenAt, &record.IP, &record.UserAgent, &record.TwoFactorPending,
+			&record.BackofficeAt}})
 	if err != nil {
 		if database.IsNotFound(err) || errors.Is(err, user.ErrNotFound) {
 			return Session{}, user.User{}, ErrSessionNotFound
@@ -152,6 +156,15 @@ func (s *SessionStore) Touch(ctx context.Context, sessionID string, ttl time.Dur
 		now.UnixMilli(), now.Add(ttl).UnixMilli(), sessionID)
 	if err != nil {
 		return fmt.Errorf("auth: touch session: %w", err)
+	}
+	return nil
+}
+
+// SetBackofficeAt records, or with zero clears, this session's entry to the
+// backoffice.
+func (s *SessionStore) SetBackofficeAt(ctx context.Context, sessionID string, at int64) error {
+	if _, err := s.db.Exec(ctx, `UPDATE sessions SET backoffice_at = ? WHERE id = ?`, at, sessionID); err != nil {
+		return fmt.Errorf("auth: record backoffice entry: %w", err)
 	}
 	return nil
 }

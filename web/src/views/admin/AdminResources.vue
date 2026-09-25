@@ -18,7 +18,7 @@ import OaTable from '@/components/OaTable.vue';
 import type { Column, SortState } from '@/components/table-types';
 import type { Stat } from '@/components/stat';
 import { t } from '@/composables/useI18n';
-import { maskUser } from '@/admin/safeMode';
+import { isMasked, maskUser } from '@/admin/safeMode';
 import { formatBytes } from '@/lib/format';
 import AdminFailure from './AdminFailure.vue';
 import { useAdminView } from './adminView';
@@ -140,7 +140,7 @@ onMounted(load);
         </div>
         <p class="oa-field-hint">{{ t('resDiscardedNote') }}</p>
         <OaTable :columns="columns" :rows="snapshot.storage.by_user" :empty="t('resNoFiles')" :sort="sort" @sort="sort = $event">
-          <template #cell-account="{ row }"><div class="oa-resource-account"><span class="oa-resource-avatar" aria-hidden="true">{{ Array.from(row.name)[0]?.toUpperCase() || '—' }}</span><span>{{ row.name }}</span></div></template>
+          <template #cell-account="{ row }"><div class="oa-resource-account"><span class="oa-resource-avatar" aria-hidden="true">{{ isMasked('users') ? '*' : (Array.from(row.name)[0]?.toUpperCase() || '—') }}</span><span>{{ maskUser(row.name) }}</span></div></template>
           <template #cell-held="{ row }"><div class="oa-resource-share"><span>{{ formatBytes(row.bytes) }}</span>
             <div class="oa-health-meter" :title="t('controlStorageShare')" aria-hidden="true"><span :style="{ width: `${snapshot.storage.held_bytes > 0 ? Math.min(100, row.bytes / snapshot.storage.held_bytes * 100) : 0}%` }" /></div></div></template>
         </OaTable>

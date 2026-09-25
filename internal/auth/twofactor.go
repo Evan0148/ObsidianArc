@@ -9,10 +9,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/database"
@@ -111,7 +113,8 @@ func (s *Service) TwoFactorMandatory(account user.User) bool {
 	case settings.TwoFactorAdmins, settings.TwoFactorBackoffice:
 		return account.IsAdmin()
 	}
-	return false
+	// A code on every entry to the backoffice needs a factor to take it from.
+	return account.IsAdmin() && s.BackofficeVerifyOn()
 }
 
 // MustEnrolTwoFactor reports whether this account may do nothing until it
@@ -130,10 +133,170 @@ func (s *Service) MustEnrolTwoFactor(account user.User) bool {
 }
 
 // BackofficeNeedsTwoFactor reports whether the backoffice refuses this
-// account until it enrols. Every level above optional includes it.
+// account until it enrols. Every level above optional includes it, and so
+// does asking for a code on every entry — there is nothing to ask for until
+// the administrator has a factor.
 func (s *Service) BackofficeNeedsTwoFactor(account user.User) bool {
 	return account.IsAdmin() && !account.TwoFactorEnabled() &&
-		s.TwoFactorPolicy() != settings.TwoFactorOptional
+		(s.TwoFactorPolicy() != settings.TwoFactorOptional || s.BackofficeVerifyOn())
+}
+
+// --- a code at the backoffice's door ------------------------------------------
+//
+// Signing in proves who somebody is; this proves they are still the one at
+// the keyboard when they reach for the pages and commands that can change
+// everybody else's account. How often it asks is the operator's mode:
+//
+//   visit     every visit — leaving ends it, and so do the idle minutes
+//   idle      working keeps it open; the idle minutes close it
+//   interval  one code is good for the minutes after it, whatever happens
+//
+// A visit is held by whatever made the request. A browser session holds it
+// in the database, shared by the backoffice pages, the web terminal and the
+// chat's tools, because those are one person at one browser. An SSH
+// connection holds its own in memory and loses it when it hangs up. Anything
+// that holds neither is refused: a request nobody can prove a code for is
+// not one that has proved one.
+
+// BackofficeVerifyMode is the operator's mode, off for anything unknown for
+// the reason TwoFactorPolicy gives.
+func (s *Service) BackofficeVerifyMode() string {
+	mode := s.settings.Get(settings.TwoFactorBackofficeMode)
+	if !settings.ValidBackofficeVerifyMode(mode) {
+		return settings.BackofficeVerifyOff
+	}
+	return mode
+}
+
+// BackofficeVerifyOn reports whether the backoffice asks for a code of its own.
+func (s *Service) BackofficeVerifyOn() bool {
+	return s.BackofficeVerifyMode() != settings.BackofficeVerifyOff
+}
+
+// BackofficeVerifies reports whether that applies to this account.
+func (s *Service) BackofficeVerifies(account user.User) bool {
+	return account.IsAdmin() && s.BackofficeVerifyOn()
+}
+
+// BackofficeMinutes is how long the mode's clock runs.
+func (s *Service) BackofficeMinutes() int {
+	minutes := s.settings.Int(settings.TwoFactorBackofficeMinutes, 15)
+	return min(max(minutes, 1), settings.MaxTwoFactorBackofficeMinutes)
+}
+
+// backofficeGrant is a visit held by an SSH connection. In memory because it
+// is exactly as durable as the connection holding it.
+type backofficeGrant struct {
+	mu sync.Mutex
+	at int64
+}
+
+type backofficeGrantKey struct{}
+
+// WithBackofficeGrant gives a context — one SSH connection's — a visit of its
+// own to hold, starting closed.
+func WithBackofficeGrant(ctx context.Context) context.Context {
+	return context.WithValue(ctx, backofficeGrantKey{}, &backofficeGrant{})
+}
+
+func grantFrom(ctx context.Context) (*backofficeGrant, bool) {
+	grant, ok := ctx.Value(backofficeGrantKey{}).(*backofficeGrant)
+	return grant, ok
+}
+
+// backofficeAt is when the visit this request belongs to was last proved or,
+// in the sliding modes, last used. False when nothing in the request can hold
+// a visit at all.
+func backofficeAt(ctx context.Context) (int64, bool) {
+	if session, ok := SessionFrom(ctx); ok {
+		return session.BackofficeAt, true
+	}
+	if grant, ok := grantFrom(ctx); ok {
+		grant.mu.Lock()
+		defer grant.mu.Unlock()
+		return grant.at, true
+	}
+	return 0, false
+}
+
+// BackofficeLocked reports whether this request has to prove a code before
+// the backoffice will answer it.
+func (s *Service) BackofficeLocked(ctx context.Context, account user.User) bool {
+	// Without a factor there is no code to ask for; BackofficeNeedsTwoFactor
+	// refuses such an administrator before this is reached.
+	if !s.BackofficeVerifies(account) || !account.TwoFactorEnabled() {
+		return false
+	}
+	at, ok := backofficeAt(ctx)
+	if !ok {
+		return true
+	}
+	return time.Since(time.UnixMilli(at)) > time.Duration(s.BackofficeMinutes())*time.Minute
+}
+
+// KeepBackofficeOpen slides a visit forward while it is being used, in the
+// two modes whose minutes count idleness. At most every half minute for a
+// browser session: a page of the backoffice makes several requests at once,
+// and each would otherwise be a write.
+func (s *Service) KeepBackofficeOpen(ctx context.Context, account user.User) {
+	if !s.BackofficeVerifies(account) || s.BackofficeVerifyMode() == settings.BackofficeVerifyInterval {
+		return
+	}
+	now := time.Now()
+	if session, ok := SessionFrom(ctx); ok {
+		if session.BackofficeAt == 0 || now.Sub(time.UnixMilli(session.BackofficeAt)) < 30*time.Second {
+			return
+		}
+		if err := s.sessions.SetBackofficeAt(ctx, session.ID, now.UnixMilli()); err != nil {
+			slog.WarnContext(ctx, "could not extend a backoffice visit", "error", err)
+		}
+		return
+	}
+	if grant, ok := grantFrom(ctx); ok {
+		grant.mu.Lock()
+		if grant.at != 0 {
+			grant.at = now.UnixMilli()
+		}
+		grant.mu.Unlock()
+	}
+}
+
+// ErrNoBackofficeVisit is EnterBackoffice's answer for a request that has
+// nothing to hold a visit in.
+var ErrNoBackofficeVisit = errors.New("auth: this request cannot hold a backoffice visit")
+
+// EnterBackoffice takes a code for the visit this request belongs to. Same
+// secret, same replay guard, same guessing budget as signing in.
+func (s *Service) EnterBackoffice(ctx context.Context, account user.User, code, ip string) error {
+	if !account.TwoFactorEnabled() {
+		return ErrTwoFactorDisabled
+	}
+	session, hasSession := SessionFrom(ctx)
+	grant, hasGrant := grantFrom(ctx)
+	if !hasSession && !hasGrant {
+		return ErrNoBackofficeVisit
+	}
+	if err := s.spendCode(ctx, account, code, ip); err != nil {
+		return err
+	}
+	now := time.Now().UnixMilli()
+	if hasSession {
+		return s.sessions.SetBackofficeAt(ctx, session.ID, now)
+	}
+	grant.mu.Lock()
+	grant.at = now
+	grant.mu.Unlock()
+	return nil
+}
+
+// LeaveBackoffice ends this browser session's visit — in the one mode where
+// leaving is what ends a visit. In the others coming and going is free, so
+// the page can say it is leaving whatever the mode and this decides.
+func (s *Service) LeaveBackoffice(ctx context.Context, session Session) error {
+	if session.BackofficeAt == 0 || s.BackofficeVerifyMode() != settings.BackofficeVerifyVisit {
+		return nil
+	}
+	return s.sessions.SetBackofficeAt(ctx, session.ID, 0)
 }
 
 // TwoFactorAvailable is false only on a build wired without an instance
@@ -289,7 +452,7 @@ func (s *Service) BeginTwoFactor(ctx context.Context, account user.User) (TwoFac
 // Every other session on the account is signed out: none of them proved the
 // second factor, and a stolen one should not outlive the lock that was just
 // fitted because somebody suspected it.
-func (s *Service) EnableTwoFactor(ctx context.Context, userID, code, keepSessionID string) ([]string, user.User, error) {
+func (s *Service) EnableTwoFactor(ctx context.Context, userID, code, keepSessionID, ip string) ([]string, user.User, error) {
 	if !s.TwoFactorAvailable() {
 		return nil, user.User{}, ErrTwoFactorUnavailable
 	}
@@ -349,6 +512,13 @@ func (s *Service) EnableTwoFactor(ctx context.Context, userID, code, keepSession
 			userID, keepSessionID); err != nil {
 			return fmt.Errorf("auth: revoke other sessions: %w", err)
 		}
+		// The code just typed is as good a proof as the backoffice's door
+		// asks for, so the session that typed it walks straight in rather
+		// than being asked for another one a second later.
+		if _, err := tx.Exec(ctx, `UPDATE sessions SET backoffice_at = ? WHERE id = ?`,
+			now.UnixMilli(), keepSessionID); err != nil {
+			return fmt.Errorf("auth: open the backoffice visit: %w", err)
+		}
 		account.TwoFactorAt = now.UnixMilli()
 		updated = account
 		return nil
@@ -356,7 +526,7 @@ func (s *Service) EnableTwoFactor(ctx context.Context, userID, code, keepSession
 	if err != nil {
 		return nil, user.User{}, err
 	}
-	s.twoFactorEvent(ctx, "enabled", updated, "")
+	s.twoFactorEvent(ctx, "enabled", updated, ip)
 	return codes, updated, nil
 }
 
@@ -606,6 +776,11 @@ func (s *Service) clearTwoFactor(ctx context.Context, userID string, authorize f
 		if _, err := tx.Exec(ctx, `UPDATE users SET two_factor_at = 0, updated_at = ? WHERE id = ?`,
 			now, userID); err != nil {
 			return fmt.Errorf("auth: mark two-step off: %w", err)
+		}
+		// A visit to the backoffice opened with the factor being removed was
+		// proved with something that no longer exists.
+		if _, err := tx.Exec(ctx, `UPDATE sessions SET backoffice_at = 0 WHERE user_id = ?`, userID); err != nil {
+			return fmt.Errorf("auth: close backoffice visits: %w", err)
 		}
 		account.TwoFactorAt = 0
 		updated = account

@@ -30,7 +30,7 @@ group edit Default --terminal false
 
 ## 它能做什么
 
-终端覆盖全部 75 个后台管理接口，以及账户页面能调用的 59 个用户端接口中凡是「设置」或「更改」的那部分，共 138 条命令。按功能分组：
+终端覆盖全部 75 个后台管理接口，以及账户页面能调用的 61 个用户端接口中凡是「设置」或「更改」的那部分，共 139 条命令。按功能分组：
 
 | 分组 | 命令 | 适用对象 |
 | --- | --- | --- |
@@ -47,7 +47,7 @@ group edit Default --terminal false
 | 生图 (Images) | `image list` `delete` | 所有用户 |
 | 额度与卡密 (Credit) | `credit show` `history` `cards` `use` `redeem` | 所有用户 |
 | API 密钥 (Keys) | `key list` `create` `edit` `delete` | 所有用户 |
-| 偏好与资料 (Profile) | `pref list` `set` `wallpaper-clear` · `me show` `edit` `passwd` `verify` · `2fa status` `setup` `enable` `disable` `recovery` · `oauth list` `unlink` | 所有用户 |
+| 偏好与资料 (Profile) | `pref list` `set` `wallpaper-clear` · `me show` `edit` `passwd` `verify` · `2fa status` `setup` `enable` `disable` `recovery` `backoffice` · `oauth list` `unlink` | 所有用户 |
 | 备份与恢复 (Backup) | `backup export` `backup import` | 所有用户 |
 
 完整列表以 `help` 为准——它只列出**你当前有权执行**的命令，不会把未授权的命令呈现出来。每个命令均可通过 `<命令> --help` 或 `help <命令>` 查看中英双语的详细参数、用法和示例。

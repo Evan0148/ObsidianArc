@@ -20,7 +20,15 @@ const props = withDefaults(defineProps<{
   window: UsageWindow;
   display?: UsageDisplay;
   size?: 'compact' | 'large';
-}>(), { display: 'absolute', size: 'compact' });
+  /**
+   * True when the caller is reading someone else's allowance under admin Safe
+   * Mode. A literal rather than the safeMode module's own constant: this
+   * component also draws an account's own allowance in the composer menu, and
+   * importing admin/safeMode there would pull the backoffice's masking state
+   * into a bundle that never needs it.
+   */
+  masked?: boolean;
+}>(), { display: 'absolute', size: 'compact', masked: false });
 
 const pressure = computed(() => windowPressure(props.window));
 
@@ -37,6 +45,10 @@ const label = computed<StringKey>(() => {
  * count regardless of the setting.
  */
 const value = computed(() => {
+  // Masked whole rather than figure-by-figure: a percentage still says how
+  // close an account is to its limit, which is exactly the reading Safe Mode
+  // is turned on to hide.
+  if (props.masked) return '******';
   const ratio = pressure.value;
   if (props.display !== 'absolute' && ratio !== null) {
     const percent = Math.round(ratio * 100);
@@ -89,7 +101,10 @@ const resets = computed(() => {
       <span>{{ t(label) }}</span>
       <span class="oa-usage-value">{{ value }}</span>
     </div>
-    <div v-if="pressure !== null" class="oa-meter">
+    <!-- Masked drops the bar along with the figure: its width is the same
+         percentage read as a shape, and a screen recording would still catch
+         it even with the number beside it hidden. -->
+    <div v-if="pressure !== null && !props.masked" class="oa-meter">
       <div class="oa-meter-fill" :class="{ warn }" :style="{ width: fillWidth }" />
     </div>
     <div class="oa-usage-reset">{{ t('quotaResets', { when: resets }) }}</div>

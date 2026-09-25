@@ -134,9 +134,13 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 			if h.auth.BackofficeNeedsTwoFactor(actor) {
 				return backofficeNeedsTwoFactor()
 			}
+			if h.auth.BackofficeLocked(r.Context(), actor) {
+				return backofficeLocked()
+			}
 			if !hasPermission(actor, permission) {
 				return permissionDenied()
 			}
+			h.auth.KeepBackofficeOpen(r.Context(), actor)
 			return handler(w, r)
 		}))
 	}

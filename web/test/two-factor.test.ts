@@ -324,7 +324,7 @@ describe('the security settings', () => {
     vi.spyOn(twoFactorApi, 'fetchTwoFactor').mockResolvedValue({ ...ON, enabled: false, enabled_at: 0, recovery_remaining: 0 });
     await mount(SecuritySection);
     expect(host.textContent).toContain(t('twoFactorOff'));
-    button(t('twoFactorSetUp')).click();
+    button(t('twoFactorTurnOn')).click();
     await settle();
     expect(host.querySelector('.oa-2fa-wizard')).not.toBeNull();
   });
@@ -335,8 +335,8 @@ describe('the security settings', () => {
     const disable = vi.spyOn(twoFactorApi, 'disableTwoFactor').mockResolvedValue({ user: ACCOUNT });
     await mount(SecuritySection);
 
-    expect(host.textContent).toContain(t('twoFactorRecoveryLeft', { count: 8 }));
-    button(t('twoFactorTurnOff')).click();
+    expect(host.textContent).toContain(t('twoFactorRecoveryRowHint', { count: 8 }));
+    button(t('twoFactorTurnOffShort')).click();
     await settle();
     type(host.querySelector<HTMLInputElement>('input.oa-2fa-code')!, '123456');
     host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
@@ -350,8 +350,8 @@ describe('the security settings', () => {
     vi.spyOn(twoFactorApi, 'fetchTwoFactor').mockResolvedValue({ ...ON, mandatory: true, policy: 'everyone' });
     await mount(SecuritySection);
     expect(host.textContent).toContain(t('twoFactorMandatoryNote'));
-    expect(() => button(t('twoFactorTurnOff'))).toThrow();
-    expect(() => button(t('twoFactorRegenerate'))).not.toThrow();
+    expect(() => button(t('twoFactorTurnOffShort'))).toThrow();
+    expect(() => button(t('twoFactorRegenerateShort'))).not.toThrow();
   });
 
   it('warns when the recovery codes are running out', async () => {

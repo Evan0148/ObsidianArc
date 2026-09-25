@@ -25,6 +25,10 @@ export class ApiError extends Error {
   }
 }
 
+/** Dispatched on window when the server turns a request away because the
+ *  backoffice wants a code for this visit. */
+export const BACKOFFICE_LOCKED = 'oa-backoffice-locked';
+
 interface ErrorBody {
   error?: { code?: string; message?: string } & Record<string, unknown>;
 }
@@ -72,6 +76,12 @@ async function request<T>(method: string, path: string, options: RequestOptions 
   if (!response.ok) {
     const body = (payload ?? {}) as ErrorBody;
     const { code, message, ...details } = body.error ?? {};
+    // The backoffice's visit ran out while a page was open. Every page would
+    // otherwise draw its own error; the shell listens for this instead and
+    // puts the place to type a code where the page was.
+    if (code === 'two_factor_backoffice_verify' && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(BACKOFFICE_LOCKED));
+    }
     throw new ApiError(
       response.status,
       code ?? 'error',

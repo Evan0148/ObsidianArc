@@ -8,7 +8,11 @@ ports, data, or deployment directories as interchangeable.
 
 When the user asks to deploy **Arc**, deploy this repository to the Arc Docker
 Compose project (`/data/obsidian-arc` on the production host) and operate only
-the `obsidian-arc-server` container and its PostgreSQL companion. Do not touch
+the `obsidian-arc-server` container and its PostgreSQL companion. Build it on
+the local machine with `make deploy DEPLOY_HOST=…`, not on the server: the
+server's own `docker compose up --build` compiles the frontend and the binary
+there, which is minutes on that host and seconds here. `make deploy` ships a
+cross-compiled binary and replaces the server container alone. Do not touch
 the Chat service (`obsidianchat.service`, its `/opt/obsidianchat` releases, or
 its port 8090). When the user asks to repair or deploy **Chat**, operate that
 systemd service only; never substitute the Arc binary or Arc container.
@@ -253,7 +257,7 @@ for a week. Do not write anything into the README that claims otherwise.
 change moves one of those numbers, re-measure and update it in the same change.
 They drifted to nearly double once because nobody re-ran the build.
 
-Current: 20.9 MB binary; 176.74 kB on the wire to open the chat, against a
+Current: 21.0 MB binary; 178.63 kB on the wire to open the chat, against a
 target of 135. The target used to be 80 and the figure used to be 59.5;
 adopting Vue moved both, and `docs/ARCHITECTURE.md` says so rather than
 quietly restating a target the build cannot meet.

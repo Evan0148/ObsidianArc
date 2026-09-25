@@ -164,6 +164,11 @@ func TestTheTwoStepPolicyThroughTheWiring(t *testing.T) {
 	if adoption.Code != http.StatusOK || !strings.Contains(adoption.Body.String(), `"enabled":2`) {
 		t.Fatalf("adoption: %d %s", adoption.Code, adoption.Body.String())
 	}
+	// One's own factor is switched off with a code, not with this.
+	self := in.do(http.MethodDelete, "/api/admin/users/"+founder.userID+"/two-factor", nil, founder)
+	if self.Code != http.StatusBadRequest || !strings.Contains(self.Body.String(), "two_factor_self_reset") {
+		t.Fatalf("an administrator reset their own factor: %d %s", self.Code, self.Body.String())
+	}
 	reset := in.do(http.MethodDelete, "/api/admin/users/"+member.userID+"/two-factor", nil, founder)
 	if reset.Code != http.StatusOK {
 		t.Fatalf("reset: %d %s", reset.Code, reset.Body.String())
@@ -175,5 +180,53 @@ func TestTheTwoStepPolicyThroughTheWiring(t *testing.T) {
 	if !strings.Contains(events.Body.String(), `"decision":"reset"`) ||
 		!strings.Contains(events.Body.String(), `"decision":"enabled"`) {
 		t.Fatalf("the security log is missing two-step entries: %s", events.Body.String())
+	}
+}
+
+// The switch through the wiring: every administrative route waits for this
+// session's code, the code opens them, and leaving closes them again.
+func TestACodeOnEveryVisitToTheBackoffice(t *testing.T) {
+	in := newInstance(t)
+	founder := in.register("founder", "a-good-password")
+
+	on := map[string]string{"security.two_factor_backoffice_mode": "visit"}
+	if response := in.do(http.MethodPut, "/api/admin/settings", on, founder); response.Code != http.StatusForbidden ||
+		!strings.Contains(response.Body.String(), "two_factor_self") {
+		t.Fatalf("switch on without one's own factor: %d %s", response.Code, response.Body.String())
+	}
+	secret, used := in.enrol(founder)
+	if response := in.do(http.MethodPut, "/api/admin/settings", on, founder); response.Code != http.StatusOK {
+		t.Fatalf("switch on: %d %s", response.Code, response.Body.String())
+	}
+
+	// Enrolling opened this session's visit, so leave to start from a shut door.
+	in.do(http.MethodPost, "/api/profile/two-factor/backoffice/leave", nil, founder)
+	locked := in.do(http.MethodGet, "/api/admin/dashboard", nil, founder)
+	if locked.Code != http.StatusForbidden || !strings.Contains(locked.Body.String(), "two_factor_backoffice_verify") {
+		t.Fatalf("backoffice before a code: %d %s", locked.Code, locked.Body.String())
+	}
+	if !strings.Contains(in.do(http.MethodGet, "/api/auth/me", nil, founder).Body.String(),
+		`"two_factor_backoffice_verify":"visit"`) {
+		t.Fatal("the account payload does not say the backoffice asks for a code")
+	}
+	// The chat is not the backoffice.
+	if code := in.do(http.MethodGet, "/api/conversations", nil, founder).Code; code != http.StatusOK {
+		t.Fatalf("the chat was locked too: %d", code)
+	}
+
+	code, _ := totp.Code(secret, used+1)
+	if response := in.do(http.MethodPost, "/api/profile/two-factor/backoffice",
+		map[string]string{"code": code}, founder); response.Code != http.StatusNoContent {
+		t.Fatalf("enter: %d %s", response.Code, response.Body.String())
+	}
+	if code := in.do(http.MethodGet, "/api/admin/dashboard", nil, founder).Code; code != http.StatusOK {
+		t.Fatalf("backoffice after a code: %d", code)
+	}
+
+	if response := in.do(http.MethodPost, "/api/profile/two-factor/backoffice/leave", nil, founder); response.Code != http.StatusNoContent {
+		t.Fatalf("leave: %d %s", response.Code, response.Body.String())
+	}
+	if code := in.do(http.MethodGet, "/api/admin/dashboard", nil, founder).Code; code != http.StatusForbidden {
+		t.Fatalf("backoffice after leaving: %d", code)
 	}
 }

@@ -158,7 +158,7 @@ let dashboardHeatMetric: 'requests' | 'total_tokens' = 'requests';
       </article>
       <article class="oa-dashboard-metric">
         <div class="oa-dashboard-metric-top"><span>{{ t('statTokens') }}</span><IconSpark :size="18" /></div>
-        <strong :title="data.last_24h.total_tokens.toLocaleString(locale)">{{ maskBilling(compactNumber(data.last_24h.total_tokens)) }}</strong>
+        <strong :title="maskBilling(data.last_24h.total_tokens.toLocaleString(locale))">{{ maskBilling(compactNumber(data.last_24h.total_tokens)) }}</strong>
         <div class="oa-dashboard-metric-note oa-dashboard-token-split">
           <UsageDelta :current="data.last_24h.total_tokens" :previous="before?.total_tokens" />
           <span><ArrowDownLeft :size="12" aria-hidden="true" />{{ maskBilling(compactNumber(data.last_24h.input_tokens)) }}</span>
@@ -167,7 +167,7 @@ let dashboardHeatMetric: 'requests' | 'total_tokens' = 'requests';
       </article>
       <article class="oa-dashboard-metric">
         <div class="oa-dashboard-metric-top"><span>{{ t('statCredits') }}</span><Coins :size="18" aria-hidden="true" /></div>
-        <strong :title="data.last_24h.credits.toLocaleString(locale)">{{ maskBilling(compactNumber(Math.round(data.last_24h.credits * 100) / 100)) }}</strong>
+        <strong :title="maskBilling(data.last_24h.credits.toLocaleString(locale))">{{ maskBilling(compactNumber(Math.round(data.last_24h.credits * 100) / 100)) }}</strong>
         <div class="oa-dashboard-metric-note">
           <UsageDelta :current="data.last_24h.credits" :previous="before?.credits" />
           <span>{{ t('dashboardWeeklyCredits', { value: maskBilling(compactNumber(Math.round(data.last_7d.credits))) }) }}</span>
@@ -216,7 +216,7 @@ let dashboardHeatMetric: 'requests' | 'total_tokens' = 'requests';
           <li v-for="(row, index) in rankedSlices" :key="row.key || 'other'" :title="`${row.label} · ${rowNote(row.key)}`">
             <span class="oa-dashboard-rank-number">{{ String(index + 1).padStart(2, '0') }}</span>
             <div class="oa-dashboard-rank-main">
-              <div class="oa-dashboard-rank-label"><span>{{ row.label }}</span><strong :title="row.value.toLocaleString(locale)">{{ maskBilling(compactNumber(row.value)) }}</strong></div>
+              <div class="oa-dashboard-rank-label"><span>{{ row.label }}</span><strong :title="maskBilling(row.value.toLocaleString(locale))">{{ maskBilling(compactNumber(row.value)) }}</strong></div>
               <div class="oa-dashboard-rank-bottom">
                 <span class="oa-dashboard-rank-track"><span :style="{ width: share(row.value) }" /></span>
                 <small>{{ share(row.value) }}</small>
@@ -225,7 +225,7 @@ let dashboardHeatMetric: 'requests' | 'total_tokens' = 'requests';
             </div>
           </li>
         </ol>
-        <OaChart v-else class="oa-dashboard-pie" shape="pie" :data="rankedSlices" :format="compactNumber" :empty-text="t('nothingYet')" />
+        <OaChart v-else class="oa-dashboard-pie" shape="pie" :data="rankedSlices" :format="(value) => maskBilling(compactNumber(value))" :empty-text="t('nothingYet')" />
         <details v-if="rankedRows.length" class="oa-dashboard-ranking-details">
           <summary>{{ t('dashboardRankDetails') }}</summary>
           <div class="oa-dashboard-table-wrap" tabindex="0" :aria-label="t('dashboardRankDetails')">
@@ -247,7 +247,7 @@ let dashboardHeatMetric: 'requests' | 'total_tokens' = 'requests';
             <button type="button" :aria-pressed="heatMetric === 'total_tokens'" @click="onHeatMetric('total_tokens')">{{ t('statTokens') }}</button>
           </div>
         </div>
-        <UsageHeatmap class="oa-dashboard-heatmap" :slots="data.heatmap ?? []" :metric="heatMetric" :format="(value) => t(heatMetric === 'requests' ? 'boardRequests' : 'boardTokens', { count: compactNumber(value) })" />
+        <UsageHeatmap class="oa-dashboard-heatmap" :slots="data.heatmap ?? []" :metric="heatMetric" :format="(value) => heatMetric === 'requests' ? t('boardRequests', { count: compactNumber(value) }) : t('boardTokens', { count: maskBilling(compactNumber(value)) })" />
       </section>
 
       <section id="secHealth" class="oa-dashboard-card oa-dashboard-health">
@@ -295,7 +295,7 @@ let dashboardHeatMetric: 'requests' | 'total_tokens' = 'requests';
                 </span>
               </td>
               <td><OaCellStack :title="row.model_name || '—'" :sub="maskProvider(row.provider_name)" /></td>
-              <td class="oa-dashboard-numeric" :title="row.estimated ? t('tokensEstimatedHint') : row.total_tokens.toLocaleString(locale)">{{ maskBilling(tokenFigure(row.total_tokens, row.estimated)) }}</td>
+              <td class="oa-dashboard-numeric" :title="row.estimated ? t('tokensEstimatedHint') : maskBilling(row.total_tokens.toLocaleString(locale))">{{ maskBilling(tokenFigure(row.total_tokens, row.estimated)) }}</td>
               <td class="oa-dashboard-numeric">{{ formatDuration(row.duration_ms) }}</td>
               <td><StatusBadge :status="row.status" :error-code="row.error_code" /></td>
               <td class="oa-dashboard-when" :title="new Date(row.started_at).toLocaleString(locale)">{{ relativeTime(row.started_at) }}</td>

@@ -1481,4 +1481,14 @@ body.oa-resizing * {
   }
 }
 
+// A field an operator is actively editing cannot be replaced with ******
+// without breaking the edit, so Safe Mode blurs it instead: readable the
+// moment it has focus, illegible to a screen recording the rest of the time.
+.oa-safe-blur {
+  input:not(:focus),
+  textarea:not(:focus) {
+    filter: blur(5px);
+  }
+}
+
 

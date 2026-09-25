@@ -74,7 +74,8 @@ func (h *Handlers) enableTwoFactor(w http.ResponseWriter, r *http.Request) error
 	if err := httpx.DecodeJSON(w, r, &body, 4*1024); err != nil {
 		return err
 	}
-	codes, updated, err := h.service.EnableTwoFactor(r.Context(), account.ID, body.Code, session.ID)
+	codes, updated, err := h.service.EnableTwoFactor(r.Context(), account.ID, body.Code, session.ID,
+		httpx.ClientIP(r, h.trust))
 	if err != nil {
 		return twoFactorError(w, err)
 	}
@@ -108,6 +109,36 @@ func (h *Handlers) regenerateRecovery(w http.ResponseWriter, r *http.Request) er
 		return twoFactorError(w, err)
 	}
 	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"recovery_codes": codes})
+}
+
+// enterBackoffice takes the code a visit to the backoffice starts with, for
+// whatever is holding the visit: this browser session, or — dispatched from
+// the SSH console — that connection.
+func (h *Handlers) enterBackoffice(w http.ResponseWriter, r *http.Request) error {
+	var body codeRequest
+	if err := httpx.DecodeJSON(w, r, &body, 4*1024); err != nil {
+		return err
+	}
+	err := h.service.EnterBackoffice(r.Context(), MustUser(r.Context()), body.Code, httpx.ClientIP(r, h.trust))
+	if errors.Is(err, ErrNoBackofficeVisit) {
+		return httpx.BadRequest("There is nothing here to unlock the backoffice for.")
+	}
+	if err != nil {
+		return twoFactorError(w, err)
+	}
+	return httpx.NoContent(w)
+}
+
+// leaveBackoffice ends the visit. Sent as the backoffice unmounts and as the
+// page goes away, by a beacon that cannot read an answer, so it has none
+// worth reading and never fails for want of a visit to end.
+func (h *Handlers) leaveBackoffice(w http.ResponseWriter, r *http.Request) error {
+	if session, ok := SessionFrom(r.Context()); ok {
+		if err := h.service.LeaveBackoffice(r.Context(), session); err != nil {
+			return httpx.Internal(err)
+		}
+	}
+	return httpx.NoContent(w)
 }
 
 // twoFactorError words every refusal with a code, because each one is said

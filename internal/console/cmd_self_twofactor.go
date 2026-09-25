@@ -162,6 +162,43 @@ func init() {
 	})
 }
 
+func init() {
+	registerCommand(Command{
+		Name:    "2fa backoffice",
+		Group:   "profile",
+		Summary: Text{EN: "Unlock the administrative commands with a code", ZH: "输入验证码以使用管理命令"},
+		Usage:   "2fa backoffice <code>",
+		Help: Text{
+			EN: "Where the server asks for a code at the backoffice's door, the terminal's administrative " +
+				"commands ask too, and this is where it is typed. In the web terminal it counts for this " +
+				"browser, the backoffice pages included; over SSH it counts for this connection until it " +
+				"hangs up. How long it lasts is the server's setting.",
+			ZH: "当服务器要求进入管理后台时输入验证码，终端里的管理命令同样需要，验证码就在这里输入。在网页终端中，" +
+				"它对当前浏览器有效（包括后台页面）；通过 SSH 时，它对当前连接有效，断开即失效。有效多久由服务器设置决定。",
+		},
+		Args:       []Arg{{Name: "code", Hint: Text{EN: "a code from your app, or a recovery code", ZH: "应用中的验证码，或恢复码"}, Required: true}},
+		Examples:   []string{"2fa backoffice 123456", "2fa backoffice abcde-fghjk"},
+		SeeAlso:    []string{"2fa status"},
+		Permission: Anyone,
+		Endpoints:  []string{"POST /api/profile/two-factor/backoffice"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			code, err := requireRef(rt, "code")
+			if err != nil {
+				return err
+			}
+			if _, _, err := rt.Call(http.MethodPost, "/api/profile/two-factor/backoffice", map[string]any{"code": code}); err != nil {
+				return err
+			}
+			if rt.Session.Lang == "zh" {
+				rt.Printf("后台命令已解锁。\n")
+			} else {
+				rt.Printf("backoffice commands unlocked.\n")
+			}
+			return nil
+		},
+	})
+}
+
 func printRecoveryCodes(rt *Runtime, raw any) error {
 	var rows [][]string
 	for _, code := range asSlice(raw) {

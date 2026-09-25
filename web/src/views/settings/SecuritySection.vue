@@ -4,9 +4,11 @@
 // it off.
 //
 // Both of those take a code, because a session somebody walked away from is
-// exactly what they must not be enough for. The field for it appears only
-// once one of them has been chosen, so the resting state is a status line and
-// two buttons rather than a form nobody is filling in.
+// exactly what they must not be enough for. The field for it opens under the
+// row that asked for it, so the resting state is one card with a status line
+// and two rows rather than a form nobody is filling in. The setup wizard opens
+// inside the same card, so the thing being set up and the steps setting it up
+// read as one object instead of a stack of loose parts.
 
 import { computed, onMounted, ref } from 'vue';
 import type { Account } from '@/api/auth';
@@ -16,7 +18,6 @@ import {
 } from '@/api/twofactor';
 import { copyToClipboard } from '@/chat/markdown';
 import OaBadge from '@/components/OaBadge.vue';
-import OaField from '@/components/OaField.vue';
 import { t } from '@/composables/useI18n';
 import { IconCheck, IconCopy, IconShield } from '@/icons';
 import { absoluteTime } from '@/lib/format';
@@ -110,100 +111,125 @@ function copyFresh(): void {
 <template>
   <div v-show="matchesSettings(props.query, 'twofactor')" class="oa-settings-panel">
     <h2 class="oa-admin-section-title">{{ t('secTwoFactor') }}</h2>
-    <p class="oa-field-hint">{{ t('twoFactorIntro') }}</p>
 
-    <div v-if="status" class="oa-connection oa-2fa-status">
-      <span class="oa-connection-mark"><IconShield :size="16" /></span>
-      <span class="oa-connection-body">
-        <span class="oa-connection-name">
-          {{ t('secTwoFactor') }}
-          <OaBadge :tone="status.enabled ? 'default' : 'muted'">
-            {{ status.enabled ? t('twoFactorOn') : t('twoFactorOff') }}
-          </OaBadge>
-        </span>
-        <span class="oa-connection-meta">
-          <template v-if="status.enabled">
-            {{ t('twoFactorOnSince', { date: absoluteTime(status.enabled_at) }) }}
-            · {{ t('twoFactorRecoveryLeft', { count: status.recovery_remaining }) }}
-          </template>
-          <template v-else>{{ t('twoFactorRecommended') }}</template>
-        </span>
-      </span>
-    </div>
-
-    <p v-if="status && !status.available" class="oa-field-hint">{{ t('twoFactorUnavailable') }}</p>
-    <p v-if="status?.mandatory" class="oa-field-hint">{{ t('twoFactorMandatoryNote') }}</p>
-    <p v-if="running" class="oa-auth-error" role="status">
-      {{ t('twoFactorRecoveryLow', { count: status?.recovery_remaining ?? 0 }) }}
-    </p>
-    <p class="oa-drawer-flash ok" :class="{ visible: !!notice }" role="status">{{ notice }}</p>
-
-    <template v-if="status && !status.enabled && status.available">
-      <TwoFactorWizard v-if="wizard" cancellable @done="enrolled" @cancel="wizard = false" />
-      <div v-else class="oa-button-row">
-        <button type="button" class="oa-btn primary" @click="wizard = true; notice = ''">
-          {{ t('twoFactorSetUp') }}
-        </button>
-      </div>
-    </template>
-
-    <template v-else-if="status?.enabled">
-      <div class="oa-button-row">
-        <button type="button" class="oa-btn" :class="{ primary: action === 'recovery' }" @click="open('recovery')">
-          {{ t('twoFactorRegenerate') }}
-        </button>
+    <section v-if="status" class="oa-2fa-panel">
+      <header class="oa-2fa-head">
+        <span class="oa-2fa-head-mark"><IconShield :size="18" /></span>
+        <div class="oa-2fa-head-text">
+          <div class="oa-2fa-head-title">
+            <span>{{ t('twoFactorAuthenticator') }}</span>
+            <OaBadge :tone="status.enabled ? 'default' : 'muted'">
+              {{ status.enabled ? t('twoFactorOn') : t('twoFactorOff') }}
+            </OaBadge>
+          </div>
+          <p class="oa-2fa-head-meta">
+            {{ status.enabled ? t('twoFactorOnSince', { date: absoluteTime(status.enabled_at) }) : t('twoFactorIntro') }}
+          </p>
+        </div>
         <button
-          v-if="!status.mandatory"
+          v-if="!status.enabled && status.available && !wizard"
           type="button"
-          class="oa-btn"
-          :class="{ primary: action === 'disable' }"
-          @click="open('disable')"
+          class="oa-btn primary"
+          @click="wizard = true; notice = ''"
         >
-          {{ t('twoFactorTurnOff') }}
+          {{ t('twoFactorTurnOn') }}
         </button>
+      </header>
+
+      <p v-if="!status.available" class="oa-2fa-note">{{ t('twoFactorUnavailable') }}</p>
+      <p v-if="status.mandatory" class="oa-2fa-note">
+        {{ status.enabled ? t('twoFactorMandatoryNote') : t('twoFactorMandatoryOff') }}
+      </p>
+
+      <div v-if="wizard && !status.enabled" class="oa-2fa-panel-body">
+        <TwoFactorWizard cancellable @done="enrolled" @cancel="wizard = false" />
       </div>
 
-      <form v-if="action && !fresh.length" class="oa-2fa-form" novalidate @submit.prevent="confirm">
-        <p class="oa-field-hint">
-          {{ action === 'disable' ? t('twoFactorTurnOffHint') : t('twoFactorRegenerateHint') }}
-        </p>
-        <OaField :label="t('twoFactorCodeLabel')" :hint="t('twoFactorConfirmWithCode')">
-          <input
-            v-model="code"
-            class="oa-2fa-code"
-            type="text"
-            autocomplete="one-time-code"
-            spellcheck="false"
-            maxlength="16"
-            placeholder="000000"
-          >
-        </OaField>
-        <div class="oa-button-row">
-          <button type="button" class="oa-btn" :disabled="busy" @click="action = ''">{{ t('cancel') }}</button>
-          <button type="submit" class="oa-btn primary" :disabled="busy || !code.trim()">
-            {{ action === 'disable' ? t('twoFactorTurnOff') : t('twoFactorRegenerate') }}
+      <template v-if="status.enabled">
+        <div class="oa-2fa-row">
+          <div class="oa-2fa-row-text">
+            <span class="oa-2fa-row-title">{{ t('twoFactorRecoveryRow') }}</span>
+            <span class="oa-2fa-row-meta" :class="{ warn: running }">
+              {{ running
+                ? t('twoFactorRecoveryLow', { count: status.recovery_remaining })
+                : t('twoFactorRecoveryRowHint', { count: status.recovery_remaining }) }}
+            </span>
+          </div>
+          <button type="button" class="oa-btn" :class="{ primary: action === 'recovery' }" @click="open('recovery')">
+            {{ t('twoFactorRegenerateShort') }}
           </button>
         </div>
-      </form>
+        <form v-if="action === 'recovery' && !fresh.length" class="oa-2fa-confirm" novalidate @submit.prevent="confirm">
+          <p class="oa-2fa-desc">{{ t('twoFactorRegenerateHint') }} {{ t('twoFactorConfirmWithCode') }}</p>
+          <div class="oa-2fa-confirm-row oa-field">
+            <input
+              v-model="code"
+              class="oa-2fa-code"
+              type="text"
+              autocomplete="one-time-code"
+              spellcheck="false"
+              maxlength="16"
+              placeholder="000000"
+              :aria-label="t('twoFactorCodeLabel')"
+            >
+            <button type="button" class="oa-btn" :disabled="busy" @click="action = ''">{{ t('cancel') }}</button>
+            <button type="submit" class="oa-btn primary" :disabled="busy || !code.trim()">
+              {{ t('twoFactorRegenerateShort') }}
+            </button>
+          </div>
+        </form>
+        <div v-if="fresh.length" class="oa-2fa-confirm">
+          <p class="oa-2fa-desc">{{ t('twoFactorSaveBody') }}</p>
+          <div class="oa-2fa-codes-box">
+            <ol class="oa-2fa-codes">
+              <li v-for="entry in fresh" :key="entry">{{ entry }}</li>
+            </ol>
+            <div class="oa-2fa-codes-actions">
+              <button type="button" class="oa-btn" @click="copyFresh">
+                <IconCheck v-if="copied" :size="14" />
+                <IconCopy v-else :size="14" />
+                {{ copied ? t('copied') : t('copy') }}
+              </button>
+              <button type="button" class="oa-btn primary" @click="fresh = []; action = ''">
+                {{ t('twoFactorFinish') }}
+              </button>
+            </div>
+          </div>
+        </div>
 
-      <template v-if="fresh.length">
-        <p class="oa-field-hint">{{ t('twoFactorSaveBody') }}</p>
-        <ul class="oa-2fa-codes mono">
-          <li v-for="entry in fresh" :key="entry">{{ entry }}</li>
-        </ul>
-        <div class="oa-button-row">
-          <button type="button" class="oa-btn" @click="copyFresh">
-            <IconCheck v-if="copied" :size="14" />
-            <IconCopy v-else :size="14" />
-            {{ copied ? t('copied') : t('copy') }}
-          </button>
-          <button type="button" class="oa-btn primary" @click="fresh = []; action = ''">
-            {{ t('twoFactorFinish') }}
+        <div v-if="!status.mandatory" class="oa-2fa-row">
+          <div class="oa-2fa-row-text">
+            <span class="oa-2fa-row-title">{{ t('twoFactorTurnOff') }}</span>
+            <span class="oa-2fa-row-meta">{{ t('twoFactorTurnOffHint') }}</span>
+          </div>
+          <button type="button" class="oa-btn" :class="{ primary: action === 'disable' }" @click="open('disable')">
+            {{ t('twoFactorTurnOffShort') }}
           </button>
         </div>
+        <form v-if="action === 'disable'" class="oa-2fa-confirm" novalidate @submit.prevent="confirm">
+          <p class="oa-2fa-desc">{{ t('twoFactorConfirmWithCode') }}</p>
+          <div class="oa-2fa-confirm-row oa-field">
+            <input
+              v-model="code"
+              class="oa-2fa-code"
+              type="text"
+              autocomplete="one-time-code"
+              spellcheck="false"
+              maxlength="16"
+              placeholder="000000"
+              :aria-label="t('twoFactorCodeLabel')"
+            >
+            <button type="button" class="oa-btn" :disabled="busy" @click="action = ''">{{ t('cancel') }}</button>
+            <button type="submit" class="oa-btn primary" :disabled="busy || !code.trim()">
+              {{ t('twoFactorTurnOffShort') }}
+            </button>
+          </div>
+        </form>
       </template>
-    </template>
 
-    <p class="oa-drawer-flash" :class="{ visible: !!flash }" role="alert">{{ flash }}</p>
+      <p v-if="notice" class="oa-2fa-flash ok" role="status">{{ notice }}</p>
+      <p v-if="flash" class="oa-2fa-flash" role="alert">{{ flash }}</p>
+    </section>
+    <p v-else-if="flash" class="oa-drawer-flash visible" role="alert">{{ flash }}</p>
   </div>
 </template>

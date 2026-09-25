@@ -14,7 +14,7 @@ import AdminControlCard from './AdminControlCard.vue';
 import AdminWorkbench from './AdminWorkbench.vue';
 import type { WorkbenchGroup } from './workbench';
 import { useSettingsDraft } from './settingsDraft';
-import { IconHome, IconSpark, IconFile, IconKey, IconInfo, IconBell, IconMessage, IconSliders, IconTrash } from '@/icons';
+import { IconHome, IconSpark, IconFile, IconKey, IconInfo, IconBell, IconMessage, IconSliders, IconTrash, IconImage } from '@/icons';
 import OaNumberField from '@/components/OaNumberField.vue';
 import OaSelectField from '@/components/OaSelectField.vue';
 import OaSwitchField from '@/components/OaSwitchField.vue';
@@ -24,12 +24,20 @@ import { t, type StringKey } from '@/composables/useI18n';
 import { formatBytes } from '@/lib/format';
 import AdminFailure from './AdminFailure.vue';
 import { useAdminView } from './adminView';
+import { site } from '@/stores/session';
 
 const view = useAdminView();
 view.setTitle(t('adminSettingsTitle'), t('controlSettingsSubtitle'));
 
 const SEARCH_GROUPS = {
-  secIdentity: ['secIdentity', 'siteName', 'siteNameHint', 'signInNote', 'signInNoteHint'],
+  secIdentity: [
+    'secIdentity', 'siteName', 'siteNameHint', 'signInNote', 'signInNoteHint', 'browserTitle', 'browserTitleHint',
+  ],
+  secPWA: [
+    'secPWA', 'controlPWAHint', 'pwaName', 'pwaNameHint', 'pwaShortName', 'pwaShortNameHint', 'pwaDescription',
+    'pwaDescriptionHint', 'pwaThemeColor', 'pwaThemeColorHint', 'pwaBackgroundColor', 'pwaBackgroundColorHint',
+    'pwaIconUrl', 'pwaIconUrlHint',
+  ],
   secAbout: ['controlAbout', 'aboutHeading', 'aboutHeadingHint', 'aboutText', 'aboutTextHint'],
   secHomeNotice: ['homeNotice', 'homeNoticeHint', 'homeNoticeDismissible', 'homeNoticeDismissibleHint'],
   secFeedback: ['navFeedback', 'feedbackShowStaffName', 'feedbackShowStaffNameHint'],
@@ -75,6 +83,13 @@ const purging = ref(false);
 const form = ref({
   siteName: '',
   description: '',
+  browserTitle: '',
+  pwaName: '',
+  pwaShortName: '',
+  pwaDescription: '',
+  pwaThemeColor: '#18181b',
+  pwaBackgroundColor: '#18181b',
+  pwaIconUrl: '',
   aboutHeading: '',
   aboutText: '',
   homeNotice: '',
@@ -119,6 +134,13 @@ function collect(): Record<string, string> {
   return {
     'site.name': form.value.siteName.trim(),
     'site.description': form.value.description.trim(),
+    'site.browser_title': form.value.browserTitle.trim(),
+    'pwa.name': form.value.pwaName.trim(),
+    'pwa.short_name': form.value.pwaShortName.trim(),
+    'pwa.description': form.value.pwaDescription.trim(),
+    'pwa.theme_color': form.value.pwaThemeColor.trim(),
+    'pwa.background_color': form.value.pwaBackgroundColor.trim(),
+    'pwa.icon_url': form.value.pwaIconUrl.trim(),
     'about.title': form.value.aboutHeading.trim(),
     'about.body': form.value.aboutText.trim(),
     'home.notice': form.value.homeNotice.trim(),
@@ -156,6 +178,13 @@ async function save(): Promise<void> {
   try {
     await adminApi.saveSettings(values);
     accept(values);
+    // App.vue's document.title watcher reads this same ref; without patching
+    // it here, the tab this very form is open in would keep its old title
+    // until the next full page load re-fetched /api/site.
+    if (site.value) {
+      const name = form.value.siteName.trim();
+      site.value = { ...site.value, name, browser_title: form.value.browserTitle.trim() || name };
+    }
     saveLabel.value = t('saved');
     window.setTimeout(() => { saveLabel.value = ''; }, 1500);
   } catch (failure) {
@@ -236,6 +265,13 @@ async function load(): Promise<void> {
     form.value = {
       siteName: values['site.name'] ?? '',
       description: values['site.description'] ?? '',
+      browserTitle: values['site.browser_title'] ?? '',
+      pwaName: values['pwa.name'] ?? '',
+      pwaShortName: values['pwa.short_name'] ?? '',
+      pwaDescription: values['pwa.description'] ?? '',
+      pwaThemeColor: values['pwa.theme_color'] ?? '#18181b',
+      pwaBackgroundColor: values['pwa.background_color'] ?? '#18181b',
+      pwaIconUrl: values['pwa.icon_url'] ?? '',
       aboutHeading: values['about.title'] ?? '',
       aboutText: values['about.body'] ?? '',
       homeNotice: values['home.notice'] ?? '',
@@ -268,13 +304,13 @@ async function load(): Promise<void> {
 }
 
 const categories: WorkbenchGroup[] = [
-  { id: 'site', label: 'controlSite', hint: 'controlSiteHint', icon: IconHome, sections: ['secIdentity', 'secLanding', 'secAbout', 'secHomeNotice', 'secFeedback'] },
+  { id: 'site', label: 'controlSite', hint: 'controlSiteHint', icon: IconHome, sections: ['secIdentity', 'secPWA', 'secLanding', 'secAbout', 'secHomeNotice', 'secFeedback'] },
   { id: 'chat', label: 'controlChat', hint: 'controlChatHint', icon: IconSpark, sections: ['secChat', 'secLimits'] },
   { id: 'files', label: 'controlFiles', hint: 'controlFilesHint', icon: IconFile, sections: ['secAttachments', 'secCleanup'] },
   { id: 'integrations', label: 'controlIntegrations', hint: 'controlIntegrationsHint', icon: IconKey, sections: ['apiKeys', 'backupSettings'] },
 ];
 
-const columns: [string[], string[]] = [['secIdentity', 'secAbout', 'secChat', 'secAttachments', 'apiKeys'], ['secLanding', 'secHomeNotice', 'secFeedback', 'secLimits', 'secCleanup', 'backupSettings']];
+const columns: [string[], string[]] = [['secIdentity', 'secPWA', 'secAbout', 'secChat', 'secAttachments', 'apiKeys'], ['secLanding', 'secHomeNotice', 'secFeedback', 'secLimits', 'secCleanup', 'backupSettings']];
 
 onMounted(load);
 </script>
@@ -294,7 +330,36 @@ onMounted(load);
     <template #left="{ visible }">
       <AdminControlCard id="secIdentity" v-show="visible('secIdentity')" :title="t('secIdentity')" :icon="IconHome" :hint="t('controlIdentityHint')">
         <OaTextField v-model="form.siteName" :label="t('siteName')" :hint="t('siteNameHint')" :max-length="60" />
+        <OaTextField v-model="form.browserTitle" :label="t('browserTitle')" :hint="t('browserTitleHint')" :max-length="60" />
         <OaTextArea v-model="form.description" :label="t('signInNote')" :rows="2" :hint="t('signInNoteHint')" />
+      </AdminControlCard>
+      <AdminControlCard id="secPWA" v-show="visible('secPWA')" :title="t('secPWA')" :icon="IconImage" :hint="t('controlPWAHint')">
+        <OaTextField v-model="form.pwaName" :label="t('pwaName')" :hint="t('pwaNameHint')" :max-length="60" />
+        <OaTextField v-model="form.pwaShortName" :label="t('pwaShortName')" :hint="t('pwaShortNameHint')" :max-length="32" />
+        <OaTextArea v-model="form.pwaDescription" :label="t('pwaDescription')" :rows="2" :hint="t('pwaDescriptionHint')" />
+        <OaTextField
+          v-model="form.pwaThemeColor"
+          :label="t('pwaThemeColor')"
+          :hint="t('pwaThemeColorHint')"
+          placeholder="#18181b"
+          monospace
+          :max-length="7"
+        />
+        <OaTextField
+          v-model="form.pwaBackgroundColor"
+          :label="t('pwaBackgroundColor')"
+          :hint="t('pwaBackgroundColorHint')"
+          placeholder="#18181b"
+          monospace
+          :max-length="7"
+        />
+        <OaTextField
+          v-model="form.pwaIconUrl"
+          :label="t('pwaIconUrl')"
+          :hint="t('pwaIconUrlHint')"
+          placeholder="/icon.png"
+          monospace
+        />
       </AdminControlCard>
       <AdminControlCard id="secAbout" v-show="visible('secAbout')" :title="t('controlAbout')" :icon="IconInfo" :hint="t('controlAboutHint')">
         <OaTextField

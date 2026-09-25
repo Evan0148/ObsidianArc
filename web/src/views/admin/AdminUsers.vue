@@ -38,7 +38,7 @@ import { t, tn } from '@/composables/useI18n';
 import { IconTrash } from '@/icons';
 import { absoluteTime, compactNumber, relativeTime } from '@/lib/format';
 import { currentUser, canAdmin, isSuperAdmin } from '@/stores/session';
-import { maskUser, maskLog, maskBilling, maskCredential } from '@/admin/safeMode';
+import { isMasked, maskUser, maskLog, maskBilling, maskCredential } from '@/admin/safeMode';
 import AdminFailure from './AdminFailure.vue';
 import CreditsField from './CreditsField.vue';
 import ExpiryPresets from './ExpiryPresets.vue';
@@ -759,6 +759,7 @@ const state = { q: '', role: '', status: '', group: '' };
             :key="window.kind"
             :window="window"
             :display="usage.display ?? 'absolute'"
+            :masked="isMasked('billing')"
           />
         </div>
       </template>
@@ -839,10 +840,14 @@ const state = { q: '', role: '', status: '', group: '' };
       <p class="oa-field-hint">{{ t('rescheduleCardsHint') }}</p>
 
       <OaFormSection :title="t('secProfile')" />
-      <OaTextField v-model="form.nickname" :label="t('nickname')" :max-length="32" />
-      <OaTextField v-model="form.email" :label="t('email')" type="email" />
+      <!-- Masking these would break editing them, so the value stays real and
+           only its focus state decides whether it can be read: blurred until
+           the operator actually clicks in, same as a screen share would need. -->
+      <OaTextField v-model="form.nickname" :class="{ 'oa-safe-blur': isMasked('users') }" :label="t('nickname')" :max-length="32" />
+      <OaTextField v-model="form.email" :class="{ 'oa-safe-blur': isMasked('users') }" :label="t('email')" type="email" />
       <OaTextField
         v-model="form.qq"
+        :class="{ 'oa-safe-blur': isMasked('users') }"
         :label="t('qq')"
         :placeholder="t('qqPlaceholder')"
         :max-length="15"
@@ -850,6 +855,7 @@ const state = { q: '', role: '', status: '', group: '' };
       <OaTextArea v-model="form.bio" :label="t('bio')" :rows="2" />
       <OaTextField
         v-model="form.avatar"
+        :class="{ 'oa-safe-blur': isMasked('users') }"
         :label="t('avatar')"
         :placeholder="t('avatarPlaceholder')"
         :hint="t('avatarHint')"

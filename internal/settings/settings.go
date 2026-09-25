@@ -10,6 +10,7 @@ package settings
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -109,15 +110,20 @@ const (
 	// Two-step sign-in. Who must switch it on, the name an authenticator
 	// app files the entry under, and how many days a browser may skip the
 	// code once somebody has typed one on it.
-	TwoFactorPolicy         = "security.two_factor_policy"
-	TwoFactorIssuer         = "security.two_factor_issuer"
-	TwoFactorRememberDays   = "security.two_factor_remember_days"
-	ChatChallengeRequests   = "security.chat_challenge_requests"
-	ChatChallengeWindowSecs = "security.chat_challenge_window_seconds"
-	ChatChallengeClearMins  = "security.chat_challenge_clear_minutes"
-	AdminsBypassQuota       = "quota.admins_bypass"
-	UsageDisplay            = "quota.usage_display"
-	QuotaMaxConcurrent      = "quota.max_concurrent"
+	TwoFactorPolicy       = "security.two_factor_policy"
+	TwoFactorIssuer       = "security.two_factor_issuer"
+	TwoFactorRememberDays = "security.two_factor_remember_days"
+	// Asking for a code again at the backoffice's door, not just at sign-in:
+	// how often (one of the BackofficeVerify modes below), and the minutes
+	// that mode counts.
+	TwoFactorBackofficeMode    = "security.two_factor_backoffice_mode"
+	TwoFactorBackofficeMinutes = "security.two_factor_backoffice_minutes"
+	ChatChallengeRequests      = "security.chat_challenge_requests"
+	ChatChallengeWindowSecs    = "security.chat_challenge_window_seconds"
+	ChatChallengeClearMins     = "security.chat_challenge_clear_minutes"
+	AdminsBypassQuota          = "quota.admins_bypass"
+	UsageDisplay               = "quota.usage_display"
+	QuotaMaxConcurrent         = "quota.max_concurrent"
 	// How many times one work-surface turn may call the model. Each round
 	// is a real provider request that a tool result made necessary, so this
 	// is the ceiling on what a single question can cost.
@@ -160,6 +166,26 @@ const (
 	// not lose track of whether today's purge already happened. Readable in
 	// the settings response and deliberately absent from the writable set.
 	AttachmentPurgeLast = "attachments.purge_last_run"
+
+	// The browser tab and the PWA install card. Both fall back to the site's
+	// own name (and, for the description, site.description) rather than
+	// needing a second copy typed in — an operator who never opens this card
+	// still gets a tab and an install prompt that say who they are, not
+	// "Obsidian Arc" on every instance at once.
+	SiteBrowserTitle = "site.browser_title"
+	PWAName          = "pwa.name"
+	PWAShortName     = "pwa.short_name"
+	PWADescription   = "pwa.description"
+	// #rrggbb only — see ValidHexColor. Kept as two settings rather than one
+	// because a manifest itself distinguishes the browser chrome's tint from
+	// the splash screen shown behind the icon while the app loads.
+	PWAThemeColor      = "pwa.theme_color"
+	PWABackgroundColor = "pwa.background_color"
+	// Empty means the built-in mark (the same triangle the favicon already
+	// draws). Validated like an avatar — see ValidPWAIconURL — because a
+	// root-relative path or a data URI are the only references the image
+	// policy (`img-src 'self' data: blob:`) actually allows through.
+	PWAIconURL = "pwa.icon_url"
 )
 
 // MaxAttachmentCeilingMB bounds what an operator may set. A per-file limit
@@ -248,6 +274,38 @@ func ValidTwoFactorPolicy(value string) bool {
 // already longer than most people keep a browser profile.
 const MaxTwoFactorRememberDays = 365
 
+// How often the backoffice asks for a code again, on top of the one signing
+// in took. Every mode but off makes the minutes mean something different,
+// because "how long" is a different question for each.
+const (
+	BackofficeVerifyOff = "off"
+	// Every visit: leaving the backoffice — back to the chat, a reload, a
+	// closed tab — ends it, and so do the minutes without a request, for
+	// the tab that was simply left open.
+	BackofficeVerifyVisit = "visit"
+	// After idling: working in the backoffice keeps it open, coming and
+	// going does not close it, and the minutes without a request do.
+	BackofficeVerifyIdle = "idle"
+	// On a schedule: one code is good for the minutes after it was typed,
+	// whatever happens in them, and then another is asked for.
+	BackofficeVerifyInterval = "interval"
+)
+
+var BackofficeVerifyModes = []string{BackofficeVerifyOff, BackofficeVerifyVisit, BackofficeVerifyIdle, BackofficeVerifyInterval}
+
+func ValidBackofficeVerifyMode(value string) bool {
+	for _, candidate := range BackofficeVerifyModes {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
+}
+
+// MaxTwoFactorBackofficeMinutes bounds the minutes: a week, which is already
+// "once in a while" rather than a lock anybody would notice.
+const MaxTwoFactorBackofficeMinutes = 7 * 24 * 60
+
 // What new accounts are required to provide regarding QQ numbers.
 const (
 	QQDisabled = "off"
@@ -264,6 +322,40 @@ func ValidQQRequirement(value string) bool {
 		}
 	}
 	return false
+}
+
+// hexColorRE accepts exactly #rrggbb. Three-digit and named CSS colours are
+// legal everywhere else, but a manifest generator that has to guess which of
+// those an operator meant is a second source of truth for the same value —
+// one form removes the guess.
+var hexColorRE = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+// ValidHexColor reports whether value is a manifest-ready colour. An empty
+// string is not valid on its own terms — callers that treat "no override" as
+// acceptable check for it themselves, the way updateSettings does.
+func ValidHexColor(value string) bool {
+	return hexColorRE.MatchString(value)
+}
+
+// pwaIconRE mirrors web/src/lib/account.ts's safeAvatar: a data URI is the
+// other reference the image policy (`img-src 'self' data: blob:') allows
+// besides a path on this server, so the two checks have to agree or one of
+// them is lying to an operator about what will actually render.
+var pwaIconRE = regexp.MustCompile(`^data:image/(?:png|jpeg|webp|gif|avif|svg\+xml);base64,[A-Za-z0-9+/]+=*$`)
+
+// ValidPWAIconURL reports whether value is empty (the built-in icon), a
+// root-relative path, or an inline data URI. An absolute URL to another host
+// is refused here rather than left for the browser to silently drop: the
+// manifest's own Content-Security-Policy has no reason to trust an arbitrary
+// origin with the icon a user is asked to install.
+func ValidPWAIconURL(value string) bool {
+	if value == "" {
+		return true
+	}
+	if strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "//") {
+		return true
+	}
+	return pwaIconRE.MatchString(value)
 }
 
 // Defaults are what a fresh instance behaves like, and what a deleted row
@@ -336,6 +428,12 @@ var Defaults = map[string]string{
 	// Off. Remembering a browser trades the second factor for a cookie, and
 	// that is a trade an operator should make on purpose.
 	TwoFactorRememberDays: "0",
+	// Off: a code at the backoffice's door is a real cost to the people who
+	// use it all day, and one an operator should choose to pay.
+	TwoFactorBackofficeMode: BackofficeVerifyOff,
+	// Long enough for one sitting's work, short enough that a tab left open
+	// over lunch locks itself.
+	TwoFactorBackofficeMinutes: "15",
 	// Zero leaves the mid-chat challenge off. Once enabled, the other two
 	// defaults describe a short burst and a clearance long enough that a real
 	// reader is not challenged again during the same conversation.
@@ -390,6 +488,17 @@ var Defaults = map[string]string{
 	// which this server holds a picture it has no use for.
 	AttachmentOrphanMins: "60",
 	AttachmentPurgeLast:  "0",
+
+	SiteBrowserTitle: "",
+	PWAName:          "",
+	PWAShortName:     "",
+	PWADescription:   "",
+	// The interface's own default accent (web/src/theme/color-utils.ts:
+	// ACCENTS.neutral), so a fresh instance's install prompt and splash
+	// screen are already themed instead of showing the browser's white.
+	PWAThemeColor:      "#18181b",
+	PWABackgroundColor: "#18181b",
+	PWAIconURL:         "",
 }
 
 type Service struct {
@@ -454,6 +563,18 @@ func (s *Service) Int(key string, fallback int) int {
 		return fallback
 	}
 	return value
+}
+
+// BrowserTitle is the effective browser tab title: the operator's own text if
+// they set one, the site's own name otherwise. Both the server's own
+// index.html and the /api/site response ask here, so the fallback is decided
+// once rather than repeated at every place that would otherwise have to know
+// site.browser_title exists.
+func (s *Service) BrowserTitle() string {
+	if title := s.Get(SiteBrowserTitle); title != "" {
+		return title
+	}
+	return s.Get(SiteName)
 }
 
 // All returns every known key with its effective value, so the admin screen

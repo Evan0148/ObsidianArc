@@ -296,7 +296,7 @@ const routeChoices = computed(() => [
   { value: '', label: t('routeNone') },
   ...models.value
     .filter((entry) => entry.id !== existing.value?.id && !entry.route_to_id)
-    .map((entry) => ({ value: entry.id, label: `${entry.display_name} — ${entry.provider_name}` })),
+    .map((entry) => ({ value: entry.id, label: `${entry.display_name} — ${maskProvider(entry.provider_name)}` })),
 ]);
 
 /**
@@ -831,7 +831,7 @@ let sortState: SortState | null = null;
         </div>
         <div class="oa-fact">
           <span class="oa-fact-label">{{ t('colProvider') }}</span>
-          <span class="oa-fact-value">{{ existing!.provider_name }}</span>
+          <span class="oa-fact-value">{{ maskProvider(existing!.provider_name) }}</span>
         </div>
       </div>
     </template>

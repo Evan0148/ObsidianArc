@@ -450,9 +450,9 @@ describe('what moves, and what does not', () => {
     expect(shown('.oa-admin-body section')).toHaveLength(0);
     expect(host.querySelector('.oa-admin-body .oa-search-empty')?.textContent).toBe(t('noSearchResults'));
     await search('.oa-admin-body .oa-search input', '');
-    // The site category's cards: identity, landing, about, the home notice
-    // and the feedback signature.
-    expect(shown('.oa-admin-body section')).toHaveLength(5);
+    // The site category's cards: identity, the PWA card, landing, about, the
+    // home notice and the feedback signature.
+    expect(shown('.oa-admin-body section')).toHaveLength(6);
   });
 
   it('saves drafts across categories and keeps edits made during an in-flight save', async () => {
@@ -492,6 +492,66 @@ describe('what moves, and what does not', () => {
   // The operator's policy holds an account at the door until it enrols. The
   // server refuses the rest regardless; the router only saves drawing a
   // screen made of refusals, and must still let the enrolment screen mount.
+  // The operator's code at the backoffice door. The page must not mount — and
+  // so must not ask the server for anything — until the code is in, and a
+  // visit that lapses mid-page must hand the screen back to the door.
+  it('asks for the backoffice code before drawing a page, and draws it after', async () => {
+    const locked: Account = {
+      ...ACCOUNT, role: 'super_admin', two_factor_at: 1,
+      two_factor_backoffice_verify: 'visit', two_factor_backoffice_minutes: 15, two_factor_backoffice_locked: true,
+    };
+    adopt(locked);
+    const server = fetch;
+    const calls: string[] = [];
+    let open = false;
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push(`${init?.method ?? 'GET'} ${url}`);
+      if (url.endsWith('/api/auth/me')) {
+        return Promise.resolve(new Response(JSON.stringify({
+          user: { ...locked, two_factor_backoffice_locked: !open }, preferences: {},
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      }
+      if (url.endsWith('/api/profile/two-factor/backoffice')) {
+        open = true;
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url.endsWith('/api/profile/two-factor/backoffice/leave')) {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      return server(input, init);
+    }));
+
+    await mountAt('/admin/users');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await nextTick();
+    expect(host.querySelector('.oa-2fa-unlock')).not.toBeNull();
+    expect(host.querySelector('.oa-2fa-unlock')!.textContent).toContain(t('backofficeUnlockVisit'));
+    expect(host.querySelector('#usersList')).toBeNull();
+    expect(calls.some((call) => call.includes('/api/admin/'))).toBe(false);
+
+    const field = host.querySelector<HTMLInputElement>('.oa-2fa-unlock input')!;
+    field.value = '123456';
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    for (let i = 0; i < 4; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await nextTick();
+    }
+    expect(calls).toContain('POST /api/profile/two-factor/backoffice');
+    expect(host.querySelector('.oa-2fa-unlock')).toBeNull();
+    expect(host.querySelector('#usersList')).not.toBeNull();
+
+    // The server says the visit ran out: the page gives way to the door.
+    window.dispatchEvent(new Event('oa-backoffice-locked'));
+    await nextTick();
+    expect(host.querySelector('.oa-2fa-unlock')).not.toBeNull();
+
+    // Leaving the backoffice says so, which is what ends a visit in this mode.
+    app?.unmount();
+    app = null;
+    expect(calls).toContain('POST /api/profile/two-factor/backoffice/leave');
+  });
+
   it('sends an account the policy is holding to enrol, and nowhere else', async () => {
     adopt({ ...ACCOUNT, two_factor_enrol: true });
     await mountAt('/settings');

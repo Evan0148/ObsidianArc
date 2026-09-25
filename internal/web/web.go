@@ -7,6 +7,7 @@
 package web
 
 import (
+	"bytes"
 	"embed"
 	"errors"
 	"io/fs"
@@ -30,6 +31,18 @@ type Options struct {
 	Dev bool
 	// Where `npm run dev` is listening, e.g. http://127.0.0.1:5173.
 	DevServer string
+	// Title, called once per request, returns the browser tab title to bake
+	// into the shell before it is served — nil or an empty answer leaves the
+	// build's own <title> alone. This only reaches production: Vite serves
+	// its own unmodified index.html in dev, which is a local convenience the
+	// operator's own settings do not need to reach.
+	//
+	// A function rather than a plain string because the settings service
+	// this reads can change between one request and the next, and the shell
+	// is not cached — see serveIndex.
+	Title func() string
+	// ThemeColor, likewise, fills the shell's theme-color meta tag.
+	ThemeColor func() string
 }
 
 // Handler serves static assets and falls back to index.html for any path the
@@ -64,7 +77,7 @@ func Handler(opts Options) (http.Handler, error) {
 
 		clean := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
 		if clean == "" || clean == "." {
-			serveIndex(w, r, index)
+			serveIndex(w, r, index, opts)
 			return
 		}
 
@@ -72,13 +85,13 @@ func Handler(opts Options) (http.Handler, error) {
 		if err != nil {
 			// Not a file on disk: an application route. The SPA router
 			// resolves it client-side, so it gets the shell.
-			serveIndex(w, r, index)
+			serveIndex(w, r, index, opts)
 			return
 		}
 		info, statErr := file.Stat()
 		file.Close()
 		if statErr != nil || info.IsDir() {
-			serveIndex(w, r, index)
+			serveIndex(w, r, index, opts)
 			return
 		}
 
@@ -93,10 +106,31 @@ func Handler(opts Options) (http.Handler, error) {
 
 // The shell must never be cached: it carries the script tags that point at
 // the current build, and a stale copy pins the browser to a deleted bundle.
-func serveIndex(w http.ResponseWriter, r *http.Request, index []byte) {
+// That is also what makes per-request branding affordable — nothing here has
+// to invalidate a cache when an operator saves the settings page, because
+// there was never one to invalidate.
+func serveIndex(w http.ResponseWriter, r *http.Request, index []byte, opts Options) {
+	body := index
+	// Neither substitution touches the inline theme script the CSP hash is
+	// computed from (see InlineScriptHashes): that hash is read from this
+	// same embedded file at server startup, and a browser hashes whatever
+	// script text it actually received, which is unchanged by rewriting a
+	// <title> or a meta tag elsewhere in the document. If this ever grows a
+	// third substitution, it must keep that property or the policy the shell
+	// ships with stops matching the shell a browser parses.
+	if opts.Title != nil {
+		if title := opts.Title(); title != "" {
+			body = replaceTitle(body, title)
+		}
+	}
+	if opts.ThemeColor != nil {
+		if color := opts.ThemeColor(); color != "" {
+			body = replaceThemeColor(body, color)
+		}
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
-	http.ServeContent(w, r, "index.html", time.Time{}, strings.NewReader(string(index)))
+	http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(body))
 }
 
 func notBuilt(w http.ResponseWriter, _ *http.Request) {

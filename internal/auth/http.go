@@ -95,6 +95,8 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/profile/two-factor/enable", protected(h.enableTwoFactor))
 	mux.HandleFunc("POST /api/profile/two-factor/disable", protected(h.disableTwoFactor))
 	mux.HandleFunc("POST /api/profile/two-factor/recovery", protected(h.regenerateRecovery))
+	mux.HandleFunc("POST /api/profile/two-factor/backoffice", protected(h.enterBackoffice))
+	mux.HandleFunc("POST /api/profile/two-factor/backoffice/leave", protected(h.leaveBackoffice))
 }
 
 // --- payloads ---------------------------------------------------------------
@@ -132,6 +134,13 @@ type accountPayload struct {
 	TwoFactorMandatory bool `json:"two_factor_mandatory"`
 	// Backoffice: the backoffice refuses this account until it enrols.
 	TwoFactorBackoffice bool `json:"two_factor_backoffice"`
+	// BackofficeVerify: the backoffice asks this account for a code of its
+	// own, how often ("visit", "idle", "interval"; empty when it does not),
+	// how many minutes that mode counts, and whether the request this came
+	// with would be refused for want of one right now.
+	TwoFactorBackofficeVerify  string `json:"two_factor_backoffice_verify"`
+	TwoFactorBackofficeMinutes int    `json:"two_factor_backoffice_minutes"`
+	TwoFactorBackofficeLocked  bool   `json:"two_factor_backoffice_locked"`
 }
 
 func (h *Handlers) account(r *http.Request, account user.User) accountPayload {
@@ -147,6 +156,11 @@ func (h *Handlers) account(r *http.Request, account user.User) accountPayload {
 		payload.TwoFactorEnrol = h.service.MustEnrolTwoFactor(account)
 		payload.TwoFactorMandatory = h.service.TwoFactorMandatory(account)
 		payload.TwoFactorBackoffice = h.service.BackofficeNeedsTwoFactor(account)
+		if h.service.BackofficeVerifies(account) {
+			payload.TwoFactorBackofficeVerify = h.service.BackofficeVerifyMode()
+			payload.TwoFactorBackofficeMinutes = h.service.BackofficeMinutes()
+			payload.TwoFactorBackofficeLocked = h.service.BackofficeLocked(r.Context(), account)
+		}
 	}
 	if account.GroupID != "" {
 		if found, err := h.groups.ByID(r.Context(), nil, account.GroupID); err == nil {
@@ -178,6 +192,10 @@ func (h *Handlers) site(w http.ResponseWriter, r *http.Request) error {
 	return httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"name":        h.settings.Get(settings.SiteName),
 		"description": h.settings.Get(settings.SiteDescription),
+		// Already resolved against the site's own name, so the tab title
+		// watcher in App.vue has no fallback of its own to keep in sync with
+		// this one.
+		"browser_title": h.settings.BrowserTitle(),
 		// An empty instance always accepts the first account, whatever the
 		// setting says; that account becomes the administrator.
 		"registration_enabled":        !populated || h.settings.Bool(settings.RegistrationEnabled),

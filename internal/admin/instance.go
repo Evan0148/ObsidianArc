@@ -154,74 +154,83 @@ func (h *Handlers) listSettings(w http.ResponseWriter, r *http.Request) error {
 // administrator invent settings nothing reads, and would let a typo silently
 // replace a real one.
 var writableSettings = map[string]bool{
-	settings.SiteName:                  true,
-	settings.SiteDescription:           true,
-	settings.AboutTitle:                true,
-	settings.AboutBody:                 true,
-	settings.HomeNotice:                true,
-	settings.HomeNoticeDismissible:     true,
-	settings.RegistrationEnabled:       true,
-	settings.RegistrationGroup:         true,
-	settings.RequireEmail:              true,
-	settings.QQRequirement:             true,
-	settings.VerifyEmail:               true,
-	settings.EmailDomains:              true,
-	settings.SignupsPerMinute:          true,
-	settings.SignupsPerHour:            true,
-	settings.SignupsPerIP:              true,
-	settings.SignupsIPWindowMin:        true,
-	settings.TurnstileSiteKey:          true,
-	settings.TurnstileSecretKey:        true,
-	settings.TurnstileOnLogin:          true,
-	settings.TurnstileOnSignup:         true,
-	settings.TurnstileOnAPIKey:         true,
-	settings.TurnstileOnRedeem:         true,
-	settings.TurnstileOnFeedback:       true,
-	settings.FeedbackShowStaffName:     true,
-	settings.OAuthGitHubEnabled:        true,
-	settings.OAuthGitHubID:             true,
-	settings.OAuthGitHubSecret:         true,
-	settings.OAuthGoogleEnabled:        true,
-	settings.OAuthGoogleID:             true,
-	settings.OAuthGoogleSecret:         true,
-	settings.OAuthAllowSignup:          true,
-	settings.OAuthLinkByEmail:          true,
-	settings.SignupReview:              true,
-	settings.SignupReviewModel:         true,
-	settings.SignupReviewMode:          true,
-	settings.SignupReviewRefusal:       true,
-	settings.SignupReviewRestrictHours: true,
-	settings.TwoFactorPolicy:           true,
-	settings.TwoFactorIssuer:           true,
-	settings.TwoFactorRememberDays:     true,
-	settings.ChatAgentMaxRounds:        true,
-	settings.ChatChallengeRequests:     true,
-	settings.ChatChallengeWindowSecs:   true,
-	settings.ChatChallengeClearMins:    true,
-	settings.AdminsBypassQuota:         true,
-	settings.QuotaMaxConcurrent:        true,
-	settings.HealthProbe:               true,
-	settings.HealthWindowMins:          true,
-	settings.HealthDisableAfter:        true,
-	settings.HealthRetainDays:          true,
-	settings.HealthDisableBelow:        true,
-	settings.HealthShowUsers:           true,
-	settings.HealthWarnBelow:           true,
-	settings.HealthResetAt:             true,
-	settings.UsageDisplay:              true,
-	settings.LandingMode:               true,
-	settings.LandingIntro:              true,
-	settings.TrialEnabled:              true,
-	settings.TrialTurns:                true,
-	settings.TrialModel:                true,
-	settings.DefaultSystemPrompt:       true,
-	settings.ConversationMaxTurns:      true,
-	settings.APIEnabled:                true,
-	settings.AttachmentMaxMB:           true,
-	settings.AttachmentRetain:          true,
-	settings.AttachmentPurgeDays:       true,
-	settings.AttachmentPurgeDaily:      true,
-	settings.AttachmentOrphanMins:      true,
+	settings.SiteName:                   true,
+	settings.SiteDescription:            true,
+	settings.AboutTitle:                 true,
+	settings.AboutBody:                  true,
+	settings.HomeNotice:                 true,
+	settings.HomeNoticeDismissible:      true,
+	settings.RegistrationEnabled:        true,
+	settings.RegistrationGroup:          true,
+	settings.RequireEmail:               true,
+	settings.QQRequirement:              true,
+	settings.VerifyEmail:                true,
+	settings.EmailDomains:               true,
+	settings.SignupsPerMinute:           true,
+	settings.SignupsPerHour:             true,
+	settings.SignupsPerIP:               true,
+	settings.SignupsIPWindowMin:         true,
+	settings.TurnstileSiteKey:           true,
+	settings.TurnstileSecretKey:         true,
+	settings.TurnstileOnLogin:           true,
+	settings.TurnstileOnSignup:          true,
+	settings.TurnstileOnAPIKey:          true,
+	settings.TurnstileOnRedeem:          true,
+	settings.TurnstileOnFeedback:        true,
+	settings.FeedbackShowStaffName:      true,
+	settings.OAuthGitHubEnabled:         true,
+	settings.OAuthGitHubID:              true,
+	settings.OAuthGitHubSecret:          true,
+	settings.OAuthGoogleEnabled:         true,
+	settings.OAuthGoogleID:              true,
+	settings.OAuthGoogleSecret:          true,
+	settings.OAuthAllowSignup:           true,
+	settings.OAuthLinkByEmail:           true,
+	settings.SignupReview:               true,
+	settings.SignupReviewModel:          true,
+	settings.SignupReviewMode:           true,
+	settings.SignupReviewRefusal:        true,
+	settings.SignupReviewRestrictHours:  true,
+	settings.TwoFactorPolicy:            true,
+	settings.TwoFactorIssuer:            true,
+	settings.TwoFactorRememberDays:      true,
+	settings.TwoFactorBackofficeMode:    true,
+	settings.TwoFactorBackofficeMinutes: true,
+	settings.ChatAgentMaxRounds:         true,
+	settings.ChatChallengeRequests:      true,
+	settings.ChatChallengeWindowSecs:    true,
+	settings.ChatChallengeClearMins:     true,
+	settings.AdminsBypassQuota:          true,
+	settings.QuotaMaxConcurrent:         true,
+	settings.HealthProbe:                true,
+	settings.HealthWindowMins:           true,
+	settings.HealthDisableAfter:         true,
+	settings.HealthRetainDays:           true,
+	settings.HealthDisableBelow:         true,
+	settings.HealthShowUsers:            true,
+	settings.HealthWarnBelow:            true,
+	settings.HealthResetAt:              true,
+	settings.UsageDisplay:               true,
+	settings.LandingMode:                true,
+	settings.LandingIntro:               true,
+	settings.TrialEnabled:               true,
+	settings.TrialTurns:                 true,
+	settings.TrialModel:                 true,
+	settings.DefaultSystemPrompt:        true,
+	settings.ConversationMaxTurns:       true,
+	settings.APIEnabled:                 true,
+	settings.AttachmentMaxMB:            true,
+	settings.AttachmentRetain:           true,
+	settings.AttachmentPurgeDays:        true,
+	settings.AttachmentPurgeDaily:       true,
+	settings.AttachmentOrphanMins:       true,
+	settings.SiteBrowserTitle:           true,
+	settings.PWAName:                    true,
+	settings.PWAShortName:               true,
+	settings.PWADescription:             true,
+	settings.PWAThemeColor:              true,
+	settings.PWABackgroundColor:         true,
+	settings.PWAIconURL:                 true,
 }
 
 // The numeric settings and what they may be, shared by the ordinary save and
@@ -232,12 +241,13 @@ var writableSettings = map[string]bool{
 // provider request, so the number is what a single question may cost at
 // worst; the consumer floors it at 1, and nothing up there caps it.
 var numericBounds = map[string][2]int{
-	settings.SignupReviewRestrictHours: {0, 24 * 365},
-	settings.ChatChallengeRequests:     {0, 1000},
-	settings.ChatChallengeWindowSecs:   {5, 3600},
-	settings.ChatChallengeClearMins:    {1, 24 * 60},
-	settings.ChatAgentMaxRounds:        {1, 50},
-	settings.TwoFactorRememberDays:     {0, settings.MaxTwoFactorRememberDays},
+	settings.SignupReviewRestrictHours:  {0, 24 * 365},
+	settings.ChatChallengeRequests:      {0, 1000},
+	settings.ChatChallengeWindowSecs:    {5, 3600},
+	settings.ChatChallengeClearMins:     {1, 24 * 60},
+	settings.ChatAgentMaxRounds:         {1, 50},
+	settings.TwoFactorRememberDays:      {0, settings.MaxTwoFactorRememberDays},
+	settings.TwoFactorBackofficeMinutes: {1, settings.MaxTwoFactorBackofficeMinutes},
 }
 
 func (h *Handlers) updateSettings(w http.ResponseWriter, r *http.Request) error {
@@ -277,6 +287,19 @@ func (h *Handlers) updateSettings(w http.ResponseWriter, r *http.Request) error 
 	}
 	if req, present := body[settings.QQRequirement]; present && !settings.ValidQQRequirement(req) {
 		return httpx.BadRequest("Unknown QQ requirement %q.", req)
+	}
+	// Empty is allowed for both — it means "no override", not "black" — so
+	// only a non-empty value that fails the format is refused.
+	for _, key := range []string{settings.PWAThemeColor, settings.PWABackgroundColor} {
+		if value, present := body[key]; present && value != "" && !settings.ValidHexColor(value) {
+			return httpx.BadRequest("Setting %q must be a #rrggbb colour.", key)
+		}
+	}
+	// A manifest icon on another host is silently dropped by the image
+	// policy anyway; refusing it here says so instead of leaving an operator
+	// to wonder why the install prompt has no icon.
+	if url, present := body[settings.PWAIconURL]; present && !settings.ValidPWAIconURL(url) {
+		return httpx.BadRequest("The PWA icon must be a path on this server or a data URI.")
 	}
 	// A trial model that does not exist would make the front door offer a
 	// conversation it cannot hold.
@@ -392,10 +415,20 @@ func (h *Handlers) importSettings(w http.ResponseWriter, r *http.Request) error 
 		delete(applied, settings.UsageDisplay)
 		skipped = append(skipped, settings.UsageDisplay)
 	}
+	for _, key := range []string{settings.PWAThemeColor, settings.PWABackgroundColor} {
+		if value, present := applied[key]; present && value != "" && !settings.ValidHexColor(value) {
+			delete(applied, key)
+			skipped = append(skipped, key)
+		}
+	}
+	if url, present := applied[settings.PWAIconURL]; present && !settings.ValidPWAIconURL(url) {
+		delete(applied, settings.PWAIconURL)
+		skipped = append(skipped, settings.PWAIconURL)
+	}
 	// Dropped rather than refused, like everything else here — and for the
 	// importer's own sake: a file from an instance that requires the second
 	// step must not shut out an operator who has not switched it on yet.
-	for _, key := range []string{settings.TwoFactorPolicy, settings.TwoFactorIssuer} {
+	for _, key := range []string{settings.TwoFactorPolicy, settings.TwoFactorIssuer, settings.TwoFactorBackofficeMode} {
 		if value, present := applied[key]; present {
 			if checkTwoFactorSettings(auth.MustUser(r.Context()), map[string]string{key: value}) != nil {
 				delete(applied, key)

@@ -372,9 +372,15 @@ const series = computed<UsagePoint[]>(() => {
   }, zero);
 });
 const plotPoints = computed<PlotPoint[]>(() => series.value.map((point) => ({ at: point.at, value: figure(point[trendShown.value]) })));
-const trendFormat = computed(() => trendShown.value === 'credits'
-  ? (value: number) => compactNumber(Math.round(value * 100) / 100)
-  : (value: number) => compactNumber(value));
+// Through safe mode when the line is spending: the axis, the readout and the
+// peak are all figures somebody recording the screen would otherwise get.
+const trendFormat = computed(() => {
+  const spending = trendShown.value === 'credits' || trendShown.value.endsWith('tokens');
+  const plain = trendShown.value === 'credits'
+    ? (value: number) => compactNumber(Math.round(value * 100) / 100)
+    : (value: number) => compactNumber(value);
+  return spending ? (value: number) => maskBilling(plain(value)) : plain;
+});
 const trendSummary = computed(() => {
   const point = activePoint.value === null ? null : series.value[activePoint.value];
   if (point) return figure(point[trendShown.value]);
@@ -785,7 +791,7 @@ let savedCustomUntil = 0;
       </article>
       <article class="oa-kpi">
         <span class="oa-kpi-label">{{ t('statTokens') }}</span>
-        <strong class="oa-kpi-value" :title="figure(totals?.total_tokens).toLocaleString()">{{ maskBilling(compactNumber(figure(totals?.total_tokens))) }}</strong>
+        <strong class="oa-kpi-value" :title="maskBilling(figure(totals?.total_tokens).toLocaleString())">{{ maskBilling(compactNumber(figure(totals?.total_tokens))) }}</strong>
         <span v-if="tokenSplit.length" class="oa-kpi-split" aria-hidden="true">
           <span v-for="part in tokenSplit" :key="part.key" :class="part.key" :style="{ flexGrow: part.share }" />
         </span>
@@ -796,7 +802,7 @@ let savedCustomUntil = 0;
       </article>
       <article class="oa-kpi">
         <span class="oa-kpi-label">{{ t('statCredits') }}</span>
-        <strong class="oa-kpi-value" :title="figure(totals?.credits).toLocaleString()">{{ maskBilling(compactNumber(Math.round(figure(totals?.credits) * 100) / 100)) }}</strong>
+        <strong class="oa-kpi-value" :title="maskBilling(figure(totals?.credits).toLocaleString())">{{ maskBilling(compactNumber(Math.round(figure(totals?.credits) * 100) / 100)) }}</strong>
         <span class="oa-kpi-foot">
           <UsageDelta :current="figure(totals?.credits)" :previous="previous?.credits" />
           <span v-if="totals?.requests">{{ t('kpiPerRequest', { value: maskBilling(compactNumber(Math.round(figure(totals?.credits) / totals.requests * 100) / 100)) }) }}</span>
@@ -909,7 +915,7 @@ let savedCustomUntil = 0;
             <button type="button" :aria-pressed="heatMetric === 'total_tokens'" @click="onHeatMetric('total_tokens')">{{ t('statTokens') }}</button>
           </div>
         </header>
-        <UsageHeatmap :slots="report?.heatmap ?? []" :metric="heatMetric" :format="(value) => t(heatMetric === 'requests' ? 'boardRequests' : 'boardTokens', { count: compactNumber(value) })" />
+        <UsageHeatmap :slots="report?.heatmap ?? []" :metric="heatMetric" :format="(value) => heatMetric === 'requests' ? t('boardRequests', { count: compactNumber(value) }) : t('boardTokens', { count: maskBilling(compactNumber(value)) })" />
       </section>
       <section id="secSpread" class="oa-viz-card">
         <header class="oa-viz-head">

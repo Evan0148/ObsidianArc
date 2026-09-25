@@ -7,6 +7,14 @@
 <title>Obsidian Arc</title>
 <meta name="description" content="A self-hosted AI chat server.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23a1a1aa' d='M12 2 3 7v10l9 5 9-5V7z'/%3E%3C/svg%3E">
+<link rel="manifest" href="/manifest.webmanifest">
+<!-- The same neutral the interface's own theme picker starts from
+     (color-utils.ts: ACCENTS.neutral). The server rewrites the value at
+     serve time to match the operator's own pwa.theme_color — see
+     internal/web/branding.go — so this is only what a request for the raw
+     build's own index.html, or one for an instance that never opens that
+     card, actually shows. -->
+<meta name="theme-color" content="#18181b">
 <script>
   /* Applying the stored theme before the first paint is what prevents a
      white flash on a dark-mode reload. It has to be inline and blocking, so

@@ -818,44 +818,6 @@
   color: var(--ai-text-secondary);
 }
 
-/* A bar chart drawn with divs. A charting library would be twenty times the
-   size of the thing it draws, for one chart. */
-.oa-spark {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 84px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: var(--ai-surface-container-low);
-}
-
-/* Capped, so a series with two buckets reads as two bars rather than as a
-   solid block of colour. */
-.oa-spark-bar {
-  flex: 1 1 0;
-  min-width: 2px;
-  max-width: 28px;
-  min-height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--ai-primary);
-  opacity: 0.85;
-  transition: opacity 0.15s ease;
-}
-
-.oa-spark-bar:hover {
-  opacity: 1;
-}
-
-.oa-spark-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  font-size: 12px;
-  color: var(--ai-text-secondary);
-}
-
 /* --- side panel ----------------------------------------------------------- */
 
 /* A column in the row, not a sheet over it. It slides in by margin the same
@@ -1361,8 +1323,7 @@
   .oa-admin.rail-collapsed .oa-admin-rail,
   .oa-admin-nav,
   .oa-settings-rail-item,
-  .oa-settings-tab,
-  .oa-spark-bar {
+  .oa-settings-tab {
     transition: none;
   }
 }
@@ -2690,6 +2651,93 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 11px;
   color: var(--ai-danger);
+}
+
+/* --- the security log -----------------------------------------------------
+
+   One decision per row: what happened and how it was decided on the first
+   line with the moment on the right, who and from where on the second, and
+   the reason — a model's sentence, a console command — given the full width
+   to wrap in, because it is the part that gets read. */
+
+.oa-event-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  transition: opacity 0.15s ease;
+}
+
+.oa-event-list.busy {
+  opacity: 0.55;
+}
+
+.oa-event {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 11px 12px 11px 14px;
+  border-top: 1px solid var(--ai-border);
+  /* A thin mark down the left edge carries the severity, so a warning is
+     visible while scrolling without reading every badge. */
+  box-shadow: inset 3px 0 0 transparent;
+}
+
+.oa-event:first-child {
+  border-top: none;
+}
+
+.oa-event.is-warning {
+  box-shadow: inset 3px 0 0 rgba(217, 119, 6, 0.55);
+}
+
+.oa-event.is-danger {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--ai-danger) 60%, transparent);
+}
+
+.oa-event-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.oa-event-title {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oa-event-time {
+  flex: none;
+  margin-left: auto;
+  color: var(--ai-text-secondary);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.oa-event-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  color: var(--ai-text-secondary);
+  font-size: 12px;
+}
+
+.oa-event-meta .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+}
+
+.oa-event-reason {
+  margin: 2px 0 0;
+  color: var(--ai-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 @container logs (max-width: 900px) {
@@ -4659,49 +4707,204 @@
 
 /* --- two-step verification ---------------------------------------------------
 
-   The setup wizard, the code field on the sign-in card, the recovery codes,
+   The security card, the setup wizard, the code field on the sign-in card,
    and the adoption figures in the backoffice. Everything comes from the
    tokens, with one deliberate exception: the QR code is black on white in
    every theme. A scanner needs the contrast, a quiet zone the colour of the
-   page it sits on, and many cameras will not read an inverted code at all. */
+   page it sits on, and many cameras will not read an inverted code at all.
+
+   The card is the workbench's own surface, so everything inside it — the
+   code field, the app tags, the frame around the QR code — can use the
+   field fill and still stand apart from it, in the settings column as much as
+   on the sign-in card and in the backoffice's gate. */
+
+.oa-2fa-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--ai-surface-card);
+}
+
+.oa-2fa-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.oa-2fa-head-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  background: var(--ai-field-bg);
+  color: var(--ai-text);
+}
+
+.oa-2fa-head-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.oa-2fa-head-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.oa-2fa-head-meta {
+  margin: 0;
+  color: var(--ai-text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.oa-2fa-note {
+  margin: 0 16px 12px;
+  padding: 9px 12px;
+  border-radius: 11px;
+  background: var(--ai-field-bg);
+  color: var(--ai-text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.oa-2fa-panel-body {
+  padding: 16px;
+  border-top: 1px solid var(--ai-border);
+}
+
+/* One row per thing that can be done to a factor already in place: what it
+   is on the left, the one button on the right, the way the connections
+   above list their providers. */
+.oa-2fa-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--ai-border);
+}
+
+.oa-2fa-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.oa-2fa-row-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.oa-2fa-row-meta {
+  color: var(--ai-text-secondary);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.oa-2fa-row-meta.warn {
+  color: var(--ai-danger);
+}
+
+/* What a row opens: indented under it, not a new section. */
+.oa-2fa-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 16px 14px;
+}
+
+.oa-2fa-confirm-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.oa-2fa-confirm-row input.oa-2fa-code {
+  flex: 1;
+  min-width: 0;
+}
+
+.oa-2fa-flash {
+  margin: 0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--ai-border);
+  color: var(--ai-danger);
+  font-size: 12px;
+}
+
+/* The project's "good" colour, as .oa-drawer-flash.ok has it. */
+.oa-2fa-flash.ok {
+  color: #10b981;
+}
+
+/* --- the wizard --- */
 
 .oa-2fa-wizard {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .oa-2fa-steps {
   display: flex;
-  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .oa-2fa-step {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: 7px;
   min-width: 0;
   color: var(--ai-text-secondary);
-  font-size: 11px;
+  font-size: 11.5px;
   text-align: center;
 }
 
+/* The line into each step from the one before, drawn by the step it leads
+   to and filled once the step it leaves is done. */
+.oa-2fa-step + .oa-2fa-step::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  right: calc(50% + 18px);
+  left: calc(-50% + 18px);
+  height: 2px;
+  border-radius: 1px;
+  background: var(--ai-field-bg);
+  transition: background 0.25s ease;
+}
+
+.oa-2fa-step.done + .oa-2fa-step::before {
+  background: var(--ai-primary);
+}
+
 .oa-2fa-step-dot {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
   border-radius: 999px;
   background: var(--ai-field-bg);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition: background 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
 }
 
 .oa-2fa-step-label {
@@ -4722,50 +4925,86 @@
   color: var(--ai-primary-text);
 }
 
+/* The focus ring's colour, so the step being worked on reads as the one
+   with the caret in it. */
+.oa-2fa-step.active .oa-2fa-step-dot {
+  box-shadow: 0 0 0 4px var(--ai-focus-shadow);
+}
+
 /* Each step rises in the way a switched conversation does, so moving through
    the wizard reads as the rest of the interface moving. */
 .oa-2fa-pane {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
+  margin: 0;
   animation: aiChatSwitch 0.34s cubic-bezier(0.2, 0, 0, 1);
 }
 
-.oa-2fa-pane > .oa-field-hint {
-  margin: 0;
-}
-
-.oa-2fa-glyph {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  background: var(--ai-badge-bg);
-  color: var(--ai-badge-text);
+.oa-2fa-pane-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .oa-2fa-title {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
+  letter-spacing: -0.1px;
+}
+
+.oa-2fa-desc {
+  margin: 0;
+  color: var(--ai-text-secondary);
+  font-size: 12.5px;
+  line-height: 1.65;
 }
 
 .oa-2fa-apps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   margin: 0;
-  padding: 10px 12px;
-  border-radius: 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.oa-2fa-apps li {
+  padding: 6px 12px;
+  border-radius: 999px;
   background: var(--ai-field-bg);
   font-size: 12px;
-  line-height: 1.7;
+  line-height: 1.3;
+}
+
+/* Secondary on the left, the way forward on the right, as a panel's own
+   footer has them; a way forward on its own still sits on the right. */
+.oa-2fa-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.oa-2fa-foot .oa-btn.primary {
+  margin-left: auto;
+}
+
+.oa-2fa-scan {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 16px 14px;
+  border-radius: 14px;
+  background: var(--ai-field-bg);
 }
 
 .oa-2fa-qr {
-  align-self: center;
-  width: 188px;
-  height: 188px;
-  border-radius: 12px;
+  width: 172px;
+  height: 172px;
+  border-radius: 10px;
 }
 
 .oa-2fa-qr-light {
@@ -4777,24 +5016,45 @@
 }
 
 .oa-2fa-link {
-  align-self: center;
   padding: 0;
   border: none;
   background: none;
-  color: var(--ai-primary);
+  color: var(--ai-text-secondary);
   font: inherit;
   font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
   cursor: pointer;
 }
 
 .oa-2fa-link:hover {
-  text-decoration: underline;
+  color: var(--ai-text);
 }
 
 .oa-2fa-key {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  align-self: stretch;
+  padding-top: 12px;
+  border-top: 1px solid var(--ai-border);
+}
+
+.oa-2fa-key .oa-2fa-desc {
+  font-size: 12px;
+}
+
+.oa-2fa-key-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ai-text-secondary);
+  font-size: 12px;
+}
+
+.oa-2fa-key-value {
+  color: var(--ai-text);
 }
 
 /* The key is the row's copy control, as a client id is on the applications
@@ -4806,38 +5066,47 @@
   padding: 0;
   border: none;
   background: none;
-  color: inherit;
+  color: var(--ai-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   letter-spacing: 0.04em;
-  text-align: left;
+  text-align: right;
   word-break: break-all;
   cursor: pointer;
-}
-
-.oa-2fa-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
 /* Wide and spaced, the way the app draws the code it is being copied from.
    Qualified by the field so it outranks the sign-in card's own input rule. */
 .oa-field input.oa-2fa-code {
+  min-height: 44px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 18px;
-  letter-spacing: 0.3em;
+  font-size: 19px;
+  letter-spacing: 0.32em;
   text-align: center;
+}
+
+/* Inside a row the field sits beside its buttons, so it keeps their height. */
+.oa-2fa-confirm-row input.oa-2fa-code {
+  min-height: 36px;
+  font-size: 15px;
+  letter-spacing: 0.2em;
+}
+
+.oa-2fa-codes-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--ai-field-bg);
 }
 
 .oa-2fa-codes {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px 12px;
+  gap: 8px 12px;
   margin: 0;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--ai-field-bg);
+  padding: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
   letter-spacing: 0.04em;
@@ -4849,18 +5118,20 @@
   text-align: center;
 }
 
+.oa-2fa-codes-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* The page a policy holds an account at: a little wider than the sign-in
+   card, for the four steps across the top. */
 .oa-2fa-card {
-  max-width: 400px;
+  max-width: 420px;
 }
 
 .oa-2fa-card .oa-auth-sub {
-  margin-bottom: 16px;
-}
-
-.oa-2fa-status .oa-connection-name {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  margin-bottom: 22px;
 }
 
 .oa-2fa-self a {
@@ -4880,8 +5151,8 @@
 .oa-2fa-gate {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  max-width: 460px;
+  gap: 20px;
+  max-width: 480px;
   padding: 23px;
   border-radius: 18px;
   background: var(--ai-surface-card);
@@ -4934,4 +5205,16 @@
   margin: 4px 0 0;
   font-size: 12.5px;
   font-weight: 600;
+}
+
+/* The backoffice's own door: the gate's card, a little narrower, since it
+   holds one field rather than a wizard. */
+.oa-2fa-unlock {
+  max-width: 420px;
+}
+
+.oa-2fa-unlock-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
 }

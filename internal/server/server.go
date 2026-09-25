@@ -899,6 +899,11 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 			// the same secret, the same replay guard and the same guessing
 			// budget as the web sign-in's second step.
 			SecondFactor: authService.VerifyTwoFactorCode,
+			// Each connection holds its own visit to the backoffice, opened
+			// by `2fa backoffice <code>` and gone when it hangs up: the code
+			// typed to sign in proves who connected, not that they are still
+			// there when they reach for the administrative commands.
+			ConnectionContext: auth.WithBackofficeGrant,
 			// What the cookie does for the browser: the account is read
 			// again before every command, so revoking a grant, disabling an
 			// account or deleting it reaches a session that is already open
@@ -920,9 +925,37 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		httpx.WriteError(w, r, httpx.NotFound("No such endpoint."))
 	})
 
+	// The PWA install card and splash screen. Public, like the shell itself:
+	// a browser asks for it before anyone has signed in, and nothing in it
+	// is more sensitive than the site name /api/site already discloses.
+	mux.Handle("GET /manifest.webmanifest", web.ManifestHandler(func() web.Manifest {
+		name := settingsService.Get(settings.PWAName)
+		if name == "" {
+			name = settingsService.Get(settings.SiteName)
+		}
+		shortName := settingsService.Get(settings.PWAShortName)
+		if shortName == "" {
+			shortName = name
+		}
+		description := settingsService.Get(settings.PWADescription)
+		if description == "" {
+			description = settingsService.Get(settings.SiteDescription)
+		}
+		return web.Manifest{
+			Name:            name,
+			ShortName:       shortName,
+			Description:     description,
+			ThemeColor:      settingsService.Get(settings.PWAThemeColor),
+			BackgroundColor: settingsService.Get(settings.PWABackgroundColor),
+			IconURL:         settingsService.Get(settings.PWAIconURL),
+		}
+	}))
+
 	frontend, err := web.Handler(web.Options{
-		Dev:       cfg.Dev,
-		DevServer: devServerURL(cfg),
+		Dev:        cfg.Dev,
+		DevServer:  devServerURL(cfg),
+		Title:      settingsService.BrowserTitle,
+		ThemeColor: func() string { return settingsService.Get(settings.PWAThemeColor) },
 	})
 	if err != nil {
 		return nil, err
@@ -1079,7 +1112,8 @@ func skipFromLog(r *http.Request) bool {
 	path := r.URL.Path
 	return strings.HasPrefix(path, "/assets/") ||
 		path == "/favicon.ico" ||
-		path == "/robots.txt"
+		path == "/robots.txt" ||
+		path == "/manifest.webmanifest"
 }
 
 func (s *Server) Handler() http.Handler { return s.handler }

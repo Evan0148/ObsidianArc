@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -710,5 +711,55 @@ func TestSSHRefusesATwoStepAccountWithNoWayToCheckTheCode(t *testing.T) {
 	})}}
 	if _, err := srv.passwordCallback(fakeConnMetadata{user: "guarded"}, []byte("s3cret-pass")); err == nil {
 		t.Fatal("a two-step account was admitted on its password")
+	}
+}
+
+// State the wiring keeps per connection — the visit to the backoffice that
+// `2fa backoffice` opens — must be one value for every command on a
+// connection, and a different one on the next connection.
+func TestEachConnectionHasItsOwnContext(t *testing.T) {
+	type connectionKey struct{}
+	var (
+		made atomic.Int64
+		seen = make(chan int64, 8)
+	)
+	engine := console.New(console.Options{
+		Dispatch: func(ctx context.Context, _ user.User, _, _ string, _ any) (console.Response, error) {
+			seen <- ctx.Value(connectionKey{}).(int64)
+			return console.Response{Status: 200, Body: []byte(`{"user":{}}`)}, nil
+		},
+		Version:  "test",
+		SiteName: func() string { return "Test Arc" },
+	})
+	accounts := map[string]testAccount{"admin": {password: "s3cret-pass", account: adminUser("admin")}}
+	srv := startTestServer(t, Config{
+		Console:      engine,
+		Authenticate: fakeAuthenticate(accounts),
+		ConnectionContext: func(ctx context.Context) context.Context {
+			return context.WithValue(ctx, connectionKey{}, made.Add(1))
+		},
+	})
+
+	run := func(client *ssh.Client) int64 {
+		t.Helper()
+		session, err := client.NewSession()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer session.Close()
+		if _, err := session.CombinedOutput("me show"); err != nil {
+			t.Fatalf("me show: %v", err)
+		}
+		return <-seen
+	}
+
+	first := dialInsecure(t, srv, "admin", "s3cret-pass")
+	a, b := run(first), run(first)
+	if a != b {
+		t.Fatalf("two commands on one connection saw %d and %d", a, b)
+	}
+	second := dialInsecure(t, srv, "admin", "s3cret-pass")
+	if c := run(second); c == a {
+		t.Fatalf("a second connection shared the first one's context (%d)", c)
 	}
 }

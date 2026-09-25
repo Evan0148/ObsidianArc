@@ -20,9 +20,8 @@ import { saveAsFile } from '@/api/backup';
 import { ApiError } from '@/api/client';
 import { beginTwoFactor, enableTwoFactor, type TwoFactorSetup } from '@/api/twofactor';
 import { copyToClipboard } from '@/chat/markdown';
-import OaField from '@/components/OaField.vue';
 import { t, type StringKey } from '@/composables/useI18n';
-import { IconCheck, IconCopy, IconDownload, IconShield, IconSmartphone } from '@/icons';
+import { IconCheck, IconCopy, IconDownload } from '@/icons';
 
 const props = withDefaults(defineProps<{
   /** Offer a way back out of the first step. The gates do not: there is
@@ -56,6 +55,10 @@ const copied = ref('');
 let enabledAccount: Account | null = null;
 
 const codeField = ref<HTMLInputElement | null>(null);
+
+/** The suggestions as tags. One string per language rather than a list of
+ *  keys, because which apps are worth naming differs by where people are. */
+const apps = computed(() => t('twoFactorAppsList').split('·').map((name) => name.trim()).filter(Boolean));
 
 /** Four at a time, the way apps and password managers print keys. */
 const groupedKey = computed(() => (setup.value?.secret ?? '').replace(/(.{4})(?=.)/g, '$1 '));
@@ -162,7 +165,7 @@ function finish(): void {
         :aria-current="position === index ? 'step' : undefined"
       >
         <span class="oa-2fa-step-dot">
-          <IconCheck v-if="position < index" :size="11" />
+          <IconCheck v-if="position < index" :size="12" />
           <template v-else>{{ position + 1 }}</template>
         </span>
         <span class="oa-2fa-step-label">{{ t(entry.label) }}</span>
@@ -171,51 +174,56 @@ function finish(): void {
 
     <!-- 1. An app to put the secret in. -->
     <section v-if="step === 'app'" class="oa-2fa-pane">
-      <span class="oa-2fa-glyph"><IconSmartphone :size="20" /></span>
-      <h3 class="oa-2fa-title">{{ t('twoFactorAppTitle') }}</h3>
-      <p class="oa-field-hint">{{ t('twoFactorAppBody') }}</p>
-      <p class="oa-2fa-apps">{{ t('twoFactorAppsList') }}</p>
+      <header class="oa-2fa-pane-head">
+        <h3 class="oa-2fa-title">{{ t('twoFactorAppTitle') }}</h3>
+        <p class="oa-2fa-desc">{{ t('twoFactorAppBody') }}</p>
+      </header>
+      <ul class="oa-2fa-apps">
+        <li v-for="app in apps" :key="app">{{ app }}</li>
+      </ul>
       <p class="oa-auth-error" role="alert" :hidden="!error">{{ error }}</p>
-      <div class="oa-button-row">
+      <footer class="oa-2fa-foot">
         <button v-if="props.cancellable" type="button" class="oa-btn" @click="emit('cancel')">
           {{ t('cancel') }}
         </button>
         <button type="button" class="oa-btn primary" :disabled="busy" @click="begin">
           {{ t('twoFactorAppHaveOne') }}
         </button>
-      </div>
+      </footer>
     </section>
 
     <!-- 2. The secret, as a picture and, for a camera that will not
          cooperate, as text. -->
     <section v-else-if="step === 'scan' && setup" class="oa-2fa-pane">
-      <h3 class="oa-2fa-title">{{ t('twoFactorScanTitle') }}</h3>
-      <p class="oa-field-hint">{{ t('twoFactorScanBody', { issuer: setup.issuer }) }}</p>
-      <!-- The quiet zone is part of the picture: a scanner needs four light
-           modules around the symbol to find its edge. -->
-      <svg
-        class="oa-2fa-qr"
-        :viewBox="`-4 -4 ${setup.qr.size + 8} ${setup.qr.size + 8}`"
-        shape-rendering="crispEdges"
-        role="img"
-        :aria-label="t('twoFactorScanTitle')"
-      >
-        <rect class="oa-2fa-qr-light" x="-4" y="-4" :width="setup.qr.size + 8" :height="setup.qr.size + 8" />
-        <path class="oa-2fa-qr-dark" :d="setup.qr.path" />
-      </svg>
-      <button type="button" class="oa-2fa-link" :aria-expanded="showKey" @click="showKey = !showKey">
-        {{ t('twoFactorCantScan') }}
-      </button>
-      <div v-if="showKey" class="oa-2fa-key">
-        <p class="oa-field-hint">{{ t('twoFactorManualHint') }}</p>
-        <div class="oa-facts">
-          <div class="oa-fact">
-            <span class="oa-fact-label">{{ t('twoFactorAccountLabel') }}</span>
-            <span class="oa-fact-value">{{ setup.account }}</span>
+      <header class="oa-2fa-pane-head">
+        <h3 class="oa-2fa-title">{{ t('twoFactorScanTitle') }}</h3>
+        <p class="oa-2fa-desc">{{ t('twoFactorScanBody', { issuer: setup.issuer }) }}</p>
+      </header>
+      <div class="oa-2fa-scan">
+        <!-- The quiet zone is part of the picture: a scanner needs four light
+             modules around the symbol to find its edge. -->
+        <svg
+          class="oa-2fa-qr"
+          :viewBox="`-4 -4 ${setup.qr.size + 8} ${setup.qr.size + 8}`"
+          shape-rendering="crispEdges"
+          role="img"
+          :aria-label="t('twoFactorScanTitle')"
+        >
+          <rect class="oa-2fa-qr-light" x="-4" y="-4" :width="setup.qr.size + 8" :height="setup.qr.size + 8" />
+          <path class="oa-2fa-qr-dark" :d="setup.qr.path" />
+        </svg>
+        <button type="button" class="oa-2fa-link" :aria-expanded="showKey" @click="showKey = !showKey">
+          {{ t('twoFactorCantScan') }}
+        </button>
+        <div v-if="showKey" class="oa-2fa-key">
+          <p class="oa-2fa-desc">{{ t('twoFactorManualHint') }}</p>
+          <div class="oa-2fa-key-row">
+            <span>{{ t('twoFactorAccountLabel') }}</span>
+            <span class="oa-2fa-key-value">{{ setup.account }}</span>
           </div>
-          <div class="oa-fact">
-            <span class="oa-fact-label">{{ t('twoFactorKeyLabel') }}</span>
-            <button type="button" class="oa-2fa-secret mono" :title="t('copy')" @click="copy(setup.secret)">
+          <div class="oa-2fa-key-row">
+            <span>{{ t('twoFactorKeyLabel') }}</span>
+            <button type="button" class="oa-2fa-secret" :title="t('copy')" @click="copy(setup.secret)">
               <span>{{ groupedKey }}</span>
               <IconCheck v-if="copied === setup.secret" :size="13" />
               <IconCopy v-else :size="13" />
@@ -223,73 +231,77 @@ function finish(): void {
           </div>
         </div>
       </div>
-      <div class="oa-button-row">
+      <footer class="oa-2fa-foot">
         <button type="button" class="oa-btn" @click="step = 'app'">{{ t('back') }}</button>
         <button type="button" class="oa-btn primary" @click="toVerify">{{ t('twoFactorContinue') }}</button>
-      </div>
+      </footer>
     </section>
 
     <!-- 3. A code from the app, which is what proves the two agree. -->
-    <section v-else-if="step === 'verify' && setup" class="oa-2fa-pane">
-      <h3 class="oa-2fa-title">{{ t('twoFactorVerifyTitle') }}</h3>
-      <p class="oa-field-hint">{{ t('twoFactorVerifyBody', { issuer: setup.issuer }) }}</p>
-      <form class="oa-2fa-form" novalidate @submit.prevent="verify">
-        <OaField :label="t('twoFactorCodeLabel')">
-          <input
-            ref="codeField"
-            class="oa-2fa-code"
-            :value="code"
-            type="text"
-            inputmode="numeric"
-            autocomplete="one-time-code"
-            spellcheck="false"
-            maxlength="7"
-            placeholder="000000"
-            @input="onCodeInput"
-          >
-        </OaField>
-        <p class="oa-auth-error" role="alert" :hidden="!error">{{ error }}</p>
-        <div class="oa-button-row">
-          <button type="button" class="oa-btn" :disabled="busy" @click="step = 'scan'">{{ t('back') }}</button>
-          <button
-            type="submit"
-            class="oa-btn primary"
-            :disabled="busy || code.replace(/\D/g, '').length !== 6"
-          >
-            {{ busy ? t('twoFactorVerifying') : t('twoFactorVerifyAndEnable') }}
-          </button>
-        </div>
-      </form>
-    </section>
+    <form v-else-if="step === 'verify' && setup" class="oa-2fa-pane" novalidate @submit.prevent="verify">
+      <header class="oa-2fa-pane-head">
+        <h3 class="oa-2fa-title">{{ t('twoFactorVerifyTitle') }}</h3>
+        <p class="oa-2fa-desc">{{ t('twoFactorVerifyBody', { issuer: setup.issuer }) }}</p>
+      </header>
+      <div class="oa-field">
+        <input
+          ref="codeField"
+          class="oa-2fa-code"
+          :value="code"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          spellcheck="false"
+          maxlength="7"
+          placeholder="000000"
+          :aria-label="t('twoFactorCodeLabel')"
+          @input="onCodeInput"
+        >
+      </div>
+      <p class="oa-auth-error" role="alert" :hidden="!error">{{ error }}</p>
+      <footer class="oa-2fa-foot">
+        <button type="button" class="oa-btn" :disabled="busy" @click="step = 'scan'">{{ t('back') }}</button>
+        <button
+          type="submit"
+          class="oa-btn primary"
+          :disabled="busy || code.replace(/\D/g, '').length !== 6"
+        >
+          {{ busy ? t('twoFactorVerifying') : t('twoFactorVerifyAndEnable') }}
+        </button>
+      </footer>
+    </form>
 
     <!-- 4. The recovery codes, the one time they exist in plain text. -->
     <section v-else-if="step === 'save'" class="oa-2fa-pane">
-      <span class="oa-2fa-glyph"><IconShield :size="20" /></span>
-      <h3 class="oa-2fa-title">{{ t('twoFactorSaveTitle') }}</h3>
-      <p class="oa-field-hint">{{ t('twoFactorSaveBody') }}</p>
-      <ul class="oa-2fa-codes mono">
-        <li v-for="entry in recovery" :key="entry">{{ entry }}</li>
-      </ul>
-      <div class="oa-button-row">
-        <button type="button" class="oa-btn" @click="copy(recoveryText())">
-          <IconCheck v-if="copied === recoveryText()" :size="14" />
-          <IconCopy v-else :size="14" />
-          {{ copied === recoveryText() ? t('copied') : t('copy') }}
-        </button>
-        <button type="button" class="oa-btn" @click="download">
-          <IconDownload :size="14" />
-          {{ t('download') }}
-        </button>
+      <header class="oa-2fa-pane-head">
+        <h3 class="oa-2fa-title">{{ t('twoFactorSaveTitle') }}</h3>
+        <p class="oa-2fa-desc">{{ t('twoFactorSaveBody') }}</p>
+      </header>
+      <div class="oa-2fa-codes-box">
+        <ol class="oa-2fa-codes">
+          <li v-for="entry in recovery" :key="entry">{{ entry }}</li>
+        </ol>
+        <div class="oa-2fa-codes-actions">
+          <button type="button" class="oa-btn" @click="copy(recoveryText())">
+            <IconCheck v-if="copied === recoveryText()" :size="14" />
+            <IconCopy v-else :size="14" />
+            {{ copied === recoveryText() ? t('copied') : t('copy') }}
+          </button>
+          <button type="button" class="oa-btn" @click="download">
+            <IconDownload :size="14" />
+            {{ t('download') }}
+          </button>
+        </div>
       </div>
       <label class="oa-checkbox-field">
         <input v-model="saved" type="checkbox">
         <span>{{ t('twoFactorSavedConfirm') }}</span>
       </label>
-      <div class="oa-button-row">
+      <footer class="oa-2fa-foot">
         <button type="button" class="oa-btn primary" :disabled="!saved" @click="finish">
           {{ t('twoFactorFinish') }}
         </button>
-      </div>
+      </footer>
     </section>
   </div>
 </template>

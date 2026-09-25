@@ -1,6 +1,7 @@
 // The pieces more than one administration screen needs.
 
 import { adminApi, type AdminModel } from '@/admin/api';
+import { t } from '@/composables/useI18n';
 
 /**
  * The models an allowance is actually spent on. Fetched once per visit and
@@ -46,4 +47,12 @@ export function priciest(models: AdminModel[]): AdminModel | null {
 
 export function round(value: number): string {
   return String(Math.round(value * 10) / 10);
+}
+
+/** Minutes in the largest unit that divides them evenly, so 1440 reads as a
+ *  day rather than a number to divide in one's head. */
+export function minutesLabel(minutes: number): string {
+  if (minutes > 0 && minutes % 1440 === 0) return t('durationDays', { count: minutes / 1440 });
+  if (minutes > 0 && minutes % 60 === 0) return t('durationHours', { count: minutes / 60 });
+  return t('durationMinutes', { count: minutes });
 }

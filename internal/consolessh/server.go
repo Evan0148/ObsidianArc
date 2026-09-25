@@ -77,6 +77,14 @@ type Config struct {
 	// them on a password.
 	SecondFactor func(ctx context.Context, account user.User, code, ip string) error
 
+	// ConnectionContext makes the context every command on one connection
+	// runs under, once per connection. It is where the wiring keeps state
+	// that belongs to a connection and must end with it — the visit to the
+	// backoffice a code at the console's `2fa backoffice` opens — without
+	// this package having to know what that state is. Nil is a bare
+	// background context.
+	ConnectionContext func(ctx context.Context) context.Context
+
 	IdleTimeout time.Duration // default 30m
 	MaxSessions int           // default 16, 0 = unlimited
 
@@ -353,6 +361,10 @@ func (s *Server) handleConn(conn net.Conn) {
 		return
 	}
 	ip := hostOnly(sconn.RemoteAddr())
+	base := context.Background()
+	if s.cfg.ConnectionContext != nil {
+		base = s.cfg.ConnectionContext(base)
+	}
 
 	for newChannel := range chans {
 		if newChannel.ChannelType() != "session" {
@@ -375,6 +387,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		}
 
 		sess := newSSHSession(s, sconn, channel, actor, ip)
+		sess.base = base
 		s.addSession(sess)
 		s.wg.Add(1)
 		go func() {
@@ -458,6 +471,9 @@ type sshSession struct {
 	channel ssh.Channel
 	actor   user.User
 	ip      string
+	// What every command on this connection runs under: shared by all the
+	// connection's channels, gone when it hangs up.
+	base context.Context
 
 	mu     sync.Mutex
 	width  int
@@ -475,6 +491,7 @@ func newSSHSession(server *Server, conn ssh.Conn, channel ssh.Channel, actor use
 		channel: channel,
 		actor:   actor,
 		ip:      ip,
+		base:    context.Background(),
 		width:   100, // console.Session.Width: 0 means unknown, assume 100 — pick it up front rather than repeat the fallback at every render.
 		lang:    "en",
 	}
@@ -762,7 +779,7 @@ func (sess *sshSession) snapshot(transport string) *console.Session {
 // this is the one function in the package that could be mistaken for a
 // shell, and it is not one.
 func (sess *sshSession) runExec(line string) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(sess.base)
 	sess.mu.Lock()
 	sess.cancel = cancel
 	sess.mu.Unlock()
@@ -878,7 +895,7 @@ func (sess *sshSession) runInteractive() {
 				continue
 			}
 
-			runCtx, runCancel := context.WithCancel(context.Background())
+			runCtx, runCancel := context.WithCancel(sess.base)
 			cancel = runCancel
 			running = true
 			go func(line string) {

@@ -79,6 +79,33 @@ docker compose up -d --build server
 docker compose logs --tail 100 server
 ```
 
+### 在本地构建后部署
+
+服务器配置较低时，上面的 `--build` 会在服务器上完整执行前端打包和 Go 编译，耗时较长。程序是不依赖 C 库的静态二进制，可以在任何装有 Go 和 Node.js 的电脑上为 Linux 交叉编译，服务器只需把现成的程序装进镜像：
+
+```bash
+make deploy DEPLOY_HOST=root@你的服务器
+```
+
+这条命令会：
+
+1. 在本机打包前端，并编译 Linux 程序，输出到 `dist/`（也可以单独执行 `make release`）；
+2. 通过一条 SSH 连接把 `dist/` 上传到服务器的 `/data/obsidian-arc/dist/`；
+3. 在服务器上用 `Dockerfile.release` 生成镜像（只复制程序，几秒完成），标记为 `obsidian-arc:latest` 和本次版本号；
+4. 执行 `docker compose up -d --no-build server`，只替换 `server` 容器，数据库容器不受影响。
+
+默认编译 x86-64 程序。服务器是 ARM 时加 `ARCH=arm64`；架构不一致时，命令会在替换任何东西之前停止并提示。Compose 项目不在 `/data/obsidian-arc` 时，用 `DEPLOY_DIR=/路径` 指定。服务器上的 `docker-compose.yml` 需要保留 `image: obsidian-arc:latest`，仓库自带的配置已经是这样。
+
+每次部署的镜像都会额外保留版本号标签。需要回退时，在服务器的 Compose 目录执行：
+
+```bash
+docker image ls obsidian-arc
+docker tag obsidian-arc:上一个版本号 obsidian-arc:latest
+docker compose up -d --no-build server
+```
+
+旧版本镜像不会自动删除，可以定期用 `docker image rm obsidian-arc:版本号` 清理。
+
 ## 升级二进制实例
 
 重新构建前端与程序，停止旧进程，再替换二进制文件。保持原有数据目录、环境变量和服务运行用户不变。

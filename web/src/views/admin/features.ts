@@ -473,6 +473,14 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
       '2FA', 'MFA', 'TOTP', 'two-factor', 'authenticator', 'google authenticator'],
   },
   {
+    id: 'secBackofficeVerify',
+    pageSlug: 'security',
+    titleKey: 'secBackofficeVerify',
+    searchKeys: ['backofficeVerifyHint', 'backofficeVerifyMode', 'backofficeVerifyVisit', 'backofficeVerifyIdle',
+      'backofficeVerifyInterval'],
+    keywords: ['二次验证', '后台验证码', '进入后台验证', '管理后台验证', '重新验证', 'step-up', 'sudo mode', 're-authenticate'],
+  },
+  {
     id: 'secTwoFactorAdoption',
     pageSlug: 'security',
     titleKey: 'secTwoFactorAdoption',
@@ -492,8 +500,15 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     id: 'secIdentity',
     pageSlug: 'settings',
     titleKey: 'secIdentity',
-    searchKeys: ['siteName', 'signInNote'],
-    keywords: ['站点标识', '网站名称', '登录提示', 'site name', 'identity', 'branding'],
+    searchKeys: ['siteName', 'signInNote', 'browserTitle'],
+    keywords: ['站点标识', '网站名称', '登录提示', '浏览器标题', '标签页标题', 'site name', 'identity', 'branding', 'browser tab title'],
+  },
+  {
+    id: 'secPWA',
+    pageSlug: 'settings',
+    titleKey: 'secPWA',
+    searchKeys: ['pwaName', 'pwaShortName', 'pwaDescription', 'pwaThemeColor', 'pwaBackgroundColor', 'pwaIconUrl'],
+    keywords: ['渐进式网页应用', '安装', '应用图标', '主题色', '背景色', 'PWA', 'progressive web app', 'install', 'manifest', 'home screen', 'app icon'],
   },
   {
     id: 'secLanding',

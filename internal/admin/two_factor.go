@@ -27,6 +27,14 @@ func backofficeNeedsTwoFactor() error {
 		"Set up two-step sign-in before using the backoffice.")
 }
 
+// backofficeLocked is the refusal while a visit to the backoffice has not
+// started with a code, or has sat idle past the operator's minutes. Coded,
+// so the backoffice asks for the code instead of showing an error.
+func backofficeLocked() error {
+	return httpx.ForbiddenCode("two_factor_backoffice_verify",
+		"Enter a code from your authenticator app to open the backoffice.")
+}
+
 func (h *Handlers) twoFactorAdoption(w http.ResponseWriter, r *http.Request) error {
 	adoption, err := h.auth.TwoFactorAdoption(r.Context())
 	if err != nil {
@@ -47,6 +55,13 @@ func (h *Handlers) resetTwoFactor(w http.ResponseWriter, r *http.Request) error 
 	userID, err := pathID(r, "id")
 	if err != nil {
 		return err
+	}
+	// Somebody else's factor only, as deleteUser keeps to somebody else's
+	// account: switching off one's own takes a code, and a session on its
+	// own — perhaps a stolen one — must not be enough to skip that.
+	if userID == actor.ID {
+		return httpx.BadRequestCode("two_factor_self_reset",
+			"Turn off your own two-step sign-in from your security settings; it takes a code.")
 	}
 
 	target, err := h.auth.ResetTwoFactor(r.Context(), userID, func(q database.Queryer, target user.User) error {
@@ -91,6 +106,17 @@ func checkTwoFactorSettings(actor user.User, body map[string]string) error {
 			return httpx.BadRequest("Unknown two-step policy %q.", policy)
 		}
 		if policy != settings.TwoFactorOptional && !actor.TwoFactorEnabled() {
+			return httpx.ForbiddenCode("two_factor_self",
+				"Switch on two-step sign-in for your own account before requiring it of others.")
+		}
+	}
+	if mode, present := body[settings.TwoFactorBackofficeMode]; present {
+		if !settings.ValidBackofficeVerifyMode(mode) {
+			return httpx.BadRequest("Unknown backoffice verification mode %q.", mode)
+		}
+		// The same hazard as the policy: a code at the backoffice's door
+		// means none without a factor, including for the one saving it.
+		if mode != settings.BackofficeVerifyOff && !actor.TwoFactorEnabled() {
 			return httpx.ForbiddenCode("two_factor_self",
 				"Switch on two-step sign-in for your own account before requiring it of others.")
 		}

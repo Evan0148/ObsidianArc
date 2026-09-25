@@ -7,6 +7,7 @@
 
 import { computed, ref, watch } from 'vue';
 import type { UsagePoint, UsageTotals } from '@/admin/api';
+import { maskBilling } from '@/admin/safeMode';
 import { t } from '@/composables/useI18n';
 import { compactNumber } from '@/lib/format';
 import UsagePlot from './usage/UsagePlot.vue';
@@ -34,6 +35,12 @@ const selected = computed(() => active.value === null ? null : points.value[acti
 const value = computed(() => selected.value?.value ?? props.totals[metric.value]);
 const selectedLabel = computed(() => selected.value && plot.value ? plot.value.describe(selected.value.at) : t('dashboardWeekTotal'));
 const peak = computed(() => Math.max(0, ...points.value.map((point) => point.value)));
+// Through safe mode when the curve is tokens: a request count is not
+// spending, but the axis, the summary figure and the peak beside a token
+// trend are, and hovering to read them is exactly what a recording catches.
+const format = computed(() => metric.value === 'total_tokens'
+  ? (raw: number) => maskBilling(compactNumber(raw))
+  : compactNumber);
 
 watch(metric, () => { active.value = null; });
 </script>
@@ -48,7 +55,7 @@ watch(metric, () => { active.value = null; });
       </div>
     </div>
     <div class="oa-dashboard-trend-summary">
-      <div><strong>{{ compactNumber(value) }}</strong><span>{{ metricLabel }}</span></div>
+      <div><strong>{{ format(value) }}</strong><span>{{ metricLabel }}</span></div>
       <span>{{ selectedLabel }}</span>
     </div>
     <UsagePlot
@@ -57,14 +64,14 @@ watch(metric, () => { active.value = null; });
       v-model:active="active"
       :points="points"
       :bucket-ms="props.bucketMs"
-      :format="compactNumber"
+      :format="format"
       :label="t('dashboardChartKeyboard')"
       :height="176"
     />
     <p v-else class="oa-dashboard-empty oa-dashboard-trend-empty">{{ t(metric === 'requests' ? 'noRequestsWeek' : 'dashboardNoTokens') }}</p>
     <div class="oa-dashboard-trend-foot">
       <span><span class="oa-dashboard-dot" />{{ t('dashboardBucket', { hours: props.bucketMs / 3600000 }) }}</span>
-      <span>{{ t('dashboardPeak', { value: compactNumber(peak) }) }}</span>
+      <span>{{ t('dashboardPeak', { value: format(peak) }) }}</span>
     </div>
   </section>
 </template>

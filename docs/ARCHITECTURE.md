@@ -216,10 +216,19 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | --- | --- | --- |
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
-| Binary (SQLite + embedded SPA) | < 30 MB | 20.9 MB (17.2 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 135 kB | 176.74 kB to open the chat (147.32 JS + 29.42 CSS) |
+| Binary (SQLite + embedded SPA) | < 30 MB | 21.0 MB (17.3 MB `-tags nosqlite`, Linux amd64) |
+| Frontend, on the wire | < 135 kB | 178.63 kB to open the chat (148.69 JS + 29.94 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
+
+Remeasured again later on 2026-09-25 (UTC), after the backoffice's own code
+at its door, the security settings' redesign, the safe-mode fixes and the
+configurable browser title and web app manifest: the first paint grew by
+1.89 kB (1.37 JS, 0.52 CSS) to the figure above — the new English strings
+and the redesigned settings card, mostly; the door and the manifest's form
+live in the backoffice chunk, which grew by 2.65 kB to 78.11 kB. The Chinese
+dictionary grew to 31.76 kB. The binary grew by 127 kB with SQLite (21,012,640
+bytes) and 127 kB without (17,301,664), Go 1.27.1.
 
 Remeasured on 2026-09-25 (UTC) for two-step verification, against the commit
 before it rebuilt the same way. That commit was already 0.87 kB above the
@@ -337,10 +346,10 @@ What each reader actually downloads:
 
 | | gzipped |
 | --- | --- |
-| English, not an administrator | 176.74 kB |
-| Chinese, not an administrator | 207.52 kB |
-| …and a conversation containing a formula | 211.13 kB |
-| Chinese administrator, backoffice open | 282.98 kB |
+| English, not an administrator | 178.63 kB |
+| Chinese, not an administrator | 210.39 kB |
+| …and a conversation containing a formula | 214.00 kB |
+| Chinese administrator, backoffice open | 288.50 kB |
 | Anybody, once they open the terminal | +7.20 kB |
 
 Route-level splitting would shave the first paint further and is deliberately

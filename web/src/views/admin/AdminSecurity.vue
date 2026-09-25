@@ -32,6 +32,7 @@ import { absoluteTime } from '@/lib/format';
 import { currentUser, site } from '@/stores/session';
 import { maskUser, maskLog, maskCredential } from '@/admin/safeMode';
 import AdminFailure from './AdminFailure.vue';
+import { minutesLabel } from './shared';
 import { useAdminView } from './adminView';
 
 const view = useAdminView();
@@ -92,6 +93,8 @@ const form = ref({
   twoFactorPolicy: 'optional',
   twoFactorIssuer: '',
   twoFactorRememberDays: 0 as number | null,
+  backofficeMode: 'off',
+  backofficeMinutes: 15 as number | null,
 });
 
 // --- two-step verification ------------------------------------------------------
@@ -123,6 +126,31 @@ const policyHint = computed(() => {
     case 'admins': return t('twoFactorPolicyAdminsHint');
     case 'everyone': return t('twoFactorPolicyEveryoneHint');
     default: return t('twoFactorPolicyOptionalHint');
+  }
+});
+
+/** What the chosen mode does, and what the minutes mean in it — the same
+ *  number is an idle limit in two modes and a period in the third. */
+const backofficeHint = computed(() => {
+  switch (form.value.backofficeMode) {
+    case 'visit': return t('backofficeVerifyVisitHint');
+    case 'idle': return t('backofficeVerifyIdleHint');
+    case 'interval': return t('backofficeVerifyIntervalHint');
+    default: return t('backofficeVerifyOffHint');
+  }
+});
+/** The minutes restated as hours or days, where they come out even — 1440
+ *  is easier to trust as "1 day" — and nothing where they would only repeat. */
+const backofficeMinutesHint = computed(() => {
+  const minutes = form.value.backofficeMinutes ?? 15;
+  const label = minutesLabel(minutes);
+  return label === t('durationMinutes', { count: minutes }) ? undefined : t('backofficeMinutesEquals', { duration: label });
+});
+const backofficeMinutesLabel = computed(() => {
+  switch (form.value.backofficeMode) {
+    case 'idle': return t('backofficeMinutesIdle');
+    case 'interval': return t('backofficeMinutesInterval');
+    default: return t('backofficeMinutesVisit');
   }
 });
 
@@ -296,6 +324,8 @@ function collect(): Record<string, string> {
     'security.two_factor_policy': form.value.twoFactorPolicy,
     'security.two_factor_issuer': form.value.twoFactorIssuer.trim(),
     'security.two_factor_remember_days': String(form.value.twoFactorRememberDays ?? 0),
+    'security.two_factor_backoffice_mode': form.value.backofficeMode,
+    'security.two_factor_backoffice_minutes': String(form.value.backofficeMinutes ?? 15),
   };
 }
 
@@ -372,7 +402,11 @@ function reviewDecision(decision: string): string {
   if (decision === 'reset') return t('securityDecisionReset');
   if (decision === 'recovery_used') return t('securityDecisionRecoveryUsed');
   if (decision === 'recovery_regenerated') return t('securityDecisionRecoveryRegenerated');
-  return t('securityDecisionRestrict');
+  if (decision === 'restrict') return t('securityDecisionRestrict');
+  // A decision this screen has no words for — a console command's outcome
+  // code, say — is shown as it was recorded rather than as a restriction it
+  // never was.
+  return decision;
 }
 
 function eventLabel(event: string): string {
@@ -381,6 +415,7 @@ function eventLabel(event: string): string {
   if (event === 'api_restriction_lifted') return t('securityEventAPIRestrictionLifted');
   if (event === 'chat_challenge') return t('securityEventChatChallenge');
   if (event === 'two_factor') return t('securityEventTwoFactor');
+  if (event === 'console_command') return t('securityEventConsoleCommand');
   return event;
 }
 
@@ -454,6 +489,8 @@ async function load(): Promise<void> {
       twoFactorPolicy: values['security.two_factor_policy'] ?? 'optional',
       twoFactorIssuer: values['security.two_factor_issuer'] ?? '',
       twoFactorRememberDays: Number(values['security.two_factor_remember_days'] ?? 0),
+      backofficeMode: values['security.two_factor_backoffice_mode'] ?? 'off',
+      backofficeMinutes: Number(values['security.two_factor_backoffice_minutes'] ?? 15),
     };
     accept();
   } catch (failure) {
@@ -468,11 +505,11 @@ const categories: WorkbenchGroup[] = [
   { id: 'verification', label: 'controlVerification', hint: 'controlVerificationHint', icon: IconLock, sections: ['secTurnstile', 'secVerificationScenes', 'secChatChallenge'] },
   { id: 'review', label: 'controlReview', hint: 'controlReviewHint', icon: IconSpark, sections: ['secSignupReview', 'secReviewTrial'] },
   { id: 'signin', label: 'controlSignIn', hint: 'controlSignInHint', icon: IconGithub, sections: ['secOAuth', 'secApplications'] },
-  { id: 'twofactor', label: 'controlTwoFactor', hint: 'controlTwoFactorHint', icon: IconShield, sections: ['secTwoFactorPolicy', 'secTwoFactorAdoption'] },
+  { id: 'twofactor', label: 'controlTwoFactor', hint: 'controlTwoFactorHint', icon: IconShield, sections: ['secTwoFactorPolicy', 'secBackofficeVerify', 'secTwoFactorAdoption'] },
   { id: 'events', label: 'controlEvents', hint: 'controlEventsHint', icon: IconFile, sections: ['secSecurityLog'] },
 ];
 
-const columns: [string[], string[]] = [['secAccounts', 'secRegistrationLimits', 'secTurnstile', 'secChatChallenge', 'secSignupReview', 'secTwoFactorPolicy'], ['secRegistration', 'secVerificationScenes', 'secReviewTrial', 'secTwoFactorAdoption']];
+const columns: [string[], string[]] = [['secAccounts', 'secRegistrationLimits', 'secTurnstile', 'secChatChallenge', 'secSignupReview', 'secTwoFactorPolicy', 'secBackofficeVerify'], ['secRegistration', 'secVerificationScenes', 'secReviewTrial', 'secTwoFactorAdoption']];
 
 onMounted(load);
 </script>
@@ -632,6 +669,31 @@ onMounted(load);
           :min="0"
           :max="365"
         />
+      </AdminControlCard>
+      <AdminControlCard id="secBackofficeVerify" v-show="visible('secBackofficeVerify')" :title="t('secBackofficeVerify')" :icon="IconLock" :hint="t('backofficeVerifyHint')">
+        <OaSelectField
+          v-model="form.backofficeMode"
+          :label="t('backofficeVerifyMode')"
+          :hint="backofficeHint"
+          :options="[
+            { value: 'off', label: t('backofficeVerifyOff') },
+            { value: 'visit', label: t('backofficeVerifyVisit') },
+            { value: 'idle', label: t('backofficeVerifyIdle') },
+            { value: 'interval', label: t('backofficeVerifyInterval') },
+          ]"
+        />
+        <OaNumberField
+          v-if="form.backofficeMode !== 'off'"
+          v-model="form.backofficeMinutes"
+          :label="backofficeMinutesLabel"
+          :hint="backofficeMinutesHint"
+          :min="1"
+          :max="10080"
+        />
+        <p v-if="selfWithout && form.backofficeMode !== 'off'" class="oa-field-hint oa-2fa-self">
+          {{ t('twoFactorPolicySelfNote') }}
+          <RouterLink to="/settings?tab=security">{{ t('twoFactorSetUpMine') }}</RouterLink>
+        </p>
       </AdminControlCard>
     </template>
     <template #right="{ visible }">
@@ -866,33 +928,39 @@ onMounted(load);
         <p class="oa-drawer-flash" :class="{ visible: !!appFlash }">{{ appFlash }}</p>
       </AdminControlCard>
       <AdminControlCard id="secSecurityLog" v-show="visible('secSecurityLog')" :title="t('secSecurityLog')" :icon="IconFile" :hint="t('securityLogHint')" class="oa-control-card-wide">
-        <button type="button" class="oa-btn" :disabled="eventsLoading" @click="loadEvents">
-          {{ t('refresh') }}
-        </button>
-        <p v-if="eventsLoading" class="oa-table-empty">{{ t('loading') }}</p>
+        <template #actions>
+          <button type="button" class="oa-btn" :disabled="eventsLoading" @click="loadEvents">
+            {{ t('refresh') }}
+          </button>
+        </template>
+        <p v-if="eventsLoading && !events.length" class="oa-table-empty">{{ t('loading') }}</p>
         <p v-else-if="!events.length" class="oa-table-empty">{{ t('securityLogEmpty') }}</p>
-        <div v-else class="oa-log-list">
-          <div v-for="event in events" :key="event.id" class="oa-log-row">
-            <div class="oa-log-row-main">
-              <div class="oa-log-row-head">
-                <span class="oa-log-path">{{ eventLabel(event.event) }}</span>
-                <OaBadge
-                  :tone="event.severity === 'danger'
-                    ? 'danger' : event.severity === 'warning' ? 'warning' : 'muted'"
-                >{{ reviewDecision(event.decision ?? '') }}</OaBadge>
-              </div>
-              <div class="oa-log-row-meta">
-                <span>{{ absoluteTime(event.at) }}</span>
-                <span v-if="event.username">@{{ maskUser(event.username) }}</span>
-                <span v-if="event.ip">{{ maskLog(event.ip) }}</span>
-                <span v-if="event.actor_username">
-                  {{ t('securityLogActor', { name: `@${maskUser(event.actor_username)}` }) }}
-                </span>
-              </div>
-              <span v-if="event.reason" class="oa-field-hint">{{ event.reason }}</span>
+        <!-- Its own rows, not the request log's: those are a six-column grid,
+             and one block dropped into it lands in the 64px time column and
+             wraps a word to a line. A decision is a sentence, not a table
+             row, so it gets a heading, a line of who and where, and room to
+             say why. -->
+        <ol v-else class="oa-event-list" :class="{ busy: eventsLoading }">
+          <li v-for="event in events" :key="event.id" class="oa-event" :class="`is-${event.severity}`">
+            <div class="oa-event-head">
+              <span class="oa-event-title">{{ eventLabel(event.event) }}</span>
+              <OaBadge
+                v-if="event.decision"
+                :tone="event.severity === 'danger'
+                  ? 'danger' : event.severity === 'warning' ? 'warning' : 'muted'"
+              >{{ reviewDecision(event.decision) }}</OaBadge>
+              <time class="oa-event-time">{{ absoluteTime(event.at) }}</time>
             </div>
-          </div>
-        </div>
+            <div v-if="event.username || event.ip || event.actor_username" class="oa-event-meta">
+              <span v-if="event.username">@{{ maskUser(event.username) }}</span>
+              <span v-if="event.ip" class="mono">{{ maskLog(event.ip) }}</span>
+              <span v-if="event.actor_username">
+                {{ t('securityLogActor', { name: `@${maskUser(event.actor_username)}` }) }}
+              </span>
+            </div>
+            <p v-if="event.reason" class="oa-event-reason">{{ event.reason }}</p>
+          </li>
+        </ol>
         <OaPagination v-bind="eventPage" :total="eventsTotal" :busy="eventsLoading" @change="changeEvents" />
       </AdminControlCard>
     </template>

@@ -1,0 +1,58 @@
+#!/bin/sh
+# Ships what `make release` put in dist/ to the Arc server and replaces the
+# running container with one built from it. `make deploy` runs this.
+#
+# One SSH connection carries both the files and the commands, so a server
+# that asks for a password asks once. The image is built there from the
+# two-line Dockerfile.release, which takes seconds; the database container is
+# never touched — `up --no-build server` recreates the server alone.
+#
+# Arc only. Chat is a separate system on the same kind of host (a systemd
+# unit, its own port); nothing here goes near it.
+
+set -eu
+
+host=${DEPLOY_HOST:?set DEPLOY_HOST, e.g. make deploy DEPLOY_HOST=root@203.0.113.7}
+dir=${DEPLOY_DIR:-/data/obsidian-arc}
+# The transport, overridable so the remote half can be exercised without a
+# server. Anything that takes a host and then a command will do.
+ssh_command=${DEPLOY_SSH:-ssh}
+
+if [ ! -f dist/obsidian-arc ] || [ ! -f dist/Dockerfile ]; then
+  echo "dist/ is empty; run make release first" >&2
+  exit 1
+fi
+arch=$(cat dist/ARCH)
+version=$(cat dist/VERSION)
+
+# macOS tar would otherwise add AppleDouble files and extended attributes,
+# which GNU tar on the server warns about and extracts as clutter.
+COPYFILE_DISABLE=1 tar -czf - -C dist . | $ssh_command "$host" "set -e
+  # A binary for the wrong processor starts as 'exec format error' and a
+  # container in a restart loop. Checked before anything is replaced.
+  case \$(uname -m) in
+    x86_64) have=amd64 ;;
+    aarch64|arm64) have=arm64 ;;
+    *) have=\$(uname -m) ;;
+  esac
+  if [ \"\$have\" != '$arch' ]; then
+    # Read the upload to the end first, or the sending tar dies of a broken
+    # pipe and its 'Write error' reads like the cause instead of this line.
+    cat >/dev/null
+    echo \"this server is \$have but the build is $arch; run: make deploy ARCH=\$have\" >&2
+    exit 1
+  fi
+  cd '$dir'
+  # dist/ because both the server's .gitignore and .dockerignore already
+  # leave it out: a checkout there stays clean, and a later source build
+  # does not drag the binary into its context.
+  rm -rf dist
+  mkdir dist
+  tar -xzf - -C dist
+  # Tagged with the version as well as latest, so the build before this one
+  # is still there to go back to: docker tag obsidian-arc:<version> obsidian-arc:latest
+  docker build -q -t 'obsidian-arc:$version' -t obsidian-arc:latest dist
+  docker compose up -d --no-build server
+  docker compose ps server"
+
+echo "deployed $version to $host:$dir"

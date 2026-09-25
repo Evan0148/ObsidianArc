@@ -23,9 +23,12 @@ import {
 import AppShell from '@/layouts/AppShell.vue';
 import { useRailCollapse } from '@/composables/useRailCollapse';
 import { formatUptime } from '@/lib/format';
-import type { Account } from '@/api/auth';
+import { fetchMe, type Account } from '@/api/auth';
+import { BACKOFFICE_LOCKED } from '@/api/client';
+import { leaveBackoffice } from '@/api/twofactor';
 import { adopt, canAdmin, currentPreferences, currentUser, isAdmin } from '@/stores/session';
 import TwoFactorWizard from '@/views/settings/TwoFactorWizard.vue';
+import AdminUnlock from './AdminUnlock.vue';
 import UnauthorizedModal from '@/views/UnauthorizedModal.vue';
 import ChatLayout from '@/layouts/ChatLayout.vue';
 import { provideAdminView } from './adminView';
@@ -175,6 +178,62 @@ function enrolled(user: Account): void {
   reloadCount.value += 1;
 }
 
+// The operator's code at the backoffice's own door, on top of signing in.
+// Whether this visit is open is the server's to say — it depends on the
+// mode, the minutes and what this browser did last — so the shell asks as it
+// mounts, draws nothing until it knows, and then either the page or the
+// place to type a code. A visit that lapses while a page is open reaches the
+// shell as an event from the API client, and the page gives way to the door.
+const stepUp = computed(() => !!currentUser.value?.two_factor_backoffice_verify && !gated.value);
+const visit = ref<'checking' | 'locked' | 'open'>(stepUp.value ? 'checking' : 'open');
+
+async function checkVisit(): Promise<void> {
+  if (!stepUp.value) {
+    visit.value = 'open';
+    return;
+  }
+  visit.value = 'checking';
+  try {
+    const { user } = await fetchMe();
+    if (disposed) return;
+    currentUser.value = user;
+    visit.value = user.two_factor_backoffice_locked ? 'locked' : 'open';
+  } catch {
+    // Unknown is locked: the door costs a code, a page drawn behind a door
+    // that was shut costs a screen of refusals.
+    if (!disposed) visit.value = 'locked';
+  }
+}
+
+// The account can change under the shell — finishing the enrolment gate
+// above turns the door on — so the question is asked again when it does.
+watch(stepUp, () => { void checkVisit(); });
+
+function unlocked(): void {
+  visit.value = 'open';
+  reloadCount.value += 1;
+}
+
+function onLocked(): void {
+  if (stepUp.value) visit.value = 'locked';
+}
+
+// Leaving is what ends a visit in the every-visit mode, so it is said on the
+// way out of the shell and as the page itself goes — a reload or a closed
+// tab. The server decides whether leaving means anything in the mode it is
+// in, so this is sent whenever the backoffice asks for a code at all.
+function leave(): void {
+  if (stepUp.value) leaveBackoffice();
+}
+
+window.addEventListener(BACKOFFICE_LOCKED, onLocked);
+window.addEventListener('pagehide', leave);
+onBeforeUnmount(() => {
+  window.removeEventListener(BACKOFFICE_LOCKED, onLocked);
+  window.removeEventListener('pagehide', leave);
+  leave();
+});
+
 const title = ref('');
 const subtitle = ref('');
 const reloadCount = ref(0);
@@ -220,6 +279,7 @@ watch(current, (next, previous) => {
 const bodyKey = computed(() => `${current.value.slug}:${reloadCount.value}`);
 
 onMounted(() => {
+  void checkVisit();
   title.value = t(current.value.label);
   // Which build is running, from the server rather than from the bundle: the
   // two can differ behind a stale cache, and the server's answer is the one
@@ -352,12 +412,12 @@ onMounted(() => {
 
     <!-- The whole section arrives together, including its heading and actions.
          Keying only navigation keeps saves from replaying the entrance. -->
-    <div :key="current.slug" class="oa-admin-main" :class="[`enter-${direction}`, { 'oa-admin-main-dashboard': !current.slug && allowed && !gated }]">
+    <div :key="current.slug" class="oa-admin-main" :class="[`enter-${direction}`, { 'oa-admin-main-dashboard': !current.slug && allowed && !gated && visit === 'open' }]">
       <!-- The overview owns its editorial heading; other pages keep the shared toolbar. -->
-      <div v-if="current.slug || !allowed || gated" class="oa-admin-head" :ref="attachActions">
+      <div v-if="current.slug || !allowed || gated || visit !== 'open'" class="oa-admin-head" :ref="attachActions">
         <div>
-          <h1 class="oa-admin-title">{{ gated ? t('twoFactorGateTitle') : title }}</h1>
-          <p class="oa-admin-subtitle" :hidden="!subtitle || gated">{{ subtitle }}</p>
+          <h1 class="oa-admin-title">{{ gated ? t('twoFactorGateTitle') : visit !== 'open' ? t('administration') : title }}</h1>
+          <p class="oa-admin-subtitle" :hidden="!subtitle || gated || visit !== 'open'">{{ subtitle }}</p>
         </div>
         <span class="oa-admin-head-spacer" />
       </div>
@@ -371,6 +431,8 @@ onMounted(() => {
           <p class="oa-field-hint">{{ t('twoFactorGateBody') }}</p>
           <TwoFactorWizard @done="enrolled" />
         </div>
+        <p v-else-if="visit === 'checking'" class="oa-table-empty">{{ t('backofficeChecking') }}</p>
+        <AdminUnlock v-else-if="visit === 'locked'" @unlocked="unlocked" />
         <component v-else-if="allowed" :is="current.component" :key="bodyKey" />
         <div v-else class="oa-permission-empty" role="alert">
           <IconLock :size="28" />

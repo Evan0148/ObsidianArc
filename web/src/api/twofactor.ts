@@ -45,3 +45,27 @@ export function disableTwoFactor(code: string): Promise<{ user: Account }> {
 export function regenerateRecovery(code: string): Promise<{ recovery_codes: string[] }> {
   return api.post<{ recovery_codes: string[] }>('/api/profile/two-factor/recovery', { code });
 }
+
+/** Opens this browser's visit to the backoffice, where the server asks for a
+ *  code at its door. A recovery code works here too. */
+export function enterBackoffice(code: string): Promise<void> {
+  return api.post<void>('/api/profile/two-factor/backoffice', { code });
+}
+
+/**
+ * Says this browser has left the backoffice, which ends the visit where the
+ * operator asks for a code on every one.
+ *
+ * A beacon, because the moment worth sending it is the page going away, and
+ * an ordinary request is cancelled with the page. Nothing reads the answer:
+ * a visit that failed to close still closes itself after the idle minutes.
+ */
+export function leaveBackoffice(): void {
+  const path = '/api/profile/two-factor/backoffice/leave';
+  if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function' && navigator.sendBeacon(path)) {
+    return;
+  }
+  void fetch(path, { method: 'POST', credentials: 'same-origin', keepalive: true }).catch(() => {
+    // Offline or already signed out: nothing is left open either way.
+  });
+}

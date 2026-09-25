@@ -8,6 +8,7 @@
 
 import { computed } from 'vue';
 import type { UsageBreakdown, UsageCell, UsageMatrix } from '@/admin/api';
+import { isMasked, maskBilling, maskProvider, maskUser } from '@/admin/safeMode';
 import { t } from '@/composables/useI18n';
 import { intensity } from './scale';
 
@@ -50,6 +51,24 @@ function fill(user: string, model: string): string | undefined {
   const amount = level(user, model);
   return amount > 0 ? `${Math.round(12 + amount * 88)}%` : undefined;
 }
+// Safe mode, applied to everything this table prints, the tooltips too: a
+// cell's title is read by hovering, and hovering is what a screen recording
+// catches. The fill stays — it shows where the weight is, not what it is.
+function userName(key: string): string {
+  return maskUser(label(props.users, key));
+}
+function userMark(key: string): string {
+  return isMasked('users') ? '*' : Array.from(label(props.users, key))[0]?.toLocaleUpperCase() ?? '·';
+}
+function modelDetail(key: string): string {
+  return maskProvider(byKey(props.models, key)?.detail ?? '');
+}
+/** A request count is not spending; tokens and credits are. */
+function figure(value: number): string {
+  const text = props.format(value);
+  return props.metric === 'requests' ? text : maskBilling(text);
+}
+
 /** The row's total over every model, not only the ones shown across the top. */
 function rowTotal(user: string): number {
   const row = byKey(props.users, user);
@@ -67,7 +86,7 @@ function rowTotal(user: string): number {
           <th v-for="model in props.matrix.cols" :key="model" scope="col">
             <button type="button" class="oa-matrix-head" :title="t('boardDrill', { name: label(props.models, model) })" @click="emit('model', model)">
               <span>{{ label(props.models, model) }}</span>
-              <small>{{ byKey(props.models, model)?.detail }}</small>
+              <small>{{ modelDetail(model) }}</small>
             </button>
           </th>
           <th scope="col" class="oa-matrix-total">{{ t('matrixAllModels') }}</th>
@@ -76,9 +95,9 @@ function rowTotal(user: string): number {
       <tbody>
         <tr v-for="user in props.matrix.rows" :key="user">
           <th scope="row">
-            <button type="button" class="oa-matrix-user" :title="t('boardDrill', { name: label(props.users, user) })" @click="emit('user', user)">
-              <span class="oa-board-mark" aria-hidden="true">{{ Array.from(label(props.users, user))[0]?.toLocaleUpperCase() }}</span>
-              <span>{{ label(props.users, user) }}</span>
+            <button type="button" class="oa-matrix-user" :title="t('boardDrill', { name: userName(user) })" @click="emit('user', user)">
+              <span class="oa-board-mark" aria-hidden="true">{{ userMark(user) }}</span>
+              <span>{{ userName(user) }}</span>
             </button>
           </th>
           <td
@@ -86,9 +105,9 @@ function rowTotal(user: string): number {
             :key="model"
             :class="{ filled: !!fill(user, model), strong: level(user, model) > 0.6 }"
             :style="fill(user, model) ? { '--oa-heat': fill(user, model) } : undefined"
-            :title="`${label(props.users, user)} · ${label(props.models, model)} · ${props.format(cell(user, model))}`"
-          >{{ cell(user, model) ? props.format(cell(user, model)) : '·' }}</td>
-          <td class="oa-matrix-total">{{ props.format(rowTotal(user)) }}</td>
+            :title="`${userName(user)} · ${label(props.models, model)} · ${figure(cell(user, model))}`"
+          >{{ cell(user, model) ? figure(cell(user, model)) : '·' }}</td>
+          <td class="oa-matrix-total">{{ figure(rowTotal(user)) }}</td>
         </tr>
       </tbody>
     </table>

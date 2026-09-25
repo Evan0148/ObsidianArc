@@ -37,7 +37,7 @@ func enrolled(t *testing.T, f *fixture, username string) (user.User, string, []s
 	}
 	step := totp.Step(time.Now())
 	code, _ := totp.Code(setup.Secret, step)
-	codes, updated, err := f.auth.EnableTwoFactor(ctx, account.ID, code, session.ID)
+	codes, updated, err := f.auth.EnableTwoFactor(ctx, account.ID, code, session.ID, "")
 	if err != nil {
 		t.Fatalf("enable two-step for %s: %v", username, err)
 	}
@@ -244,14 +244,14 @@ func TestEnablingNeedsACodeFromTheSecretHandedOut(t *testing.T) {
 	}
 	_, session, _ := f.auth.Authenticate(ctx, token)
 
-	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, "123456", session.ID); !errors.Is(err, ErrTwoFactorNoSetup) {
+	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, "123456", session.ID, ""); !errors.Is(err, ErrTwoFactorNoSetup) {
 		t.Fatalf("enabling with no setup: %v", err)
 	}
 	setup, err := f.auth.BeginTwoFactor(ctx, account)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())+20), session.ID); !errors.Is(err, ErrTwoFactorCode) {
+	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())+20), session.ID, ""); !errors.Is(err, ErrTwoFactorCode) {
 		t.Fatalf("a code from the wrong time was accepted: %v", err)
 	}
 
@@ -260,7 +260,7 @@ func TestEnablingNeedsACodeFromTheSecretHandedOut(t *testing.T) {
 		time.Now().Add(-2*setupTTL).UnixMilli(), account.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())), session.ID); !errors.Is(err, ErrTwoFactorNoSetup) {
+	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())), session.ID, ""); !errors.Is(err, ErrTwoFactorNoSetup) {
 		t.Fatalf("a stale setup was accepted: %v", err)
 	}
 
@@ -285,7 +285,7 @@ func TestEnablingEndsOtherSessions(t *testing.T) {
 	}
 	_, session, _ := f.auth.Authenticate(ctx, token)
 	setup, _ := f.auth.BeginTwoFactor(ctx, account)
-	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())), session.ID); err != nil {
+	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())), session.ID, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := f.auth.Authenticate(ctx, token); err != nil {
@@ -487,7 +487,7 @@ func TestARememberedBrowserSkipsTheCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())), ""); err != nil {
+	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())), "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := loginWith(value); !errors.As(err, &second) {
@@ -549,5 +549,194 @@ func TestTheEnrolmentGate(t *testing.T) {
 	}
 	if request(http.MethodGet, "/api/conversations"); !reached {
 		t.Error("the gate outlived the policy")
+	}
+}
+
+// A code at the backoffice's door, in each of the operator's modes, held by
+// a browser session or by an SSH connection.
+func TestTheBackofficeAsksForItsOwnCode(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	admin, _, codes, _ := enrolled(t, f, "founder")
+	if !admin.IsAdmin() {
+		t.Fatal("the first account is not an administrator")
+	}
+	// A browser session of the administrator's, fetched fresh each time so
+	// the visit it holds is the one in the database.
+	token, _, err := f.auth.Sessions().Create(ctx, admin.ID, time.Hour, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	browser := func() (user.User, context.Context, Session) {
+		t.Helper()
+		account, session, err := f.auth.Authenticate(ctx, token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return account, context.WithValue(ctx, sessionContextKey, session), session
+	}
+	mode := func(value string) {
+		t.Helper()
+		if err := f.settings.Set(ctx, settings.TwoFactorBackofficeMode, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	age := func(session Session, by time.Duration) {
+		t.Helper()
+		if err := f.auth.Sessions().SetBackofficeAt(ctx, session.ID, time.Now().Add(-by).UnixMilli()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	next := 0
+	spend := func() string { next++; return codes[next-1] }
+
+	account, request, _ := browser()
+	if f.auth.BackofficeLocked(request, account) {
+		t.Fatal("locked while the mode is off")
+	}
+
+	// --- every visit
+	mode(settings.BackofficeVerifyVisit)
+	if !f.auth.BackofficeLocked(request, account) {
+		t.Fatal("a session that never entered a code is not locked")
+	}
+	if !f.auth.BackofficeLocked(ctx, account) {
+		t.Fatal("a request with nothing to hold a visit was let through")
+	}
+	if f.auth.BackofficeLocked(request, user.User{Role: user.RoleUser, TwoFactorAt: 1}) {
+		t.Fatal("an ordinary account was locked")
+	}
+	if err := f.auth.EnterBackoffice(ctx, account, spend(), ""); !errors.Is(err, ErrNoBackofficeVisit) {
+		t.Fatalf("entered with nothing to hold the visit: %v", err)
+	}
+	if err := f.auth.EnterBackoffice(request, account, spend(), ""); err != nil {
+		t.Fatalf("enter: %v", err)
+	}
+	account, request, session := browser()
+	if f.auth.BackofficeLocked(request, account) {
+		t.Fatal("still locked after entering a code")
+	}
+	if err := f.auth.LeaveBackoffice(ctx, session); err != nil {
+		t.Fatal(err)
+	}
+	account, request, session = browser()
+	if !f.auth.BackofficeLocked(request, account) {
+		t.Fatal("leaving did not end the visit")
+	}
+
+	// An SSH connection holds its own, starting closed, and a code opens
+	// that connection alone.
+	connection := WithBackofficeGrant(ctx)
+	if !f.auth.BackofficeLocked(connection, account) {
+		t.Fatal("a new connection started open")
+	}
+	if err := f.auth.EnterBackoffice(connection, account, spend(), ""); err != nil {
+		t.Fatalf("enter over ssh: %v", err)
+	}
+	if f.auth.BackofficeLocked(connection, account) {
+		t.Fatal("the connection is still locked after its code")
+	}
+	if !f.auth.BackofficeLocked(WithBackofficeGrant(ctx), account) {
+		t.Fatal("one connection's code opened another")
+	}
+	if !f.auth.BackofficeLocked(request, account) {
+		t.Fatal("a connection's code opened the browser")
+	}
+
+	// --- after idling: coming and going is free, the minutes are not
+	mode(settings.BackofficeVerifyIdle)
+	if err := f.settings.Set(ctx, settings.TwoFactorBackofficeMinutes, "5"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.auth.EnterBackoffice(request, account, spend(), ""); err != nil {
+		t.Fatal(err)
+	}
+	account, request, session = browser()
+	if err := f.auth.LeaveBackoffice(ctx, session); err != nil {
+		t.Fatal(err)
+	}
+	account, request, session = browser()
+	if f.auth.BackofficeLocked(request, account) {
+		t.Fatal("leaving ended the visit in the idle mode")
+	}
+	age(session, 4*time.Minute)
+	account, request, _ = browser()
+	f.auth.KeepBackofficeOpen(request, account)
+	account, request, session = browser()
+	if time.Since(time.UnixMilli(session.BackofficeAt)) > time.Minute {
+		t.Fatal("working in the backoffice did not keep the visit open")
+	}
+	age(session, 6*time.Minute)
+	account, request, session = browser()
+	if !f.auth.BackofficeLocked(request, account) {
+		t.Fatal("an idle visit did not lock")
+	}
+
+	// --- on a schedule: working does not stretch it
+	mode(settings.BackofficeVerifyInterval)
+	age(session, 4*time.Minute)
+	account, request, session = browser()
+	f.auth.KeepBackofficeOpen(request, account)
+	account, request, session = browser()
+	if time.Since(time.UnixMilli(session.BackofficeAt)) < 3*time.Minute {
+		t.Fatal("activity moved a scheduled visit")
+	}
+	if err := f.auth.LeaveBackoffice(ctx, session); err != nil {
+		t.Fatal(err)
+	}
+	account, request, session = browser()
+	if session.BackofficeAt == 0 {
+		t.Fatal("leaving ended a scheduled visit")
+	}
+	age(session, 6*time.Minute)
+	account, request, _ = browser()
+	if !f.auth.BackofficeLocked(request, account) {
+		t.Fatal("a scheduled visit outlived its minutes")
+	}
+
+	// And an administrator without a factor must enrol first; asking for a
+	// code makes the factor theirs to keep.
+	bare := user.User{Role: user.RoleAdmin}
+	if !f.auth.BackofficeNeedsTwoFactor(bare) || !f.auth.TwoFactorMandatory(bare) {
+		t.Fatal("an administrator without a factor was let through")
+	}
+}
+
+// The session that proved a code by enrolling walks into the backoffice; a
+// reset closes every visit that code opened.
+func TestEnrollingOpensTheBackofficeAndResettingClosesIt(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if err := f.settings.Set(ctx, settings.TwoFactorBackofficeMode, settings.BackofficeVerifyVisit); err != nil {
+		t.Fatal(err)
+	}
+	account, token, err := f.auth.Register(ctx, RegisterInput{Username: "founder", Password: "a-good-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, session, _ := f.auth.Authenticate(ctx, token)
+	setup, err := f.auth.BeginTwoFactor(ctx, account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())), session.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	current := func() (user.User, context.Context) {
+		account, session, err := f.auth.Authenticate(ctx, token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return account, context.WithValue(ctx, sessionContextKey, session)
+	}
+	if a, request := current(); f.auth.BackofficeLocked(request, a) {
+		t.Fatal("the session that just enrolled was asked for another code")
+	}
+	if _, err := f.auth.ResetTwoFactor(ctx, account.ID, func(database.Queryer, user.User) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	_, session, _ = f.auth.Authenticate(ctx, token)
+	if session.BackofficeAt != 0 {
+		t.Fatal("a reset left a visit open that the removed factor had proved")
 	}
 }

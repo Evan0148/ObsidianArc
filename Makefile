@@ -12,10 +12,21 @@ BINARY  := obsidian-arc
 # or counter to maintain — which is what makes "which build is this server
 # running" answerable from the health endpoint alone.
 VERSION ?= v$(shell date -u +%Y.%m.%d.%H.%M.%S)
+# Expanded once, here. `?=` reads the clock every time VERSION is mentioned,
+# and a deploy mentions it twice — the binary's stamp and the image's tag —
+# which could otherwise land either side of a second and disagree.
+VERSION := $(VERSION)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 GOFLAGS := -trimpath
 
-.PHONY: all build web web-ci server run dev test test-full vet fmt typecheck web-test clean docker version docs docs-dev
+# Where `make deploy` sends a release. The directory is the Arc Compose
+# project on the production host (see AGENTS.md: Arc, never Chat); the host
+# has no default, because guessing one is how a build lands on the wrong box.
+ARCH        ?= amd64
+DEPLOY_HOST ?=
+DEPLOY_DIR  ?= /data/obsidian-arc
+
+.PHONY: all build web web-ci server run dev test test-full vet fmt typecheck web-test clean docker version docs docs-dev release package deploy
 
 all: build
 
@@ -85,11 +96,31 @@ web-test:
 	npm --prefix web run test
 
 clean:
-	rm -rf bin
+	rm -rf bin dist
 	find internal/web/dist -mindepth 1 ! -name .gitkeep -delete
 
 docker:
 	docker build --build-arg VERSION=$(VERSION) -t obsidian-arc:$(VERSION) -t obsidian-arc:latest .
+
+## release: compile here what the server would otherwise compile for minutes —
+## the frontend and a static Linux binary — into dist/, with the image recipe
+## that wraps them. ARCH=arm64 for an ARM server.
+release: web package
+
+## package: dist/ from whichever frontend is already embedded. CI calls this
+## after web-ci, so the lockfile is installed exactly rather than rewritten.
+package:
+	rm -rf dist
+	mkdir -p dist
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o dist/$(BINARY) ./cmd/server
+	cp Dockerfile.release dist/Dockerfile
+	echo $(VERSION) > dist/VERSION
+	echo $(ARCH) > dist/ARCH
+
+## deploy: release, then ship dist/ to DEPLOY_HOST and replace the Arc server
+## container with one built from it — seconds on the server, not minutes
+deploy: release
+	DEPLOY_HOST=$(DEPLOY_HOST) DEPLOY_DIR=$(DEPLOY_DIR) sh scripts/deploy.sh
 
 ## docs: build VitePress documentation site
 docs:

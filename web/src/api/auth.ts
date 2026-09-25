@@ -57,6 +57,13 @@ export interface Account {
   two_factor_enrol?: boolean;
   two_factor_mandatory?: boolean;
   two_factor_backoffice?: boolean;
+  /** Whether the backoffice asks this account for a code of its own at the
+   *  door, and how often: every visit, after idling, or on a schedule. Empty
+   *  when it does not. The minutes are that mode's clock; locked is whether
+   *  the request this came with would have been turned away for want of one. */
+  two_factor_backoffice_verify?: '' | 'visit' | 'idle' | 'interval';
+  two_factor_backoffice_minutes?: number;
+  two_factor_backoffice_locked?: boolean;
 }
 
 // What a visitor with no account is shown at the address. The server settles
@@ -74,6 +81,9 @@ export interface Landing {
 export interface SiteInfo {
   name: string;
   description: string;
+  /** Already resolved against `name` server-side (settings.Service.BrowserTitle):
+   *  empty only on a server old enough to predate the setting. */
+  browser_title?: string;
   registration_enabled: boolean;
   health_show_users?: boolean;
   allow_archive_conversations?: boolean;

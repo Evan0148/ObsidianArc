@@ -38,6 +38,7 @@ export const site = ref<SiteInfo | null>(null);
 const FALLBACK_SITE: SiteInfo = {
   name: 'Obsidian Arc',
   description: '',
+  browser_title: 'Obsidian Arc',
   registration_enabled: false,
   health_show_users: false,
   setup_required: false,

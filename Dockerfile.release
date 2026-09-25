@@ -1,0 +1,26 @@
+# The image around a binary that was compiled somewhere else.
+#
+# The Dockerfile beside this one compiles the frontend and the Go binary
+# inside the image, which on a small server means minutes of npm and go for
+# every deployment. The binary is static and pure Go, so any machine with Go
+# can cross-compile it for Linux in seconds; `make release` does that and
+# copies this file next to it in dist/, which is the whole build context.
+#
+# Everything below is the other file's final stage, line for line, so the two
+# paths differ in where the compiling happened and in nothing else. CI builds
+# and starts both.
+
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --chown=nonroot:nonroot obsidian-arc /usr/local/bin/obsidian-arc
+
+WORKDIR /data
+VOLUME /data
+
+USER nonroot:nonroot
+EXPOSE 8080
+
+ENV OBSIDIAN_ADDR=:8080 \
+    OBSIDIAN_DATA_DIR=/data
+
+ENTRYPOINT ["/usr/local/bin/obsidian-arc"]

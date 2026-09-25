@@ -25,7 +25,7 @@ import { t, tn } from '@/composables/useI18n';
 import { IconCopy } from '@/icons';
 import { relativeTime } from '@/lib/format';
 import { canAdmin } from '@/stores/session';
-import { maskProvider, maskCredential } from '@/admin/safeMode';
+import { isMasked, maskProvider, maskCredential } from '@/admin/safeMode';
 import AdminFailure from './AdminFailure.vue';
 import { reasoningLabel } from './reasoning-labels';
 import { useAdminView } from './adminView';
@@ -281,9 +281,14 @@ onMounted(load);
       </OaIconButton>
     </template>
 
+    <!-- Masking either field would break editing it, so the value stays real
+         and only its focus state decides whether it can be read — blurred
+         until the operator clicks in, same as a name or an endpoint typed on
+         a shared screen would need. -->
     <OaTextField
       ref="nameField"
       v-model="form.name"
+      :class="{ 'oa-safe-blur': isMasked('providers') }"
       :label="t('name')"
       placeholder="OpenRouter"
       :hint="t('providerNameHint')"
@@ -299,6 +304,7 @@ onMounted(load);
     />
     <OaTextField
       v-model="form.baseURL"
+      :class="{ 'oa-safe-blur': isMasked('providers') }"
       :label="t('baseURL')"
       placeholder="https://openrouter.ai/api/v1"
       :hint="t('baseURLHint')"

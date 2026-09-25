@@ -98,26 +98,48 @@ jobs:
       - name: Build the image
         run: docker build -t obsidian-arc:ci .
 
+      # The other way to the same image: compiled outside it, the way
+      # `make deploy` does on a developer's machine, and wrapped by
+      # Dockerfile.release. Built here so that file cannot drift from the
+      # final stage of the one above without something starting to fail.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build the release image from a binary compiled outside it
+        run: |
+          make web-ci package
+          docker build -t obsidian-arc:release dist
+
       # Reviewed but never run, until now. A distroless image with no shell
       # cannot be inspected from inside, so the check is the one thing that
       # matters: it starts, it migrates, and it answers.
-      - name: It starts, migrates and serves
+      - name: Both start, migrate and serve
         run: |
-          docker run -d --name arc -p 8080:8080 \
-            -e OBSIDIAN_SECRET_KEY=$(openssl rand -hex 32) \
-            obsidian-arc:ci
-          for attempt in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8080/api/health; then
-              echo
-              echo "served after ${attempt}s"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "never answered; container log follows"
-          docker logs arc
-          exit 1
+          serve() {
+            docker run -d --name "arc-$1" -p "$2:8080" \
+              -e OBSIDIAN_SECRET_KEY=$(openssl rand -hex 32) \
+              "obsidian-arc:$1"
+            for attempt in $(seq 1 30); do
+              if curl -fsS "http://127.0.0.1:$2/api/health"; then
+                echo
+                echo "obsidian-arc:$1 served after ${attempt}s"
+                return 0
+              fi
+              sleep 1
+            done
+            echo "obsidian-arc:$1 never answered; container log follows"
+            docker logs "arc-$1"
+            return 1
+          }
+          serve ci 8080
+          serve release 8081
 
-      - name: Stop it
+      - name: Stop them
         if: always()
-        run: docker rm -f arc || true
+        run: docker rm -f arc-ci arc-release || true

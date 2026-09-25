@@ -142,6 +142,8 @@ function startOver(): void {
     // Expired already; the cookie is worth nothing either way.
   }).finally(() => {
     forget();
+    // The account that was halfway in is the one being left behind.
+    identifier.value = '';
     password.value = '';
     error.value = '';
     void nextTick(() => identifierField.value?.focus());

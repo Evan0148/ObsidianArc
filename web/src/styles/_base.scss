@@ -113,7 +113,6 @@ textarea:placeholder-shown::selection {
    some text floating in it. Half-transparent over a card that is itself
    half-transparent is as far as this goes. */
 .has-wallpaper .oa-stat,
-.has-wallpaper .oa-spark,
 .has-wallpaper .oa-usage-large,
 .has-wallpaper .oa-card-row {
   background: color-mix(in srgb, var(--ai-surface-container-low) 55%, transparent);

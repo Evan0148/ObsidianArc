@@ -1,6 +1,13 @@
 {
   "site.name": "Obsidian Arc",
   "site.description": "",
+  "site.browser_title": "",
+  "pwa.name": "",
+  "pwa.short_name": "",
+  "pwa.description": "",
+  "pwa.theme_color": "#18181b",
+  "pwa.background_color": "#18181b",
+  "pwa.icon_url": "",
   "about.title": "",
   "about.body": "",
   "home.notice": "",

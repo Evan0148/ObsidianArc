@@ -75,7 +75,8 @@ function notes(row: UsageBreakdown): string[] {
     if (props.favourites[row.key]) out.push(t('boardFavourite', { model: props.favourites[row.key]! }));
     else if (props.reach && row.models) out.push(tn(row.models, 'boardModelsOne', 'boardModelsOther', { count: row.models }));
   } else {
-    if (row.detail) out.push(props.kind === 'provider' ? maskProvider(row.detail) : row.detail);
+    // A model's detail is the provider it runs on, so it is masked as one.
+    if (row.detail) out.push(props.kind === 'provider' || props.kind === 'model' ? maskProvider(row.detail) : row.detail);
     if (props.reach && props.metric !== 'users' && row.users) out.push(tn(row.users, 'boardUsersOne', 'boardUsersOther', { count: row.users }));
   }
   if (props.metric !== 'requests') out.push(t('boardRequests', { count: compactNumber(row.requests) }));

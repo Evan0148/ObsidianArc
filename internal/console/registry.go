@@ -412,9 +412,32 @@ func (rt *Runtime) Call(method, path string, body any) (any, int, error) {
 		}
 	}
 	if resp.Status >= 400 {
-		return decoded, resp.Status, newCallError(resp.Status, decoded)
+		failure := newCallError(resp.Status, decoded)
+		if hint := twoFactorHint(failure.Code, rt.Session.Lang); hint != "" {
+			failure.Message = hint
+		}
+		return decoded, resp.Status, failure
 	}
 	return decoded, resp.Status, nil
+}
+
+// twoFactorHint turns the backoffice's two refusals into the command that
+// answers them. In the browser the page draws a place to type the code; here
+// the code is typed by hand, so the refusal has to say where.
+func twoFactorHint(code, lang string) string {
+	switch code {
+	case "two_factor_backoffice_verify":
+		if lang == "zh" {
+			return "此命令需要先输入验证码：2fa backoffice <验证码>（验证器应用中的六位数字，或一个恢复码）"
+		}
+		return "this command needs a code first: 2fa backoffice <code> (six digits from your app, or a recovery code)"
+	case "two_factor_backoffice":
+		if lang == "zh" {
+			return "此命令需要先为你的账户开启两步验证：2fa setup"
+		}
+		return "this command needs two-step sign-in on your account first: 2fa setup"
+	}
+	return ""
 }
 
 // CallRaw performs one admin API request exactly like Call, but returns the

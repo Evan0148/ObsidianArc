@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | `site.name` | `Obsidian Arc` | 站点名称 |
 | `site.description` | 空 | 站点说明 |
+| `site.browser_title` | 空 | 浏览器标签页标题；空值使用 `site.name` |
 | `about.title` / `about.body` | 空 | 关于页面标题与 Markdown 详细介绍；空值使用内置内容 |
 | `home.notice` | 空 | 首页纯文本通知 |
 | `home.notice_dismissible` | `true` | 是否允许关闭通知 |
@@ -26,6 +27,21 @@
 | `security.chat_challenge_requests` | `0` | 聊天速度窗口内允许的请求数；0 表示关闭 |
 | `security.chat_challenge_window_seconds` | `60` | 聊天速度统计窗口 |
 | `security.chat_challenge_clear_minutes` | `30` | 一次验证通过后的免验证时间 |
+
+## 浏览器标题与 PWA
+
+| 设置键 | 默认值 | 用途 |
+| --- | --- | --- |
+| `pwa.name` | 空 | 安装提示中的应用名称；空值使用 `site.name` |
+| `pwa.short_name` | 空 | 主屏幕图标下方显示的简称；空值使用上面解析出的应用名称 |
+| `pwa.description` | 空 | 安装提示中的说明；空值使用 `site.description` |
+| `pwa.theme_color` | `#18181b` | 浏览器外观着色，格式为 `#rrggbb` |
+| `pwa.background_color` | `#18181b` | 应用加载时图标背后的颜色，格式为 `#rrggbb` |
+| `pwa.icon_url` | 空 | 应用图标；只接受本站的相对路径或 `data:` 内联图片，空值使用内置图标 |
+
+`site.browser_title` 决定浏览器标签页标题，已登录浏览器会在保存后立即更新，无需刷新页面。`pwa.*` 决定安装为应用（PWA）时的名称、说明和外观，由 `GET /manifest.webmanifest` 提供给浏览器，该接口无需登录即可访问。
+
+图标地址的限制并非疏漏：页面的图片安全策略只允许本站路径和内联的 `data:` 图片，指向其他域名的地址会被浏览器静默忽略，因此保存时直接拒绝。
 
 ## 首页与对话
 
