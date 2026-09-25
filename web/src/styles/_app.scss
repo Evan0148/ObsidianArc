@@ -1257,17 +1257,26 @@ body.oa-resizing * {
   }
 }
 
+.oa-menu.oa-menu-safe-mode,
 .oa-menu-safe-mode {
   min-width: 320px;
   max-width: 360px;
+  max-height: min(600px, calc(100vh - 72px));
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 12px;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 
   .oa-safe-mode-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 4px 6px 8px;
+    padding: 6px 8px;
     cursor: pointer;
     user-select: none;
     border-radius: var(--ai-radius-sm, 8px);
@@ -1329,12 +1338,11 @@ body.oa-resizing * {
   }
 
   .oa-safe-mode-desc {
-    padding: 0 4px 10px;
+    padding: 0 8px 6px;
     font-size: 12px;
     line-height: 1.45;
     color: var(--ai-text-secondary);
-    border-bottom: 1px solid var(--ai-border);
-    margin-bottom: 8px;
+    margin-bottom: 4px;
   }
 
   .oa-safe-mode-list {
@@ -1441,9 +1449,8 @@ body.oa-resizing * {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px solid var(--ai-border);
+    margin-top: 6px;
+    padding: 4px 8px 2px;
     font-size: 12px;
   }
 
