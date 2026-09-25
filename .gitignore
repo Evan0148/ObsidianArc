@@ -5,7 +5,9 @@
 # Runtime state: the database, the generated secret key, uploads.
 /data/
 
-# Frontend
+# Frontend & root JS dependencies
+node_modules/
+.vite/
 web/node_modules/
 web/.vite/
 

@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { ArrowUpRight, ArrowDownLeft, ArrowUpLeft, ChartNoAxesCombined, CircleAlert, Coins, RefreshCw, CalendarDays, Activity } from 'lucide-vue-next';
 import { adminApi, type Dashboard, type UsageBreakdown } from '@/admin/api';
 import OaChart from '@/components/OaChart.vue';
 import OaCellStack from '@/components/OaCellStack.vue';
 import OaIconButton from '@/components/OaIconButton.vue';
 import { currentLanguage, t, tn } from '@/composables/useI18n';
-import { IconSpark, IconUsers, IconServer } from '@/icons';
+import { IconSpark, IconUsers, IconServer, IconChevron } from '@/icons';
 import { compactNumber, relativeTime, tokenFigure } from '@/lib/format';
 import { fold, type ChartShape } from '@/lib/chart';
 import { canAdmin } from '@/stores/session';
@@ -35,6 +35,31 @@ const dateLabel = computed(() => new Date(updatedAt.value || Date.now()).toLocal
 const updatedLabel = computed(() => updatedAt.value ? t('dashboardUpdated', {
   time: new Date(updatedAt.value).toLocaleTimeString(locale.value, { hour: '2-digit', minute: '2-digit' }),
 }) : '');
+
+const detailsOpen = ref(false);
+const detailsAnimating = ref(false);
+let detailsTimer = 0;
+
+function toggleDetails(): void {
+  window.clearTimeout(detailsTimer);
+  if (detailsOpen.value) {
+    detailsOpen.value = false;
+    detailsAnimating.value = true;
+    detailsTimer = window.setTimeout(() => {
+      detailsAnimating.value = false;
+    }, 280);
+  } else {
+    detailsOpen.value = true;
+    detailsAnimating.value = true;
+    detailsTimer = window.setTimeout(() => {
+      detailsAnimating.value = false;
+    }, 280);
+  }
+}
+
+onBeforeUnmount(() => {
+  window.clearTimeout(detailsTimer);
+});
 
 // The day before, for the arrows. A server older than this page sends none,
 // and a missing comparison is drawn as no arrow rather than as a fall to zero.
@@ -226,13 +251,31 @@ let dashboardHeatMetric: 'requests' | 'total_tokens' = 'requests';
           </li>
         </ol>
         <OaChart v-else class="oa-dashboard-pie" shape="pie" :data="rankedSlices" :format="(value) => maskBilling(compactNumber(value))" :empty-text="t('nothingYet')" />
-        <details v-if="rankedRows.length" class="oa-dashboard-ranking-details">
-          <summary>{{ t('dashboardRankDetails') }}</summary>
-          <div class="oa-dashboard-table-wrap" tabindex="0" :aria-label="t('dashboardRankDetails')">
-            <table class="oa-dashboard-table">
-              <thead><tr><th>{{ ranking === 'models' ? t('colModel') : t('colUser') }}</th><th>{{ t('colRequests') }}</th><th>{{ t('colTokens') }}</th><th>{{ t('colCredits') }}</th></tr></thead>
-              <tbody><tr v-for="row in rankedRows" :key="row.key"><td>{{ ranking === 'users' ? maskUser(row.label || row.key || '—') : (row.label || row.key || '—') }}</td><td>{{ compactNumber(row.requests) }}</td><td>{{ maskBilling(compactNumber(row.total_tokens)) }}</td><td>{{ maskBilling(exactCredits(row)) }}</td></tr></tbody>
-            </table>
+        <details
+          v-if="rankedRows.length"
+          class="oa-dashboard-ranking-details"
+          :open="detailsOpen || detailsAnimating"
+        >
+          <summary
+            class="oa-dashboard-details-summary"
+            @click.prevent="toggleDetails"
+          >
+            <span>{{ t('dashboardRankDetails') }}</span>
+            <IconChevron :size="12" class="oa-dashboard-details-chevron" :class="{ open: detailsOpen }" />
+          </summary>
+          <div
+            class="oa-dashboard-details-collapse"
+            :class="{ open: detailsOpen }"
+            :aria-hidden="detailsOpen ? undefined : 'true'"
+          >
+            <div class="oa-dashboard-details-body">
+              <div class="oa-dashboard-table-wrap" tabindex="0" :aria-label="t('dashboardRankDetails')">
+                <table class="oa-dashboard-table">
+                  <thead><tr><th>{{ ranking === 'models' ? t('colModel') : t('colUser') }}</th><th>{{ t('colRequests') }}</th><th>{{ t('colTokens') }}</th><th>{{ t('colCredits') }}</th></tr></thead>
+                  <tbody><tr v-for="row in rankedRows" :key="row.key"><td>{{ ranking === 'users' ? maskUser(row.label || row.key || '—') : (row.label || row.key || '—') }}</td><td>{{ compactNumber(row.requests) }}</td><td>{{ maskBilling(compactNumber(row.total_tokens)) }}</td><td>{{ maskBilling(exactCredits(row)) }}</td></tr></tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </details>
       </section>

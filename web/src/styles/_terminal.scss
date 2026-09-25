@@ -19,6 +19,16 @@
   overflow: hidden;
 }
 
+.oa-panel.oa-terminal-panel {
+  opacity: 1 !important;
+  margin-right: 0 !important;
+  transform: none !important;
+  transition: none !important;
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
 // When opened in the chat layout, the terminal replaces the chat main window
 // across the available width rather than being a constrained 720px side drawer.
 .ai-chat-wide .oa-panel.oa-terminal-panel {
@@ -31,6 +41,18 @@
 
 .ai-chat-wide .oa-panel.oa-terminal-panel > .oa-resizer {
   display: none;
+}
+
+// In terminal mode, ensure chat sidebar stays completely hidden
+.oa-chat-root.is-terminal .ai-chat-sidebar {
+  display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oa-panel.oa-terminal-panel {
+    transform: none !important;
+    transition: none !important;
+  }
 }
 
 .oa-terminal {

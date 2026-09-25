@@ -58,7 +58,9 @@ const props = withDefaults(defineProps<{
   width?: number;
   /** An extra class on the scrolling body, for a panel that lays itself out. */
   bodyClass?: string;
-}>(), { footer: true, confirmable: true, width: 400 });
+  /** Immediately emit close event without waiting for drawer slide-out timer. Useful when parent handles route transition. */
+  immediateClose?: boolean;
+}>(), { footer: true, confirmable: true, width: 400, immediateClose: false });
 
 const emit = defineEmits<{
   (event: 'close'): void;
@@ -141,7 +143,11 @@ function close(): void {
   if (closed) return;
   closed = true;
   shown.value = false;
-  closeTimer = window.setTimeout(() => emit('close'), ZOOM_MS);
+  if (props.immediateClose) {
+    emit('close');
+  } else {
+    closeTimer = window.setTimeout(() => emit('close'), ZOOM_MS);
+  }
 }
 
 // Escape closes, unless something inside wants the key first — a select that

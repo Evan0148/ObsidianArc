@@ -10,7 +10,7 @@
 // never been opened costs nothing and one that has been closed is not left
 // holding a stale list.
 
-import { onBeforeUnmount, ref } from 'vue';
+import { nextTick, onBeforeUnmount, ref } from 'vue';
 import { onClickOutside, onKeyStroke } from '@vueuse/core';
 
 const props = defineProps<{
@@ -43,22 +43,51 @@ const GUTTER = 8;
 function fit(): void {
   const el = panel.value;
   if (!el) return;
-  el.style.translate = '';
-  el.style.maxWidth = '';
-  el.style.minWidth = '';
   const room = document.documentElement.clientWidth - 2 * GUTTER;
-  if (el.offsetWidth > room) {
+  const menuWidth = el.offsetWidth;
+  if (menuWidth > room) {
     el.style.maxWidth = `${room}px`;
     el.style.minWidth = '0';
+  } else if (el.style.maxWidth) {
+    el.style.maxWidth = '';
+    el.style.minWidth = '';
   }
-  const rect = el.getBoundingClientRect();
-  const slack = el.offsetWidth - rect.width;
-  const left = rect.left - slack;
-  const right = rect.right + slack;
+
+  // Calculate unscaled menu screen bounds from the trigger group anchor.
+  // This avoids touching el.style.transform which causes synchronous style
+  // invalidation and layout thrashing (frame rate jank) right before animation starts.
+  const g = group.value;
+  const viewWidth = document.documentElement.clientWidth;
   let shift = 0;
-  if (left < GUTTER) shift = GUTTER - left;
-  else if (right > GUTTER + room) shift = GUTTER + room - right;
-  if (shift) el.style.translate = `${Math.round(shift)}px 0`;
+
+  if (g) {
+    const gRect = g.getBoundingClientRect();
+    const isLeft = el.classList.contains('oa-menu-left');
+    const unscaledLeft = isLeft ? gRect.left : gRect.right - menuWidth;
+    const unscaledRight = isLeft ? gRect.left + menuWidth : gRect.right;
+
+    if (unscaledLeft < GUTTER) {
+      shift = GUTTER - unscaledLeft;
+    } else if (unscaledRight > viewWidth - GUTTER) {
+      shift = (viewWidth - GUTTER) - unscaledRight;
+    }
+  } else {
+    const prevTransform = el.style.transform;
+    el.style.transform = 'none';
+    const rect = el.getBoundingClientRect();
+    el.style.transform = prevTransform;
+
+    if (rect.left < GUTTER) {
+      shift = GUTTER - rect.left;
+    } else if (rect.right > viewWidth - GUTTER) {
+      shift = (viewWidth - GUTTER) - rect.right;
+    }
+  }
+
+  const newTranslate = shift ? `${Math.round(shift)}px 0` : '';
+  if (el.style.translate !== newTranslate) {
+    el.style.translate = newTranslate;
+  }
 }
 
 // Open is tracked separately from `mounted` because closing keeps the menu in
@@ -69,17 +98,23 @@ const mounted = ref(false);
 const shown = ref(false);
 let hideTimer = 0;
 
-function show(): void {
+async function show(): Promise<void> {
   for (const other of others) if (other !== close) other();
   others.add(close);
   window.clearTimeout(hideTimer);
   open.value = true;
   mounted.value = true;
-  // One frame closed, so the transition has a state to move from — and the
-  // menu is in the document by then, so it can be measured.
+
+  // Let Vue mount the element into the DOM first
+  await nextTick();
+  if (!open.value) return;
+
+  // Resolve bounds/shift before transition starts to avoid layout thrashing during animation
+  fit();
+
+  // Commit transform in next animation frame for silky smooth hardware-composited 60/120fps
   requestAnimationFrame(() => {
     if (!open.value) return;
-    fit();
     shown.value = true;
   });
 }

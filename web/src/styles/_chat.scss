@@ -437,7 +437,7 @@
   top: auto;
   bottom: calc(100% + 4px);
   transform-origin: bottom right;
-  transform: translateY(6px) scale(0.97);
+  transform: scale(0.12);
 }
 
 .ai-chat-context-menu.open-up.open {
@@ -592,6 +592,71 @@
 
 .ai-msg-user.ai-msg-sent {
   animation: aiChatSwitch 0.34s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ai-msg-user.ai-msg-flying {
+  animation: none !important;
+  pointer-events: none !important;
+
+  .ai-bubble,
+  .ai-chat-attachments,
+  .ai-msg-actions,
+  .ai-msg-editor {
+    opacity: 0 !important;
+    visibility: hidden !important;
+  }
+}
+
+.ai-chat-flight-bubble {
+  position: absolute;
+  pointer-events: none;
+  z-index: 90;
+  will-change: transform, opacity, border-radius, box-shadow;
+  box-sizing: border-box;
+  margin: 0;
+  transform-origin: center center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  isolation: isolate;
+  visibility: visible !important;
+}
+
+.ai-chat-flight-compound {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  pointer-events: none;
+  z-index: 90;
+  will-change: transform, opacity;
+  box-sizing: border-box;
+  margin: 0;
+  transform-origin: center center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  isolation: isolate;
+  visibility: visible !important;
+
+  .ai-bubble,
+  .ai-chat-attachments {
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  .ai-chat-attachments {
+    margin-bottom: 6px;
+    justify-content: flex-end;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-chat-flight-bubble,
+  .ai-chat-flight-compound {
+    display: none !important;
+  }
+  .ai-msg-user.ai-msg-sent {
+    animation: none;
+  }
 }
 
 /* The user's own words sit in a bubble; the assistant's are set as plain
@@ -986,8 +1051,8 @@
 /* Smaller than the answer's own spinner: it sits inside an 18px-tall pill,
    not on its own line. */
 .ai-tool-call-tag .ai-chat-spinner {
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
   border-width: 1.5px;
 }
 
@@ -1393,15 +1458,24 @@
 }
 
 .ai-chat-spinner {
-  width: 13px;
-  height: 13px;
+  display: inline-block;
+  vertical-align: middle;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
   border: 2px solid var(--ai-outline-variant);
   border-radius: 50%;
   border-top-color: var(--ai-primary);
+  transform-origin: center center;
+  flex-shrink: 0;
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
   animation: ai-chat-spin 0.8s linear infinite;
 }
 
 @keyframes ai-chat-spin {
+  from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
 
@@ -1630,6 +1704,10 @@
 
 .ai-chat-send:hover:not(:disabled) {
   background: var(--ai-primary-hover);
+}
+
+.ai-chat-send:active:not(:disabled) {
+  transform: scale(0.92);
 }
 
 .ai-chat-send:disabled {
@@ -2093,22 +2171,29 @@
   /* Grows out of the chip it hangs from rather than appearing whole. */
   transform-origin: bottom right;
   opacity: 0;
-  transform: translateY(6px) scale(0.96);
+  transform: scale(0.12) translateZ(0);
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  isolation: isolate;
   transition:
-    opacity 0.14s ease,
-    transform 0.18s cubic-bezier(0.2, 0, 0, 1);
+    opacity 0.12s cubic-bezier(0.4, 0, 1, 1),
+    transform 0.14s cubic-bezier(0.4, 0, 1, 1);
 }
 
 .ai-model-pop.open {
   opacity: 1;
-  transform: none;
+  transform: scale(1) translateZ(0);
+  transition:
+    opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.26s cubic-bezier(0.12, 0.9, 0.2, 1);
 }
 
 /* The height is animated here, so one face can be swapped for another without
    the popover jumping to its new size. */
 .ai-model-pop-body {
   overflow: hidden;
-  transition: height 0.22s cubic-bezier(0.2, 0, 0, 1);
+  transition: height 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ai-pop-face {

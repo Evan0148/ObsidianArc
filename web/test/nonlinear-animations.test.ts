@@ -1,8 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createApp, h, nextTick, ref, type App } from 'vue';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import UsageBoard from '../src/views/admin/usage/UsageBoard.vue';
 import ChatToolCall from '../src/chat/ChatToolCall.vue';
 import ChatSurface from '../src/chat/ChatSurface.vue';
+import AdminDashboard from '../src/views/admin/AdminDashboard.vue';
+import OaMenu from '../src/components/OaMenu.vue';
+import { adminApi } from '../src/admin/api';
+import { provideAdminView } from '../src/views/admin/adminView';
+import { dashboardFixture } from './fixtures/dashboard';
 import { pendingMode, setMode } from '../src/stores/workspace';
 import { providePanelHost } from '../src/composables/usePanelHost';
 
@@ -164,5 +170,82 @@ describe('Non-linear animation & expand/collapse transitions', () => {
 
     expect(pill?.classList.contains('mode-work')).toBe(false);
     expect(suggestionsAccordion?.classList.contains('open')).toBe(true);
+  });
+
+  it('AdminDashboard ranking details expands and collapses with non-linear animation and rotating chevron', async () => {
+    vi.spyOn(adminApi, 'dashboard').mockResolvedValue(dashboardFixture());
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }] });
+    const actions = document.createElement('div');
+    app = createApp({
+      setup() {
+        provideAdminView({ actionsHost: actions, setTitle() {}, reload() {}, params: [] });
+        return () => h(AdminDashboard);
+      },
+    });
+    app.use(router);
+    app.mount(host);
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+
+    const ranking = host.querySelector('#secBusiestModels')!;
+    expect(ranking).not.toBeNull();
+
+    const details = ranking.querySelector('details.oa-dashboard-ranking-details');
+    expect(details).not.toBeNull();
+
+    const summary = details?.querySelector('summary.oa-dashboard-details-summary');
+    expect(summary).not.toBeNull();
+
+    const chevron = summary?.querySelector('.oa-dashboard-details-chevron');
+    expect(chevron).not.toBeNull();
+    expect(chevron?.classList.contains('open')).toBe(false);
+
+    const collapse = details?.querySelector('.oa-dashboard-details-collapse');
+    expect(collapse).not.toBeNull();
+    expect(collapse?.classList.contains('open')).toBe(false);
+
+    // Click summary to expand
+    (summary as HTMLElement).click();
+    await nextTick();
+
+    expect(chevron?.classList.contains('open')).toBe(true);
+    expect(collapse?.classList.contains('open')).toBe(true);
+
+    // Click summary again to collapse
+    (summary as HTMLElement).click();
+    await nextTick();
+
+    expect(chevron?.classList.contains('open')).toBe(false);
+    expect(collapse?.classList.contains('open')).toBe(false);
+  });
+
+  it('OaMenu mounts and triggers open animation with non-linear transform', async () => {
+    app = createApp({
+      render() {
+        return h(OaMenu as any, null, {
+          trigger: ({ toggle }: any) => h('button', { class: 'trigger-btn', onClick: toggle }, 'Menu'),
+          default: () => h('div', { class: 'menu-content' }, 'Content'),
+        });
+      },
+    });
+    app.mount(host);
+    await nextTick();
+
+    // Menu panel is not mounted before trigger is clicked
+    expect(host.querySelector('.oa-menu')).toBeNull();
+
+    // Click trigger to open
+    const trigger = host.querySelector<HTMLButtonElement>('.trigger-btn')!;
+    trigger.click();
+    await nextTick();
+
+    // Menu panel should be mounted
+    const panel = host.querySelector<HTMLElement>('.oa-menu');
+    expect(panel).not.toBeNull();
+
+    // requestAnimationFrame transitions shown to true
+    await new Promise((r) => requestAnimationFrame(r));
+    await nextTick();
+    expect(panel?.classList.contains('open')).toBe(true);
   });
 });

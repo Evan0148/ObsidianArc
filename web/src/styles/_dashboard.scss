@@ -91,29 +91,73 @@ a.oa-dashboard-resource:hover { background: var(--ai-state-hover); }
   border-top: 1px solid var(--ai-border);
 
   summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     color: var(--ai-text-secondary);
     font-size: 11px;
+    font-weight: 500;
     cursor: pointer;
-    transition: color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    list-style: none;
+    user-select: none;
+    transition: color 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+
+    &::-webkit-details-marker {
+      display: none;
+    }
 
     &:hover {
       color: var(--ai-text);
+    }
+
+    .oa-dashboard-details-chevron {
+      color: var(--ai-text-secondary);
+      transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+      will-change: transform;
+
+      &.open {
+        transform: rotate(180deg);
+      }
+    }
+  }
+
+  .oa-dashboard-details-collapse {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    will-change: grid-template-rows, opacity;
+    transition:
+      grid-template-rows 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+      visibility 0.28s;
+
+    &.open {
+      grid-template-rows: 1fr;
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transition:
+        grid-template-rows 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+        opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+        visibility 0s;
+    }
+
+    .oa-dashboard-details-body {
+      overflow: hidden;
+      min-height: 0;
     }
   }
 
   .oa-dashboard-table-wrap {
     margin-top: 10px;
-    animation: oaDetailsFadeIn 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: transform;
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+    transform: translateY(-8px);
   }
-}
 
-@keyframes oaDetailsFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-  to {
-    opacity: 1;
+  .oa-dashboard-details-collapse.open .oa-dashboard-table-wrap {
     transform: translateY(0);
   }
 }

@@ -31,6 +31,7 @@ import { pendingMode, pendingProjectID } from '@/stores/workspace';
 import { currentPreferences, currentUser } from '@/stores/session';
 import { ImageError, prepareImage, type PreparedImage } from './image';
 import { currentModel, reasoning } from './useModels';
+import { markFlying, resetFlightState } from './useSendAnimation';
 
 export const MAX_MESSAGE_CHARS = 32000;
 export const MAX_IMAGES = 6;
@@ -340,16 +341,18 @@ export async function runTurn(turn: TurnOptions, turnstile = ''): Promise<'done'
     const cut = messages.value.findIndex((message) => message.id === turn.truncateFrom);
     if (cut >= 0) messages.value = messages.value.slice(0, cut);
   }
-  if (turn.content) {
-    messages.value = messages.value.concat([{
+  if (turn.content || turn.attachmentIDs?.length || attachments.value.length) {
+    const userMessage: Message = {
       id: `local-${Date.now()}`,
       seq: messages.value.length + 1,
       role: 'user',
-      content: turn.content,
+      content: turn.content ?? '',
       attachments: attachments.value.map((entry) => entry.ref),
       created_at: Date.now(),
-    }]);
-    justSentID.value = messages.value[messages.value.length - 1]!.id;
+    };
+    markFlying(userMessage.id);
+    messages.value = messages.value.concat([userMessage]);
+    justSentID.value = userMessage.id;
   }
 
   busy.value = true;
@@ -461,7 +464,9 @@ export async function runTurn(turn: TurnOptions, turnstile = ''): Promise<'done'
         // The server rejects before creating a turn. Remove the optimistic
         // copy so solving or cancelling the challenge cannot duplicate text.
         const last = messages.value[messages.value.length - 1];
-        if (turn.content && last?.id.startsWith('local-')) messages.value = messages.value.slice(0, -1);
+        if ((turn.content || turn.attachmentIDs?.length) && last?.id.startsWith('local-')) {
+          messages.value = messages.value.slice(0, -1);
+        }
         chatChallenge.value = { ...turn, conversationID };
         chatChallengeError.value = error.code === 'chat_challenge_required' ? '' : error.message;
       } else {
@@ -608,6 +613,7 @@ export async function openConversation(id: string): Promise<void> {
   recentReasoningID.value = '';
   historyOpen.value = false;
   messages.value = [];
+  resetFlightState();
   // A short rise says "a different conversation" instead of leaving the
   // transcript to flicker into something else within one frame.
   switchTick.value += 1;
@@ -627,6 +633,7 @@ export function startNewConversation(): void {
   justSentID.value = '';
   recentReasoningID.value = '';
   historyOpen.value = false;
+  resetFlightState();
   // A running turn already holds its own copy of what it sent, so this drops
   // only what is still staged in the composer — and nothing can be staged
   // while a turn is running.
@@ -643,6 +650,7 @@ export function startProjectConversation(projectID: string): void {
   justSentID.value = '';
   recentReasoningID.value = '';
   historyOpen.value = false;
+  resetFlightState();
   clearAttachments();
   switchTick.value += 1;
 }

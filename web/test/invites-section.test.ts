@@ -6,6 +6,7 @@ import { ApiError } from '../src/api/client';
 import { providePanelHost } from '../src/composables/usePanelHost';
 import { changeLanguage, t, tn } from '../src/composables/useI18n';
 import { absoluteTime } from '../src/lib/format';
+import * as markdown from '../src/chat/markdown';
 import InvitesSection from '../src/views/settings/InvitesSection.vue';
 
 // The "Invites" settings card: claiming somebody else's code (always
@@ -49,11 +50,16 @@ afterEach(() => {
   app = undefined;
   document.body.textContent = '';
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 async function settle(): Promise<void> {
   for (let i = 0; i < 3; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (vi.isFakeTimers()) {
+      await vi.advanceTimersByTimeAsync(0);
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
     await nextTick();
   }
 }
@@ -105,6 +111,93 @@ describe('the invites card', () => {
     await mount(InvitesSection);
 
     expect(host.textContent).toContain('ABCD-2345');
+  });
+
+  it('shows the personal code and invite link, each with its own copy button and feedback', async () => {
+    vi.spyOn(invitesApi, 'fetchProfileInvites').mockResolvedValue(ON);
+    const copySpy = vi.spyOn(markdown, 'copyToClipboard').mockResolvedValue(true);
+    await mount(InvitesSection);
+
+    expect(host.textContent).toContain('ABCD-2345');
+    const expectedLink = invitesApi.inviteLink('ABCD2345');
+    expect(host.textContent).toContain(expectedLink);
+
+    const copyButtons = [...host.querySelectorAll<HTMLButtonElement>('button')]
+      .filter((node) => node.textContent?.trim() === t('copy'));
+    expect(copyButtons.length).toBe(2);
+
+    // Copy code button
+    copyButtons[0]!.click();
+    await settle();
+    expect(copySpy).toHaveBeenCalledWith('ABCD-2345');
+    expect(copyButtons[0]!.textContent?.trim()).toBe(t('copied'));
+    expect(copyButtons[0]!.classList.contains('copied')).toBe(true);
+    expect(copyButtons[0]!.getAttribute('aria-label')).toBe(t('copied'));
+
+    // Copy link button
+    copyButtons[1]!.click();
+    await settle();
+    expect(copySpy).toHaveBeenCalledWith(expectedLink);
+    expect(copyButtons[1]!.textContent?.trim()).toBe(t('copied'));
+    expect(copyButtons[1]!.classList.contains('copied')).toBe(true);
+    expect(copyButtons[1]!.getAttribute('aria-label')).toBe(t('copied'));
+  });
+
+  it('handles clipboard failure and clears error message on subsequent success', async () => {
+    vi.spyOn(invitesApi, 'fetchProfileInvites').mockResolvedValue(ON);
+    const copySpy = vi.spyOn(markdown, 'copyToClipboard').mockResolvedValue(false);
+    await mount(InvitesSection);
+
+    const copyButtons = [...host.querySelectorAll<HTMLButtonElement>('button')]
+      .filter((node) => node.textContent?.trim() === t('copy'));
+    expect(copyButtons.length).toBe(2);
+
+    // Click when clipboard fails
+    copyButtons[0]!.click();
+    await settle();
+    expect(copySpy).toHaveBeenCalledWith('ABCD-2345');
+    expect(host.textContent).toContain(t('copyFailed'));
+
+    // Subsequent copy succeeds
+    copySpy.mockResolvedValueOnce(true);
+    copyButtons[0]!.click();
+    await settle();
+    expect(host.textContent).not.toContain(t('copyFailed'));
+    expect(copyButtons[0]!.textContent?.trim()).toBe(t('copied'));
+  });
+
+  it('resets copied state back to copy label after timeout, and handles rapid clicks cleanly', async () => {
+    vi.spyOn(invitesApi, 'fetchProfileInvites').mockResolvedValue(ON);
+    vi.spyOn(markdown, 'copyToClipboard').mockResolvedValue(true);
+    await mount(InvitesSection);
+
+    const copyButtons = [...host.querySelectorAll<HTMLButtonElement>('button')]
+      .filter((node) => node.textContent?.trim() === t('copy'));
+    expect(copyButtons.length).toBe(2);
+
+    vi.useFakeTimers();
+    try {
+      // First click
+      copyButtons[0]!.click();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(copyButtons[0]!.textContent?.trim()).toBe(t('copied'));
+
+      // Rapid second click after 500ms
+      await vi.advanceTimersByTimeAsync(500);
+      copyButtons[0]!.click();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(copyButtons[0]!.textContent?.trim()).toBe(t('copied'));
+
+      // Advance by 1100ms (1600ms from first click, but only 1100ms from second click)
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(copyButtons[0]!.textContent?.trim()).toBe(t('copied'));
+
+      // Advance remaining time to pass 1500ms from second click
+      await vi.advanceTimersByTimeAsync(500);
+      expect(copyButtons[0]!.textContent?.trim()).toBe(t('copy'));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('lists usage against the limit, and as unlimited when there is none', async () => {

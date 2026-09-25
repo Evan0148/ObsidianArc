@@ -20,6 +20,7 @@ import {
   MAX_MESSAGE_CHARS, activeID, busy, editingID, justSentID, messages,
   recentReasoningID, runTurn, setFlash, statsWanted,
 } from './useChat';
+import { hasFlown, isFlying } from './useSendAnimation';
 
 const props = defineProps<{ message: Message }>();
 
@@ -30,6 +31,9 @@ const zoomedImage = ref<{ url: string; alt?: string } | null>(null);
 
 const editing = computed(() => editingID.value === props.message.id);
 const images = computed(() => props.message.attachments ?? []);
+const isHiddenInFlight = computed(() => {
+  return isFlying(props.message.id) || (props.message.id === justSentID.value && !hasFlown(props.message.id));
+});
 
 function beginEdit(): void {
   draft.value = props.message.content;
@@ -134,8 +138,12 @@ function describe(value: MessageStats): string {
     class="ai-msg"
     :class="[
       props.message.role === 'user' ? 'ai-msg-user' : 'ai-msg-assistant',
-      { 'ai-msg-sent': props.message.id === justSentID, 'ai-msg-tool': !!props.message.toolCall },
+      {
+        'ai-msg-flying': isHiddenInFlight,
+        'ai-msg-tool': !!props.message.toolCall,
+      },
     ]"
+    :data-message-id="props.message.id"
   >
     <template v-if="props.message.role === 'user'">
       <ChatAttachments v-if="images.length" :images="images" />

@@ -16,7 +16,7 @@ import VerifyBanner from '@/announce/VerifyBanner.vue';
 import ChatSurface from '@/chat/ChatSurface.vue';
 import OaIconButton from '@/components/OaIconButton.vue';
 import { t } from '@/composables/useI18n';
-import { IconMenu } from '@/icons';
+import { IconChevron, IconMenu } from '@/icons';
 import { dragging, historyOpen, isEmpty, refreshList, startNewConversation } from '@/chat/useChat';
 import { loadModels, restorePreferences } from '@/chat/useModels';
 import { useRailCollapse } from '@/composables/useRailCollapse';
@@ -27,14 +27,16 @@ const route = useRoute();
 
 const narrow = useMediaQuery('(max-width: 900px)');
 const rail = useRailCollapse('obsidian-arc-rail-collapsed');
+const isTerminal = computed(() => route.path === '/terminal');
 
 const bodyClass = computed(() => ({
   'ai-chat': true,
   'ai-chat-wide': true,
-  'history-open': historyOpen.value,
+  'history-open': !isTerminal.value && historyOpen.value,
   'is-empty': isEmpty.value,
   dragging: dragging.value,
   'rail-collapsed': rail.collapsed.value,
+  'is-terminal': isTerminal.value,
 }));
 
 /**
@@ -71,8 +73,21 @@ onMounted(() => {
 <template>
   <AppShell :body-class="bodyClass" @brand="onBrand">
     <template #leading>
-      <OaIconButton class="oa-icon-btn" :label="t('railToggle')" @click="onRailToggle">
+      <OaIconButton
+        v-if="!isTerminal"
+        class="oa-icon-btn"
+        :label="t('railToggle')"
+        @click="onRailToggle"
+      >
         <IconMenu :size="17" />
+      </OaIconButton>
+      <OaIconButton
+        v-else
+        class="oa-icon-btn oa-terminal-back"
+        :label="t('backToChat')"
+        @click="router.push('/')"
+      >
+        <IconChevron :size="16" />
       </OaIconButton>
     </template>
 

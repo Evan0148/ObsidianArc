@@ -57,12 +57,9 @@ function toggle(next: boolean): void {
     at.value = position.value;
     mounted.value = true;
     void nextTick(() => {
-      // Reading a layout property commits the closed state, so the class
-      // added next has something to transition away from. A frame callback
-      // would do the same, except in a tab the browser is not painting —
-      // where it never arrives, and the popover would stay invisible.
-      void body.value?.offsetHeight;
-      shown.value = true;
+      requestAnimationFrame(() => {
+        if (open.value) shown.value = true;
+      });
     });
     return;
   }

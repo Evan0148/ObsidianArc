@@ -5,7 +5,7 @@
 // side panel arrives — so /settings and /keys narrow the conversation rather
 // than covering it.
 
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useResizeObserver } from '@vueuse/core';
 import OaIconButton from '@/components/OaIconButton.vue';
@@ -19,9 +19,12 @@ import ChatMessage from './ChatMessage.vue';
 import ChatPending from './ChatPending.vue';
 import ChatSidebar from './ChatSidebar.vue';
 import {
-  active, addImages, busy, chatChallenge, dragging, draft, flash, historyOpen, isEmpty, messages, pending,
+  active, addImages, busy, chatChallenge, dragging, draft, flash, historyOpen, isEmpty, justSentID, messages, pending,
   scrollTick, showPending, startNewConversation, status, submit, suggestions, switchTick,
 } from './useChat';
+import {
+  cancelAllFlights, captureComposerRect, lastComposerRect, markFlying, playSendAnimation,
+} from './useSendAnimation';
 import { currentUser, isAdmin } from '@/stores/session';
 
 // The two surfaces, in the order they are offered. A list rather than two
@@ -39,6 +42,7 @@ const isTerminal = computed(() => route?.path === '/terminal');
 
 const emit = defineEmits<{ (event: 'open-setup'): void }>();
 
+const mainRef = ref<HTMLElement | null>(null);
 const scroll = ref<InstanceType<typeof OaScrollArea> | null>(null);
 const composer = ref<InstanceType<typeof ChatComposer> | null>(null);
 const transcriptRef = ref<HTMLElement | null>(null);
@@ -64,6 +68,9 @@ function onScroll(): void {
   const node = scroller();
   if (!node) return;
   autoScroll.value = node.scrollHeight - node.scrollTop - node.clientHeight < 60;
+  if (!autoScroll.value) {
+    cancelAllFlights();
+  }
 }
 
 // Auto-follow when content grows (streaming deltas, MathML equations upgraded, images loaded).
@@ -87,6 +94,7 @@ watch(scrollTick, () => {
 // A short rise says "a different conversation" instead of leaving the
 // transcript to flicker into something else within one frame.
 watch(switchTick, () => {
+  cancelAllFlights();
   autoScroll.value = true;
   rising.value = false;
   void nextTick(() => {
@@ -124,6 +132,7 @@ function onDrop(event: DragEvent): void {
 }
 
 function ask(key: (typeof suggestions.value)[number]): void {
+  captureComposerRect(composer.value?.getInputRect?.() ?? (composer.value?.$el as HTMLElement | undefined));
   draft.value = t(key);
   void submit();
 }
@@ -163,13 +172,46 @@ watch(isEmpty, (empty, was) => {
   });
 }, { flush: 'pre' });
 
+// Ensure message is marked flying and composer rect is recorded before DOM layout shifts (in flush: 'pre')
+watch(justSentID, (id) => {
+  if (id) {
+    autoScroll.value = true;
+    markFlying(id);
+    if (!lastComposerRect.value) {
+      captureComposerRect(composer.value?.getInputRect?.() ?? (composer.value?.$el as HTMLElement | undefined));
+    }
+  }
+}, { flush: 'pre' });
+
+// Play Telegram-style send flight animation: bubble emerges from composer,
+// scales down, and smoothly moves to its target position in the transcript.
+watch(justSentID, (id) => {
+  if (!id) return;
+  const mainEl = mainRef.value;
+  const transcriptEl = transcriptRef.value;
+  if (!mainEl || !transcriptEl) return;
+
+  void playSendAnimation({
+    messageID: id,
+    mainEl,
+    transcriptEl,
+    composerInputEl: (composer.value?.inputElement as HTMLElement | undefined) ?? (composer.value?.$el as HTMLElement | undefined) ?? null,
+    scrollToBottom,
+  });
+});
+
+onBeforeUnmount(() => {
+  cancelAllFlights();
+});
+
 defineExpose({ focus: () => composer.value?.focus() });
 </script>
 
 <template>
-  <ChatSidebar />
+  <ChatSidebar v-if="!isTerminal" />
 
   <div
+    ref="mainRef"
     v-show="!isTerminal"
     class="ai-chat-main"
     @dragenter="onDragOver"

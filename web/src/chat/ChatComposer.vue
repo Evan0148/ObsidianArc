@@ -9,6 +9,7 @@ import {
   MAX_MESSAGE_CHARS, TEXT_FILE_ACCEPT, addImages, addTextFiles, attachments, busy,
   draft, messages, removeAttachment, status, stoppable, submit, stop,
 } from './useChat';
+import { captureComposerRect } from './useSendAnimation';
 
 const input = ref<HTMLTextAreaElement | null>(null);
 const imagePicker = ref<HTMLInputElement | null>(null);
@@ -28,6 +29,7 @@ watch(draft, () => void nextTick(resize));
 function onKeyDown(event: KeyboardEvent): void {
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
   event.preventDefault();
+  captureComposerRect(input.value);
   void submit();
 }
 
@@ -44,6 +46,12 @@ function onSend(event: MouseEvent): void {
     stop();
     return;
   }
+  captureComposerRect(input.value);
+  void submit();
+}
+
+function onFormSubmit(): void {
+  captureComposerRect(input.value);
   void submit();
 }
 
@@ -61,11 +69,15 @@ function takeFiles(): void {
   void addTextFiles(files);
 }
 
-defineExpose({ focus: () => input.value?.focus({ preventScroll: true }) });
+defineExpose({
+  focus: () => input.value?.focus({ preventScroll: true }),
+  getInputRect: () => input.value?.getBoundingClientRect() ?? null,
+  inputElement: input,
+});
 </script>
 
 <template>
-  <form class="ai-chat-composer" @submit.prevent="submit">
+  <form class="ai-chat-composer" @submit.prevent="onFormSubmit">
     <!-- Above the box rather than over the transcript: it is about what is
          about to be sent, and it should be read while typing, not after. -->
     <p

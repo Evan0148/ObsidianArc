@@ -211,6 +211,7 @@ onBeforeUnmount(() => {
     :title="t('navTerminal')"
     :footer="false"
     :width="720"
+    :immediate-close="true"
     body-class="oa-terminal-body"
     @close="router.replace('/')"
   >

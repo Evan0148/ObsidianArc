@@ -693,7 +693,7 @@
   left: 0;
   min-width: 240px;
   transform-origin: bottom left;
-  transform: translateY(6px) scale(0.97);
+  transform: scale(0.12) translateZ(0);
 }
 
 /* Groups are told apart by the space between them; the first one has
@@ -1499,5 +1499,209 @@ body.oa-resizing * {
     filter: blur(5px);
   }
 }
+
+/* --- page-level horizontal slide transitions ------------------------------ */
+
+/* Full-page viewport and page containers */
+.oa-app-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  contain: layout paint;
+}
+
+.oa-app-page {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+/* Hardware-accelerated sliding layers during transition */
+.page-slide-left-enter-active,
+.page-slide-left-leave-active,
+.page-slide-right-enter-active,
+.page-slide-right-leave-active {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+
+$oa-slide-duration: 0.38s;
+$oa-slide-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+/* Forward Slide (page-slide-left): new page enters from right, old page leaves to left */
+.page-slide-left-enter-active {
+  z-index: 2;
+  transition: transform $oa-slide-duration $oa-slide-ease,
+              opacity ($oa-slide-duration * 0.75) ease;
+}
+
+.page-slide-left-leave-active {
+  z-index: 1;
+  transition: transform $oa-slide-duration $oa-slide-ease,
+              opacity $oa-slide-duration ease;
+}
+
+.page-slide-left-enter-from {
+  transform: translate3d(100%, 0, 0);
+  opacity: 0.95;
+}
+
+.page-slide-left-enter-to {
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
+}
+
+.page-slide-left-leave-from {
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
+}
+
+.page-slide-left-leave-to {
+  transform: translate3d(-26%, 0, 0);
+  opacity: 0.85;
+}
+
+/* Backward Slide (page-slide-right): old page leaves to right, new page enters from left */
+.page-slide-right-enter-active {
+  z-index: 1;
+  transition: transform $oa-slide-duration $oa-slide-ease,
+              opacity $oa-slide-duration ease;
+}
+
+.page-slide-right-leave-active {
+  z-index: 2;
+  transition: transform $oa-slide-duration $oa-slide-ease,
+              opacity ($oa-slide-duration * 0.8) ease;
+}
+
+.page-slide-right-enter-from {
+  transform: translate3d(-26%, 0, 0);
+  opacity: 0.85;
+}
+
+.page-slide-right-enter-to {
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
+}
+
+.page-slide-right-leave-from {
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
+}
+
+.page-slide-right-leave-to {
+  transform: translate3d(100%, 0, 0);
+  opacity: 0.95;
+}
+
+/* Hardware-accelerated depth shadow on the overlapping layer's left edge */
+.page-slide-left-enter-active::before,
+.page-slide-right-leave-active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -28px;
+  width: 28px;
+  background: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.24));
+  pointer-events: none;
+}
+
+/* Suppress conflicting vertical entrance animations on children while full-page horizontal slide runs */
+.page-slide-left-enter-active,
+.page-slide-right-enter-active,
+.page-slide-left-leave-active,
+.page-slide-right-leave-active {
+  .oa-workspace > .oa-header,
+  .oa-workspace > .oa-chat-root,
+  .oa-admin-rail,
+  .oa-admin-main.enter-rise {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+
+/* Simple fade fallback */
+.page-fade-enter-active,
+.page-fade-leave-active {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+
+.page-fade-enter-from,
+.page-fade-leave-to {
+  opacity: 0;
+}
+
+.page-fade-enter-to,
+.page-fade-leave-from {
+  opacity: 1;
+}
+
+/* Full support for prefers-reduced-motion: zero motion, clean instantaneous cross-fade without layout shift */
+@media (prefers-reduced-motion: reduce) {
+  .page-slide-left-enter-active,
+  .page-slide-left-leave-active,
+  .page-slide-right-enter-active,
+  .page-slide-right-leave-active {
+    position: absolute;
+    transition: opacity 0.08s ease !important;
+    animation: none !important;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+
+  .page-slide-left-enter-active::before,
+  .page-slide-right-leave-active::before {
+    display: none !important;
+  }
+
+  .page-slide-left-enter-from,
+  .page-slide-right-enter-from {
+    transform: none !important;
+    opacity: 0 !important;
+  }
+
+  .page-slide-left-enter-to,
+  .page-slide-right-enter-to {
+    transform: none !important;
+    opacity: 1 !important;
+  }
+
+  .page-slide-left-leave-from,
+  .page-slide-right-leave-from {
+    transform: none !important;
+    opacity: 1 !important;
+  }
+
+  .page-slide-left-leave-to,
+  .page-slide-right-leave-to {
+    transform: none !important;
+    opacity: 0 !important;
+  }
+}
+
 
 
