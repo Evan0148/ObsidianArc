@@ -18,6 +18,7 @@ const sidebar = [
     { text: '访客试用', link: '/features/trial' },
     { text: '服务状态', link: '/features/uptime' },
     { text: '注册与安全', link: '/features/security' },
+    { text: '两步验证', link: '/features/two-factor' },
   ] },
   { text: '管理后台', collapsed: false, items: [
     { text: '后台概览', link: '/admin/overview' },

@@ -30,15 +30,15 @@ group edit Default --terminal false
 
 ## 它能做什么
 
-终端覆盖全部 73 个后台管理接口，以及账户页面能调用的 53 个用户端接口中凡是「设置」或「更改」的那部分，共 131 条命令。按功能分组：
+终端覆盖全部 75 个后台管理接口，以及账户页面能调用的 59 个用户端接口中凡是「设置」或「更改」的那部分，共 138 条命令。按功能分组：
 
 | 分组 | 命令 | 适用对象 |
 | --- | --- | --- |
-| 账户 (Accounts) | `user list` `show` `create` `edit` `delete` `passwd` `keys` `key-revoke` `chats` `transcript` `cards` | 管理员 (`users`) |
+| 账户 (Accounts) | `user list` `show` `create` `edit` `delete` `passwd` `reset-2fa` `keys` `key-revoke` `chats` `transcript` `cards` | 管理员 (`users`) |
 | 用户组 (Groups) | `group list` `show` `create` `edit` `delete` `members` `assign` | 管理员 (`groups`) |
 | 服务商与模型 (Catalogue) | `provider list` `show` `create` `edit` `delete` `detect` · `model list` `show` `create` `edit` `delete` `order` `import` | 管理员 (`providers`/`models`) |
 | 运维 (Operations) | `dash` `res` · `health status` `probe` `reset` · `usage summary` `breakdown` `rpm` `records` `reset` · `quota list` `set` `delete` · `code list` `create` `redemptions` `delete` · `log list` `facets` `prune` | 管理员 (`dashboard`/`resources`/`availability`/`usage`/`codes`/`logs`) |
-| 实例 (Instance) | `setting list` `get` `set` `import` · `notice list` `create` `edit` `delete` · `security events` `review` · `attachment purge` · `meta` `refs` `member-options` | 管理员 (`settings`/`announcements`/`security`) |
+| 实例 (Instance) | `setting list` `get` `set` `import` · `notice list` `create` `edit` `delete` · `security events` `review` `two-factor` · `attachment purge` · `meta` `refs` `member-options` | 管理员 (`settings`/`announcements`/`security`) |
 | 用户反馈 (Feedback) | 处理别人的反馈：`feedback list` `show` `reply` `resolve` `reopen` `delete` | 管理员 (`feedback`) |
 | | 自己的反馈：`feedback send` `mine` `thread` `answer` `unread` | 所有用户 |
 | 会话 (Session) | `help` `clear` `exit` `whoami` `version` `history` `watch` `lang` `format` `echo` | 所有用户 |
@@ -47,7 +47,7 @@ group edit Default --terminal false
 | 生图 (Images) | `image list` `delete` | 所有用户 |
 | 额度与卡密 (Credit) | `credit show` `history` `cards` `use` `redeem` | 所有用户 |
 | API 密钥 (Keys) | `key list` `create` `edit` `delete` | 所有用户 |
-| 偏好与资料 (Profile) | `pref list` `set` `wallpaper-clear` · `me show` `edit` `passwd` `verify` · `oauth list` `unlink` | 所有用户 |
+| 偏好与资料 (Profile) | `pref list` `set` `wallpaper-clear` · `me show` `edit` `passwd` `verify` · `2fa status` `setup` `enable` `disable` `recovery` · `oauth list` `unlink` | 所有用户 |
 | 备份与恢复 (Backup) | `backup export` `backup import` | 所有用户 |
 
 完整列表以 `help` 为准——它只列出**你当前有权执行**的命令，不会把未授权的命令呈现出来。每个命令均可通过 `<命令> --help` 或 `help <命令>` 查看中英双语的详细参数、用法和示例。
@@ -64,7 +64,7 @@ group edit Default --terminal false
 
 | 接口 | 为什么没有 |
 | --- | --- |
-| 登录、登出、注册、邮箱验证 | 终端本身就是登录之后才打开的；登出请用账户菜单 |
+| 登录、登出、注册、邮箱验证、登录时的两步验证码 | 终端本身就是登录之后才打开的；登出请用账户菜单 |
 | 第三方登录的跳转与注册 | 需要浏览器跟随跳转 |
 | 发送聊天消息、生成图片 | 对话和画图在聊天界面和生图实验室里进行，终端显示不了图片 |
 | 上传附件、上传壁纸、读取图片 | 终端没法选择或显示图片；壁纸可以用 `pref wallpaper-clear` 移除 |

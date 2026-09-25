@@ -47,6 +47,16 @@ export interface Account {
   /** The client reported when this account was registered. Empty on accounts
    *  created before it was recorded. */
   signup_user_agent?: string;
+  /** When two-step verification was turned on; zero while it is off. */
+  two_factor_at?: number;
+  /** The operator's two-step policy, answered for this account: must it
+   *  enrol before anything else works, may it turn the step off, and does the
+   *  backoffice refuse it until it enrols. The server holds the same lines;
+   *  these only decide what to draw. Optional because an older server never
+   *  sent them, and absent must read as "nothing required". */
+  two_factor_enrol?: boolean;
+  two_factor_mandatory?: boolean;
+  two_factor_backoffice?: boolean;
 }
 
 // What a visitor with no account is shown at the address. The server settles
@@ -85,6 +95,9 @@ export interface SiteInfo {
   turnstile_on_feedback?: boolean;
   turnstile_on_redeem?: boolean;
   turnstile_on_chat_speed?: boolean;
+  /** How long a browser may skip the sign-in code after one is entered; zero
+   *  means the code step offers no such choice. */
+  two_factor_remember_days?: number;
   /** Whether a model reads each sign-up, so the button can say it is happening. */
   signup_review?: boolean;
   /**
@@ -129,12 +142,27 @@ export function fetchMe(): Promise<{ user: Account; preferences: Preferences }> 
   return api.get<{ user: Account; preferences: Preferences }>('/api/auth/me');
 }
 
-export function login(identifier: string, password: string, turnstile?: string): Promise<{ user: Account }> {
-  return api.post<{ user: Account }>('/api/auth/login', {
+/**
+ * Either the account, or — when it has two-step verification — word that the
+ * password was right and a code is wanted. In the second case the server has
+ * set a cookie that opens nothing but completeSignIn.
+ */
+export interface LoginResult {
+  user?: Account;
+  two_factor?: true;
+}
+
+export function login(identifier: string, password: string, turnstile?: string): Promise<LoginResult> {
+  return api.post<LoginResult>('/api/auth/login', {
     identifier,
     password,
     ...(turnstile ? { turnstile } : {}),
   });
+}
+
+/** The second step: a code from the app, or a recovery code. */
+export function completeSignIn(code: string, remember: boolean): Promise<{ user: Account }> {
+  return api.post<{ user: Account }>('/api/auth/two-factor', { code, remember });
 }
 
 export interface RegisterInput {

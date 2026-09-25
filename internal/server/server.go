@@ -622,6 +622,22 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		}
 		return out, err
 	}
+	// Switching the second step on or off and spending a recovery code are
+	// what somebody asks about after an account has been taken over, so they
+	// are kept where the other decisions about who gets in are.
+	authService.OnTwoFactor = func(ctx context.Context, event auth.TwoFactorEvent) {
+		severity := securityevents.SeverityInfo
+		if event.Kind == "disabled" || event.Kind == "recovery_used" {
+			severity = securityevents.SeverityWarning
+		}
+		if err := securityLog.Record(ctx, nil, securityevents.Event{
+			Event: securityevents.EventTwoFactor, Severity: severity,
+			UserID: event.Account.ID, Username: event.Account.Username,
+			IP: event.IP, Source: "user", Decision: event.Kind,
+		}); err != nil {
+			slog.ErrorContext(ctx, "could not record a two-step change", "error", err)
+		}
+	}
 	authService.OnSignupReview = func(ctx context.Context, in auth.RegisterInput, account *user.User, review auth.SignupReview) {
 		event := securityevents.Event{
 			Event: securityevents.EventSignupReview, Severity: securityevents.SeverityInfo,
@@ -770,6 +786,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	adminHandlers := admin.NewHandlers(db, users, groups, providers, models, settingsService, registry, authService, usageStore, quotaService, conversations, announcements, keys, requestLog, securityLog, cards, healthStore, feedbackStore, idpStore)
 	adminHandlers.TryReview = adminTryReview
 	adminHandlers.Origin = publicOrigin
+	adminHandlers.ClientIP = func(r *http.Request) string { return httpx.ClientIP(r, proxyTrust) }
 	adminHandlers.Routes(mux)
 
 	// The console is a client of the administrative API, not a second
@@ -869,9 +886,19 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 			// The web terminal's rule, so the two doors agree about who may
 			// have a console: any account whose group allows it, and every
 			// administrator.
+			//
+			// An account the two-step policy is holding at the door is held
+			// here too: enrolling needs a screen to scan from, and SSH is
+			// not one. Asked before every command, so a policy switched on
+			// reaches a session that is already open.
 			Permitted: func(ctx context.Context, account user.User) bool {
-				return terminalAllowed(ctx, groups, account) == nil
+				return terminalAllowed(ctx, groups, account) == nil &&
+					!authService.MustEnrolTwoFactor(account)
 			},
+			// The code for an account with two-step sign-in, checked against
+			// the same secret, the same replay guard and the same guessing
+			// budget as the web sign-in's second step.
+			SecondFactor: authService.VerifyTwoFactorCode,
 			// What the cookie does for the browser: the account is read
 			// again before every command, so revoking a grant, disabling an
 			// account or deleting it reaches a session that is already open
@@ -933,6 +960,10 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		// Last, so the session lookup only happens for requests that survived
 		// the origin check.
 		authService.Attach(),
+		// Right after it: an account the two-step policy says must enrol
+		// reaches nothing but the enrolment endpoints, whichever handler it
+		// was asking for.
+		authService.EnrolmentGate(),
 		// After it, because the account it names only exists in the context
 		// Attach created — which the log's own layer, further out, never sees.
 		reqlog.Identify(func(r *http.Request) (string, string) {

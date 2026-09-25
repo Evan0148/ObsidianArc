@@ -32,6 +32,10 @@ const TERMS = {
   data: [
     'secData', 'dataHint', 'exportData', 'importData',
   ],
+  twofactor: [
+    'secSecurity', 'secTwoFactor', 'twoFactorIntro', 'twoFactorSetUp', 'twoFactorRegenerate',
+    'twoFactorTurnOff', 'twoFactorRecoveryLabel', 'twoFactorAppTitle',
+  ],
 } satisfies Record<string, StringKey[]>;
 
 export type SettingsGroup = keyof typeof TERMS;

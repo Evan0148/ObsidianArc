@@ -216,10 +216,34 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | --- | --- | --- |
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
-| Binary (SQLite + embedded SPA) | < 30 MB | 20.7 MB (17.0 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 135 kB | 168.92 kB to open the chat (140.85 JS + 28.07 CSS) |
+| Binary (SQLite + embedded SPA) | < 30 MB | 20.9 MB (17.2 MB `-tags nosqlite`, Linux amd64) |
+| Frontend, on the wire | < 135 kB | 176.74 kB to open the chat (147.32 JS + 29.42 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
+
+Remeasured on 2026-09-25 (UTC) for two-step verification, against the commit
+before it rebuilt the same way. That commit was already 0.87 kB above the
+figure recorded below — the backoffice's safe mode had not been remeasured —
+at 169.79 kB (140.88 JS + 28.91 CSS). Two-step verification adds 6.95 kB to
+the first paint: 6.44 kB of JS and 0.51 kB of CSS. All of it sits there on
+purpose. The code step is part of the sign-in card, which is the first paint
+for anybody signed out; the setup wizard is drawn by the security settings,
+by the screen a policy holds an account at, and by the backoffice's gate, and
+the first two are in the main graph already; and roughly a third of the JS is
+English strings, which stay in `en` because that is the type the Chinese
+dictionary is checked against. Splitting the wizard into a chunk of its own
+would save a couple of kilobytes and add the seventh file `test/bundle.test.ts`
+is there to question — a trade not taken for a screen people open once. The
+QR code is drawn by the server, in `internal/qr`, so no encoder rides on the
+first paint at all. The backoffice chunk grew by 1.76 kB to 75.46 kB and the
+Chinese dictionary by 2.02 kB to 30.78 kB.
+
+The binary grew by 197 kB with SQLite and 193 kB without it (20,885,664 and
+17,174,688 bytes, Go 1.27.1): the TOTP and QR packages, the second sign-in
+step and its policy, the terminal's `2fa` commands, and the larger embedded
+frontend. No dependency was added — TOTP is `crypto/hmac` and `crypto/sha1`,
+the secrets are sealed with the existing `internal/secret`, and the SSH second
+step is `golang.org/x/crypto/ssh`'s keyboard-interactive, already linked.
 
 The 2026-09-24 stream handoff fix adds 0.03 kB of gzipped chat JavaScript;
 the CSS and separately loaded chunks are unchanged. The wire figures above
@@ -313,11 +337,11 @@ What each reader actually downloads:
 
 | | gzipped |
 | --- | --- |
-| English, not an administrator | 168.92 kB |
-| Chinese, not an administrator | 197.76 kB |
-| …and a conversation containing a formula | 201.41 kB |
-| Chinese administrator, backoffice open | 270.27 kB |
-| Anybody, once they open the terminal | +7.31 kB |
+| English, not an administrator | 176.74 kB |
+| Chinese, not an administrator | 207.52 kB |
+| …and a conversation containing a formula | 211.13 kB |
+| Chinese administrator, backoffice open | 282.98 kB |
+| Anybody, once they open the terminal | +7.20 kB |
 
 Route-level splitting would shave the first paint further and is deliberately
 switched off for everything but the backoffice and the terminal: /settings, /keys, /usage and

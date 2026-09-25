@@ -8,7 +8,6 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/database"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/settings"
@@ -206,15 +205,13 @@ func (s *Service) Provision(ctx context.Context, tx *database.Tx, in ProvisionIn
 // authenticated.
 //
 // It exists so that session policy — the lifetime, the address and client
-// recorded against it, the login timestamp — stays in one place instead of
-// being reimplemented by every caller that can establish who somebody is.
-func (s *Service) StartSession(ctx context.Context, account user.User, ip, ua string) (string, error) {
-	token, _, err := s.sessions.Create(ctx, account.ID, s.cfg.TTL, ip, ua)
-	if err != nil {
-		return "", err
-	}
-	_ = s.users.MarkLogin(ctx, account.ID, time.Now().UnixMilli())
-	return token, nil
+// recorded against it, the login timestamp, and the second step — stays in
+// one place instead of being reimplemented by every caller that can establish
+// who somebody is. A provider vouching for somebody is a first factor like a
+// password is, so an account with two-step sign-in gets *SecondFactorRequired
+// here exactly as it does from Login.
+func (s *Service) StartSession(ctx context.Context, account user.User, ip, ua, remembered string) (string, error) {
+	return s.secondStep(ctx, account, remembered, ip, ua)
 }
 
 // CheckEmail applies the instance's address rules to an address that did not

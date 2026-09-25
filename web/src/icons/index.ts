@@ -136,6 +136,8 @@ export const IconLock = draw('Lock', [
   'M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2Z',
   'M7 11V7a5 5 0 0 1 10 0v4',
 ]);
+export const IconShield = draw('Shield', ['M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z', 'm9 12 2 2 4-4']);
+export const IconSmartphone = draw('Smartphone', ['M7 2h10a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z', 'M11 18h2']);
 export const IconCopy = draw('Copy', [
   'M9 9h10v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V9Z',
   'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1',

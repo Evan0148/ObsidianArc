@@ -75,11 +75,17 @@ type User struct {
 	APIRestricted        bool   `json:"api_restricted"`
 	APIRestrictedUntil   int64  `json:"api_restricted_until"`
 	APIRestrictionSource string `json:"api_restriction_source"`
+	// When the second sign-in step was switched on; zero while it is off.
+	// The secret itself lives with internal/auth and never rides on this.
+	TwoFactorAt int64 `json:"two_factor_at"`
 }
 
 func (u User) IsAdmin() bool      { return u.Role == RoleAdmin || u.IsSuperAdmin() }
 func (u User) IsSuperAdmin() bool { return u.Role == RoleSuperAdmin }
 func (u User) IsActive() bool     { return u.Status == StatusActive }
+
+// TwoFactorEnabled reports whether signing in asks for a code as well.
+func (u User) TwoFactorEnabled() bool { return u.TwoFactorAt > 0 }
 
 func (u User) APIRestrictedAt(now time.Time) bool {
 	return u.APIRestricted && (u.APIRestrictedUntil == 0 || u.APIRestrictedUntil > now.UnixMilli())
@@ -165,7 +171,8 @@ func NewStore(db *database.DB) *Store { return &Store{db: db} }
 
 const columns = `id, username, email, qq, nickname, avatar, bio, role, group_id, status,
 	email_verified, created_at, updated_at, last_login_at, signup_ip, signup_user_agent,
-	api_restricted, api_restricted_until, api_restriction_source, group_expires_at, admin_permissions, last_active_at`
+	api_restricted, api_restricted_until, api_restriction_source, group_expires_at, admin_permissions, last_active_at,
+	two_factor_at`
 
 type CreateInput struct {
 	Username     string
@@ -334,7 +341,8 @@ func (s *Store) CredentialsByLogin(ctx context.Context, identifier string) (User
 		&record.Bio, &record.Role, &group, &record.Status, &record.EmailVerified,
 		&record.CreatedAt, &record.UpdatedAt, &record.LastLoginAt, &record.SignupIP,
 		&record.SignupUserAgent, &record.APIRestricted, &record.APIRestrictedUntil,
-		&record.APIRestrictionSource, &record.GroupExpiresAt, &permissions, &record.LastActiveAt, &hash)
+		&record.APIRestrictionSource, &record.GroupExpiresAt, &permissions, &record.LastActiveAt,
+		&record.TwoFactorAt, &hash)
 	if err != nil {
 		if database.IsNotFound(err) {
 			return User{}, "", ErrNotFound
@@ -765,7 +773,8 @@ func scanUser(row rowScanner) (User, error) {
 		&record.Bio, &record.Role, &group, &record.Status, &record.EmailVerified,
 		&record.CreatedAt, &record.UpdatedAt, &record.LastLoginAt, &record.SignupIP,
 		&record.SignupUserAgent, &record.APIRestricted, &record.APIRestrictedUntil,
-		&record.APIRestrictionSource, &record.GroupExpiresAt, &permissions, &record.LastActiveAt)
+		&record.APIRestrictionSource, &record.GroupExpiresAt, &permissions, &record.LastActiveAt,
+		&record.TwoFactorAt)
 	if err != nil {
 		if database.IsNotFound(err) {
 			return User{}, ErrNotFound

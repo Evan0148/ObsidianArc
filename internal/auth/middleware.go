@@ -15,6 +15,7 @@ type contextKey int
 const (
 	userContextKey contextKey = iota
 	sessionContextKey
+	pendingContextKey
 )
 
 // Attach resolves the session cookie once per request and puts the account in
@@ -34,6 +35,13 @@ func (s *Service) Attach() httpx.Middleware {
 			}
 
 			account, session, err := s.Authenticate(r.Context(), token)
+			if errors.Is(err, ErrSignInIncomplete) {
+				// Anonymous to everything else, but the cookie stays: it is
+				// what the second step is going to ask about.
+				ctx := context.WithValue(r.Context(), pendingContextKey, true)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
 			if err != nil {
 				// A cookie that no longer resolves is cleared, so a browser
 				// holding a revoked session stops sending it.
@@ -105,6 +113,13 @@ func MustUser(ctx context.Context) user.User {
 // WithUser attaches a user to the context, primarily for testing.
 func WithUser(ctx context.Context, account user.User) context.Context {
 	return context.WithValue(ctx, userContextKey, account)
+}
+
+// SignInPending reports whether the request carries a session that proved a
+// password and is waiting for its code. Such a request has no user.
+func SignInPending(ctx context.Context) bool {
+	pending, _ := ctx.Value(pendingContextKey).(bool)
+	return pending
 }
 
 func SessionFrom(ctx context.Context) (Session, bool) {

@@ -66,6 +66,17 @@ type Config struct {
 	// Called before every command. An error ends the session.
 	Reauthorize func(ctx context.Context, userID string) (user.User, error)
 
+	// SecondFactor checks the code from an authenticator app, for an account
+	// that has two-step sign-in switched on. The password alone opens the
+	// web sign-in only halfway for such an account, and this door must not
+	// be the one that opens all the way on it.
+	//
+	// Asked after the password, as a keyboard-interactive prompt: the SSH
+	// protocol's own "that was right, now this", which every OpenSSH client
+	// understands. Nil refuses such accounts outright rather than admitting
+	// them on a password.
+	SecondFactor func(ctx context.Context, account user.User, code, ip string) error
+
 	IdleTimeout time.Duration // default 30m
 	MaxSessions int           // default 16, 0 = unlimited
 
@@ -247,8 +258,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 }
 
-// passwordCallback is the one authentication path: no "none", no
-// keyboard-interactive, no public key. A successful verification's account
+// passwordCallback is the one way in: no "none" and no public key. Keyboard-
+// interactive is offered only after a right password, and only for the code
+// of an account with two-step sign-in. A successful verification's account
 // travels to the connection handler through ssh.Permissions.Extensions,
 // JSON-encoded, because that is the only channel the ssh package offers
 // between the callback and the rest of the handshake.
@@ -265,6 +277,31 @@ func (s *Server) passwordCallback(conn ssh.ConnMetadata, password []byte) (*ssh.
 		return nil, errAuthFailed
 	}
 
+	if account.TwoFactorEnabled() {
+		if s.cfg.SecondFactor == nil {
+			return nil, errAuthFailed
+		}
+		// Partial success: the password is spent, and the only way on is
+		// the code. The account travels in the closure rather than being
+		// looked up again, so the prompt cannot be answered for somebody
+		// other than whoever typed the password.
+		return nil, &ssh.PartialSuccessError{Next: ssh.ServerAuthCallbacks{
+			KeyboardInteractiveCallback: func(_ ssh.ConnMetadata, challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
+				answers, err := challenge("", "", []string{"Verification code: "}, []bool{false})
+				if err != nil || len(answers) != 1 {
+					return nil, errAuthFailed
+				}
+				if err := s.cfg.SecondFactor(context.Background(), account, answers[0], ip); err != nil {
+					return nil, errAuthFailed
+				}
+				return actorPermissions(account)
+			},
+		}}
+	}
+	return actorPermissions(account)
+}
+
+func actorPermissions(account user.User) (*ssh.Permissions, error) {
 	encoded, err := json.Marshal(account)
 	if err != nil {
 		return nil, errAuthFailed

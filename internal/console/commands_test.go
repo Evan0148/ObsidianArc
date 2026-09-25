@@ -87,6 +87,7 @@ func TestEveryAdminRouteIsClaimedByACommand(t *testing.T) {
 // is still true; anything else wants a command.
 var consoleExempt = map[string]string{
 	"POST /api/auth/login":                    "signing in — the terminal is already signed in",
+	"POST /api/auth/two-factor":               "the code step of signing in — the terminal is already signed in",
 	"POST /api/auth/logout":                   "signing out would end the session the terminal itself runs in",
 	"POST /api/auth/register":                 "creating an account happens before there is a terminal",
 	"POST /api/auth/verify":                   "followed from the link in the verification email",

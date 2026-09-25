@@ -54,6 +54,7 @@ func newFixture(t *testing.T) *fixture {
 			CookieName:    "obsidian_session",
 			TouchInterval: time.Hour,
 		},
+		SecretKey: []byte("an-instance-secret-for-the-auth-tests"),
 	}
 
 	set := settings.New(db)

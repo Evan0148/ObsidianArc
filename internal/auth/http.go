@@ -73,6 +73,9 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	// here, and requiring one would send them to a sign-in page that
 	// then loses the token.
 	mux.HandleFunc("POST /api/auth/verify", httpx.Wrap(h.verifyEmail))
+	// Public for the same reason as login: what the caller holds is the
+	// pending session a password bought, not a session.
+	mux.HandleFunc("POST /api/auth/two-factor", httpx.Wrap(h.completeSignIn))
 
 	protected := func(handler httpx.Handler) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
@@ -87,6 +90,11 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/preferences/wallpaper", protected(h.getWallpaper))
 	mux.HandleFunc("PUT /api/preferences/wallpaper", protected(h.putWallpaper))
 	mux.HandleFunc("DELETE /api/preferences/wallpaper", protected(h.deleteWallpaper))
+	mux.HandleFunc("GET /api/profile/two-factor", protected(h.twoFactorStatus))
+	mux.HandleFunc("POST /api/profile/two-factor/setup", protected(h.beginTwoFactor))
+	mux.HandleFunc("POST /api/profile/two-factor/enable", protected(h.enableTwoFactor))
+	mux.HandleFunc("POST /api/profile/two-factor/disable", protected(h.disableTwoFactor))
+	mux.HandleFunc("POST /api/profile/two-factor/recovery", protected(h.regenerateRecovery))
 }
 
 // --- payloads ---------------------------------------------------------------
@@ -113,6 +121,17 @@ type accountPayload struct {
 	// endpoints answer then; the menu should not offer a door that refuses.
 	AllowTerminal   bool `json:"allow_terminal"`
 	GroupShowExpiry bool `json:"group_show_expiry"`
+	// What the operator's two-step policy means for this account, as three
+	// answers rather than the policy itself, so the client does not have to
+	// know the policy's levels to draw the right thing. The server holds the
+	// same line on every endpoint regardless.
+	//
+	// Enrol: nothing works until the second step is on.
+	TwoFactorEnrol bool `json:"two_factor_enrol"`
+	// Mandatory: it may not be switched off.
+	TwoFactorMandatory bool `json:"two_factor_mandatory"`
+	// Backoffice: the backoffice refuses this account until it enrols.
+	TwoFactorBackoffice bool `json:"two_factor_backoffice"`
 }
 
 func (h *Handlers) account(r *http.Request, account user.User) accountPayload {
@@ -123,6 +142,11 @@ func (h *Handlers) account(r *http.Request, account user.User) accountPayload {
 		AllowArchiveConversations: account.IsAdmin() || (h.settings != nil && h.settings.Bool(settings.AllowArchive)),
 		AllowTerminal:             account.IsAdmin(),
 		GroupShowExpiry:           true,
+	}
+	if h.service != nil {
+		payload.TwoFactorEnrol = h.service.MustEnrolTwoFactor(account)
+		payload.TwoFactorMandatory = h.service.TwoFactorMandatory(account)
+		payload.TwoFactorBackoffice = h.service.BackofficeNeedsTwoFactor(account)
 	}
 	if account.GroupID != "" {
 		if found, err := h.groups.ByID(r.Context(), nil, account.GroupID); err == nil {
@@ -184,6 +208,9 @@ func (h *Handlers) site(w http.ResponseWriter, r *http.Request) error {
 		"turnstile_on_redeem":     h.settings.Bool(settings.TurnstileOnRedeem),
 		"turnstile_on_feedback":   h.settings.Bool(settings.TurnstileOnFeedback),
 		"turnstile_on_chat_speed": h.settings.Int(settings.ChatChallengeRequests, 0) > 0,
+		// So the code step can offer "don't ask again on this browser" only
+		// where the operator allows it, and say for how long.
+		"two_factor_remember_days": h.service.RememberDays(),
 		// The sign-ins that do not start with a password here. Empty unless
 		// an operator has both configured a provider and switched it on, so
 		// the card draws a divider and a row of buttons only when there is
@@ -369,7 +396,16 @@ func (h *Handlers) login(w http.ResponseWriter, r *http.Request) error {
 		Password:   body.Password,
 		IP:         httpx.ClientIP(r, h.trust),
 		UA:         r.UserAgent(),
+		Remembered: h.service.RememberedFrom(r),
 	})
+	// The password was right and the account wants a code too. The pending
+	// session goes into the ordinary cookie, and the answer is a 200 with no
+	// account in it: nothing failed, and nothing is signed in yet.
+	var second *SecondFactorRequired
+	if errors.As(err, &second) {
+		h.service.SetCookie(w, second.Token)
+		return httpx.WriteJSON(w, http.StatusOK, map[string]any{"two_factor": true})
+	}
 	if err != nil {
 		var limited *RateLimitError
 		if errors.As(err, &limited) {
@@ -412,6 +448,9 @@ func (h *Handlers) logout(w http.ResponseWriter, r *http.Request) error {
 func (h *Handlers) me(w http.ResponseWriter, r *http.Request) error {
 	account, ok := UserFrom(r.Context())
 	if !ok {
+		if SignInPending(r.Context()) {
+			return signInPending()
+		}
 		return httpx.Unauthorized("Not signed in.")
 	}
 	preferences, err := h.preferences.Get(r.Context(), account.ID)

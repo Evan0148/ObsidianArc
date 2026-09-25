@@ -215,6 +215,7 @@ const unlimitedQuota = computed({
 });
 
 const self = computed(() => currentUser.value?.id === account.value?.id);
+const twoFactorFlash = ref('');
 
 function apiRestrictionActive(row: Account): boolean {
   return row.api_restricted && (row.api_restricted_until === 0 || row.api_restricted_until > Date.now());
@@ -271,6 +272,7 @@ const conversationColumns = computed<Array<Column<Conversation>>>(() => [
 
 async function open(id: string): Promise<void> {
   panelError.value = '';
+  twoFactorFlash.value = '';
   mode.value = 'account';
   conversationPage.value.page = 1;
   keys.value = null;
@@ -427,6 +429,26 @@ async function save(): Promise<void> {
     view.reload();
   } catch (failure) {
     busy.value = false;
+    panelError.value = failure instanceof ApiError ? failure.message : String(failure);
+  }
+}
+
+/**
+ * Turns somebody's second sign-in step off, for a lost phone and a lost
+ * sheet of recovery codes. It commits on its own button rather than with the
+ * form's Save: it is not a field, and it is not undone by closing the panel.
+ */
+async function resetTwoFactor(): Promise<void> {
+  const row = account.value;
+  if (!row) return;
+  twoFactorFlash.value = '';
+  panelError.value = '';
+  try {
+    const { user } = await adminApi.resetTwoFactor(row.id);
+    account.value = { ...row, ...user };
+    users.value = users.value.map((entry) => (entry.id === row.id ? { ...entry, ...user } : entry));
+    twoFactorFlash.value = t('twoFactorResetDone');
+  } catch (failure) {
     panelError.value = failure instanceof ApiError ? failure.message : String(failure);
   }
 }
@@ -673,6 +695,7 @@ const state = { q: '', role: '', status: '', group: '' };
           <OaBadge v-if="row.role === 'admin'">{{ t('admin') }}</OaBadge>
           <OaBadge v-if="row.status === 'disabled'" tone="danger">{{ t('disabled') }}</OaBadge>
           <OaBadge v-if="apiRestrictionActive(row)" tone="warning">{{ t('apiRestrictedBadge') }}</OaBadge>
+          <OaBadge v-if="row.two_factor_at" tone="muted">{{ t('twoFactorBadge') }}</OaBadge>
         </OaBadgeRow>
       </template>
     </OaTable>
@@ -896,6 +919,29 @@ const state = { q: '', role: '', status: '', group: '' };
         :placeholder="t('keepPassword')"
         :hint="t('resetPasswordHint')"
       />
+      <div class="oa-field">
+        <span class="oa-field-label">{{ t('colTwoFactor') }}</span>
+        <div class="oa-2fa-admin-row">
+          <OaBadge :tone="account.two_factor_at ? 'default' : 'muted'">
+            {{ account.two_factor_at ? t('twoFactorOn') : t('twoFactorOff') }}
+          </OaBadge>
+          <span v-if="account.two_factor_at" class="oa-field-hint">
+            {{ t('twoFactorOnSince', { date: absoluteTime(account.two_factor_at) }) }}
+          </span>
+          <OaConfirmButton
+            v-if="account.two_factor_at && !self"
+            class="oa-btn"
+            :label="t('twoFactorResetLabel')"
+            :armed-label="t('confirmWord')"
+            :armed-title="t('twoFactorResetConfirm', { name: maskUser(account.username) })"
+            :resting-title="t('twoFactorResetLabel')"
+            :disabled="busy"
+            @confirm="resetTwoFactor"
+          />
+        </div>
+        <span v-if="account.two_factor_at && !self" class="oa-field-hint">{{ t('twoFactorResetHint') }}</span>
+        <span v-if="twoFactorFlash" class="oa-field-hint" role="status">{{ twoFactorFlash }}</span>
+      </div>
 
       <OaFormSection :title="t('secAllowanceOverride')" :hint="t('allowanceOverrideHint')" />
       <OaSwitchField

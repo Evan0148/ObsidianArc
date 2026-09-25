@@ -49,6 +49,9 @@ const (
 	// backoffice can from a surface that leaves no screen to look at
 	// afterwards, and "who ran that" must stay answerable.
 	EventConsoleCommand = "console_command"
+	// Two-step sign-in switched on or off, reset by an administrator, or a
+	// recovery code spent. The decision field says which.
+	EventTwoFactor = "two_factor"
 
 	maxReasonChars = 500
 	MaxPageSize    = 200

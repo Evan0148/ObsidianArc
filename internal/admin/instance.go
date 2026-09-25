@@ -191,6 +191,9 @@ var writableSettings = map[string]bool{
 	settings.SignupReviewMode:          true,
 	settings.SignupReviewRefusal:       true,
 	settings.SignupReviewRestrictHours: true,
+	settings.TwoFactorPolicy:           true,
+	settings.TwoFactorIssuer:           true,
+	settings.TwoFactorRememberDays:     true,
 	settings.ChatAgentMaxRounds:        true,
 	settings.ChatChallengeRequests:     true,
 	settings.ChatChallengeWindowSecs:   true,
@@ -234,6 +237,7 @@ var numericBounds = map[string][2]int{
 	settings.ChatChallengeWindowSecs:   {5, 3600},
 	settings.ChatChallengeClearMins:    {1, 24 * 60},
 	settings.ChatAgentMaxRounds:        {1, 50},
+	settings.TwoFactorRememberDays:     {0, settings.MaxTwoFactorRememberDays},
 }
 
 func (h *Handlers) updateSettings(w http.ResponseWriter, r *http.Request) error {
@@ -267,6 +271,9 @@ func (h *Handlers) updateSettings(w http.ResponseWriter, r *http.Request) error 
 
 	if mode, present := body[settings.LandingMode]; present && !settings.ValidLandingMode(mode) {
 		return httpx.BadRequest("Unknown landing mode %q.", mode)
+	}
+	if err := checkTwoFactorSettings(auth.MustUser(r.Context()), body); err != nil {
+		return err
 	}
 	if req, present := body[settings.QQRequirement]; present && !settings.ValidQQRequirement(req) {
 		return httpx.BadRequest("Unknown QQ requirement %q.", req)
@@ -384,6 +391,17 @@ func (h *Handlers) importSettings(w http.ResponseWriter, r *http.Request) error 
 	if display, present := applied[settings.UsageDisplay]; present && !settings.ValidUsageDisplay(display) {
 		delete(applied, settings.UsageDisplay)
 		skipped = append(skipped, settings.UsageDisplay)
+	}
+	// Dropped rather than refused, like everything else here — and for the
+	// importer's own sake: a file from an instance that requires the second
+	// step must not shut out an operator who has not switched it on yet.
+	for _, key := range []string{settings.TwoFactorPolicy, settings.TwoFactorIssuer} {
+		if value, present := applied[key]; present {
+			if checkTwoFactorSettings(auth.MustUser(r.Context()), map[string]string{key: value}) != nil {
+				delete(applied, key)
+				skipped = append(skipped, key)
+			}
+		}
 	}
 	if raw, present := applied[settings.AttachmentPurgeDaily]; present && strings.TrimSpace(raw) != "" {
 		if _, _, ok := conversation.ParseDailyTime(raw); !ok {

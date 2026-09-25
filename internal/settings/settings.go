@@ -106,12 +106,18 @@ const (
 	SignupReviewMode          = "security.signup_review_mode"
 	SignupReviewRefusal       = "security.signup_review_refusal"
 	SignupReviewRestrictHours = "security.signup_review_restrict_hours"
-	ChatChallengeRequests     = "security.chat_challenge_requests"
-	ChatChallengeWindowSecs   = "security.chat_challenge_window_seconds"
-	ChatChallengeClearMins    = "security.chat_challenge_clear_minutes"
-	AdminsBypassQuota         = "quota.admins_bypass"
-	UsageDisplay              = "quota.usage_display"
-	QuotaMaxConcurrent        = "quota.max_concurrent"
+	// Two-step sign-in. Who must switch it on, the name an authenticator
+	// app files the entry under, and how many days a browser may skip the
+	// code once somebody has typed one on it.
+	TwoFactorPolicy         = "security.two_factor_policy"
+	TwoFactorIssuer         = "security.two_factor_issuer"
+	TwoFactorRememberDays   = "security.two_factor_remember_days"
+	ChatChallengeRequests   = "security.chat_challenge_requests"
+	ChatChallengeWindowSecs = "security.chat_challenge_window_seconds"
+	ChatChallengeClearMins  = "security.chat_challenge_clear_minutes"
+	AdminsBypassQuota       = "quota.admins_bypass"
+	UsageDisplay            = "quota.usage_display"
+	QuotaMaxConcurrent      = "quota.max_concurrent"
 	// How many times one work-surface turn may call the model. Each round
 	// is a real provider request that a tool result made necessary, so this
 	// is the ceiling on what a single question can cost.
@@ -211,6 +217,37 @@ func ValidUsageDisplay(value string) bool {
 	return false
 }
 
+// Who has to have two-step sign-in switched on. Each level includes the
+// one before it: an administrator who must enrol before signing in has
+// certainly enrolled before opening the backoffice.
+const (
+	// Anybody may switch it on; nobody has to.
+	TwoFactorOptional = "optional"
+	// Administrators may sign in and chat without it, but the backoffice
+	// refuses them until they have it — the pages that can change who
+	// everybody else is are the ones worth a second lock.
+	TwoFactorBackoffice = "backoffice"
+	// Administrators must enrol before the product will do anything else.
+	TwoFactorAdmins = "admins"
+	// Every account must enrol before the product will do anything else.
+	TwoFactorEveryone = "everyone"
+)
+
+var TwoFactorPolicies = []string{TwoFactorOptional, TwoFactorBackoffice, TwoFactorAdmins, TwoFactorEveryone}
+
+func ValidTwoFactorPolicy(value string) bool {
+	for _, candidate := range TwoFactorPolicies {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
+}
+
+// MaxTwoFactorRememberDays bounds "don't ask on this browser". A year is
+// already longer than most people keep a browser profile.
+const MaxTwoFactorRememberDays = 365
+
 // What new accounts are required to provide regarding QQ numbers.
 const (
 	QQDisabled = "off"
@@ -289,6 +326,16 @@ var Defaults = map[string]string{
 	// who wants to offer a way to appeal writes it here.
 	SignupReviewRefusal:       "",
 	SignupReviewRestrictHours: "24",
+	// Optional: a policy that suddenly asked every account for a code would
+	// lock out everybody who has never heard of an authenticator app, the
+	// moment the software was upgraded.
+	TwoFactorPolicy: TwoFactorOptional,
+	// Empty means the site's own name, which is what an operator who never
+	// opens this screen would have typed anyway.
+	TwoFactorIssuer: "",
+	// Off. Remembering a browser trades the second factor for a cookie, and
+	// that is a trade an operator should make on purpose.
+	TwoFactorRememberDays: "0",
 	// Zero leaves the mid-chat challenge off. Once enabled, the other two
 	// defaults describe a short burst and a clearance long enough that a real
 	// reader is not challenged again during the same conversation.

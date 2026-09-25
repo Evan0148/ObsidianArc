@@ -58,6 +58,13 @@ const FALLBACK_SITE: SiteInfo = {
   home_notice: { text: '', dismissible: true },
 };
 
+/**
+ * True while this browser holds a sign-in that proved the password and is
+ * waiting for its two-step code. There is no account yet — everything but the
+ * code step answers as if signed out — so it is kept apart from `account`.
+ */
+export const pendingSecondFactor = ref(false);
+
 export const currentUser: Ref<Account | null> = account;
 export const currentPreferences: Ref<Preferences> = preferences;
 
@@ -75,12 +82,14 @@ export function requireUser(): Account {
 
 // Called after a successful sign-in or sign-up.
 export function adopt(next: Account, prefs: Preferences = {}): void {
+  pendingSecondFactor.value = false;
   account.value = next;
   preferences.value = prefs;
   applyServerPreferences(prefs);
 }
 
 export function forget(): void {
+  pendingSecondFactor.value = false;
   account.value = null;
   preferences.value = {};
 }
@@ -95,6 +104,10 @@ export async function startSession(): Promise<void> {
     account.value = me.value.user;
     preferences.value = me.value.preferences ?? {};
     applyServerPreferences(preferences.value);
+  } else if (me.reason instanceof ApiError && me.reason.code === 'two_factor_pending') {
+    // Halfway through signing in — a provider sign-in lands here by
+    // redirect. The sign-in page asks for the rest.
+    pendingSecondFactor.value = true;
   } else if (!(me.reason instanceof ApiError && me.reason.isAuth)) {
     // A network failure is worth knowing about; a 401 is not.
     console.warn('session lookup failed', me.reason);

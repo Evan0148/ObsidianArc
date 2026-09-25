@@ -66,6 +66,9 @@ type Handlers struct {
 	// applications screen shows it because it is what an operator has to
 	// paste into the software on the other side.
 	Origin func(*http.Request) string
+	// The caller's address as the proxy settings resolve it, for the
+	// security log. Nil records none.
+	ClientIP func(*http.Request) string
 
 	// Not injected: it is two fields of state that only the resources page
 	// has any use for, and it is meaningless before the first request.
@@ -119,10 +122,19 @@ func NewHandlers(
 // Routes mounts every administrative endpoint behind RequireAdmin. One
 // wrapper, applied here, rather than a check inside each handler: a new
 // endpoint added to this list is protected by being on the list.
+//
+// The two-step policy is held here too, for the same reason and one more:
+// the console, over the web and over SSH, dispatches into these same routes,
+// so this is the one place the backoffice's second lock cannot be walked
+// around.
 func (h *Handlers) Routes(mux *http.ServeMux) {
 	protected := func(permission string, handler httpx.Handler) http.Handler {
 		return auth.RequireAdmin(httpx.Wrap(func(w http.ResponseWriter, r *http.Request) error {
-			if !hasPermission(auth.MustUser(r.Context()), permission) {
+			actor := auth.MustUser(r.Context())
+			if h.auth.BackofficeNeedsTwoFactor(actor) {
+				return backofficeNeedsTwoFactor()
+			}
+			if !hasPermission(actor, permission) {
 				return permissionDenied()
 			}
 			return handler(w, r)
@@ -136,6 +148,7 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /api/admin/health/reset", protected("availability", h.resetHealth))
 	mux.Handle("POST /api/admin/security/review", protected("security", h.trialReview))
 	mux.Handle("GET /api/admin/security/events", protected("security", h.listSecurityEvents))
+	mux.Handle("GET /api/admin/security/two-factor", protected("security", h.twoFactorAdoption))
 	// The applications that may use this instance as a sign-in. Under the
 	// security grant rather than a page grant of their own: they are part
 	// of the same subject as the front door, and they live on the same
@@ -152,6 +165,7 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.Handle("DELETE /api/admin/users/{id}", protected("users", h.deleteUser))
 	mux.Handle("POST /api/admin/users", protected("users", h.createUser))
 	mux.Handle("POST /api/admin/users/{id}/password", protected("users", h.resetPassword))
+	mux.Handle("DELETE /api/admin/users/{id}/two-factor", protected("users", h.resetTwoFactor))
 	mux.Handle("GET /api/admin/users/{id}/keys", protected("users", h.userKeys))
 	mux.Handle("DELETE /api/admin/users/{id}/keys/{key}", protected("users", h.revokeUserKey))
 	mux.Handle("GET /api/admin/users/{id}/conversations", protected("users", h.userConversations))

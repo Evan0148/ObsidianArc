@@ -193,17 +193,26 @@ func (h *Handlers) callback(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, false, signInFailure(err))
 		return
 	}
-	token, err := h.service.auth.StartSession(r.Context(), account, h.address(r), r.UserAgent())
+	next := value.Next
+	if next == "" {
+		next = "/"
+	}
+	token, err := h.service.auth.StartSession(r.Context(), account, h.address(r), r.UserAgent(),
+		h.service.auth.RememberedFrom(r))
+	// The provider vouched for them and the account wants a code as well.
+	// The pending session goes into the cookie and the sign-in page asks
+	// for the rest, then carries on to wherever this was going.
+	var second *auth.SecondFactorRequired
+	if errors.As(err, &second) {
+		h.service.auth.SetCookie(w, second.Token)
+		http.Redirect(w, r, "/login?next="+url.QueryEscape(next), http.StatusFound)
+		return
+	}
 	if err != nil {
 		h.fail(w, r, false, "failed")
 		return
 	}
 	h.service.auth.SetCookie(w, token)
-
-	next := value.Next
-	if next == "" {
-		next = "/"
-	}
 	http.Redirect(w, r, next, http.StatusFound)
 }
 
@@ -282,17 +291,26 @@ func (h *Handlers) completeSignup(w http.ResponseWriter, r *http.Request) error 
 		return completionError(err)
 	}
 
-	token, err := h.service.auth.StartSession(r.Context(), account, h.address(r), r.UserAgent())
+	next := held.Next
+	if next == "" {
+		next = "/"
+	}
+	// An account this form just opened has no second step yet — but the
+	// completion can also land on an existing account by address, and that
+	// one may.
+	token, err := h.service.auth.StartSession(r.Context(), account, h.address(r), r.UserAgent(),
+		h.service.auth.RememberedFrom(r))
+	var second *auth.SecondFactorRequired
+	if errors.As(err, &second) {
+		h.clearPending(w)
+		h.service.auth.SetCookie(w, second.Token)
+		return httpx.WriteJSON(w, http.StatusOK, map[string]any{"redirect": "/login?next=" + url.QueryEscape(next)})
+	}
 	if err != nil {
 		return httpx.Internal(err)
 	}
 	h.clearPending(w)
 	h.service.auth.SetCookie(w, token)
-
-	next := held.Next
-	if next == "" {
-		next = "/"
-	}
 	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"redirect": next})
 }
 

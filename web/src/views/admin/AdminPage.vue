@@ -23,7 +23,9 @@ import {
 import AppShell from '@/layouts/AppShell.vue';
 import { useRailCollapse } from '@/composables/useRailCollapse';
 import { formatUptime } from '@/lib/format';
-import { isAdmin, canAdmin } from '@/stores/session';
+import type { Account } from '@/api/auth';
+import { adopt, canAdmin, currentPreferences, currentUser, isAdmin } from '@/stores/session';
+import TwoFactorWizard from '@/views/settings/TwoFactorWizard.vue';
 import UnauthorizedModal from '@/views/UnauthorizedModal.vue';
 import ChatLayout from '@/layouts/ChatLayout.vue';
 import { provideAdminView } from './adminView';
@@ -160,6 +162,18 @@ const allowed = computed(() => {
   const needs = current.value.permission ?? (current.value.slug || 'dashboard');
   return needs === '*' ? isAdmin.value : canAdmin(needs);
 });
+
+// The operator's policy wants a second sign-in step before the backoffice
+// opens, and this account has none. Every endpoint behind these pages says
+// so too; drawing the setup here, in place of the page, is what turns a wall
+// of refusals into one thing to do. The rail stays, so it is clear where
+// this is.
+const gated = computed(() => !!currentUser.value?.two_factor_backoffice);
+
+function enrolled(user: Account): void {
+  adopt(user, currentPreferences.value);
+  reloadCount.value += 1;
+}
 
 const title = ref('');
 const subtitle = ref('');
@@ -338,12 +352,12 @@ onMounted(() => {
 
     <!-- The whole section arrives together, including its heading and actions.
          Keying only navigation keeps saves from replaying the entrance. -->
-    <div :key="current.slug" class="oa-admin-main" :class="[`enter-${direction}`, { 'oa-admin-main-dashboard': !current.slug && allowed }]">
+    <div :key="current.slug" class="oa-admin-main" :class="[`enter-${direction}`, { 'oa-admin-main-dashboard': !current.slug && allowed && !gated }]">
       <!-- The overview owns its editorial heading; other pages keep the shared toolbar. -->
-      <div v-if="current.slug || !allowed" class="oa-admin-head" :ref="attachActions">
+      <div v-if="current.slug || !allowed || gated" class="oa-admin-head" :ref="attachActions">
         <div>
-          <h1 class="oa-admin-title">{{ title }}</h1>
-          <p class="oa-admin-subtitle" :hidden="!subtitle">{{ subtitle }}</p>
+          <h1 class="oa-admin-title">{{ gated ? t('twoFactorGateTitle') : title }}</h1>
+          <p class="oa-admin-subtitle" :hidden="!subtitle || gated">{{ subtitle }}</p>
         </div>
         <span class="oa-admin-head-spacer" />
       </div>
@@ -353,7 +367,11 @@ onMounted(() => {
         wrap-class="oa-admin-body-wrap"
         scroll-class="oa-admin-body"
       >
-        <component v-if="allowed" :is="current.component" :key="bodyKey" />
+        <div v-if="gated" class="oa-2fa-gate">
+          <p class="oa-field-hint">{{ t('twoFactorGateBody') }}</p>
+          <TwoFactorWizard @done="enrolled" />
+        </div>
+        <component v-else-if="allowed" :is="current.component" :key="bodyKey" />
         <div v-else class="oa-permission-empty" role="alert">
           <IconLock :size="28" />
           <h2>{{ t('permissionDeniedTitle') }}</h2>

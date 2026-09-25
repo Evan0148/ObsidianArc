@@ -29,6 +29,9 @@ type Session struct {
 	LastSeenAt int64
 	IP         string
 	UserAgent  string
+	// Password proved, code not yet. Attach does not treat a session like
+	// this as signed in; only the second step reads it.
+	TwoFactorPending bool
 }
 
 var ErrSessionNotFound = errors.New("auth: session not found")
@@ -53,6 +56,18 @@ func HashToken(token string) string {
 // token is returned once and never stored, so it exists only in the caller's
 // hand and in the browser.
 func (s *SessionStore) Create(ctx context.Context, userID string, ttl time.Duration, ip, userAgent string) (string, Session, error) {
+	return s.create(ctx, userID, ttl, ip, userAgent, false)
+}
+
+// CreatePending issues the half of a session a password buys when the
+// account also asks for a code. It is a row like any other so the cookie,
+// the expiry and sign-out all work the way they already do; the flag is what
+// keeps it from being mistaken for the whole.
+func (s *SessionStore) CreatePending(ctx context.Context, userID string, ttl time.Duration, ip, userAgent string) (string, Session, error) {
+	return s.create(ctx, userID, ttl, ip, userAgent, true)
+}
+
+func (s *SessionStore) create(ctx context.Context, userID string, ttl time.Duration, ip, userAgent string, pending bool) (string, Session, error) {
 	token := id.Secret(TokenBytes)
 	now := time.Now()
 
@@ -64,13 +79,15 @@ func (s *SessionStore) Create(ctx context.Context, userID string, ttl time.Durat
 		LastSeenAt: now.UnixMilli(),
 		IP:         ip,
 		UserAgent:  text.Truncate(userAgent, MaxUserAgentChars),
+
+		TwoFactorPending: pending,
 	}
 
 	_, err := s.db.Exec(ctx,
-		`INSERT INTO sessions (id, user_id, created_at, expires_at, last_seen_at, ip, user_agent)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO sessions (id, user_id, created_at, expires_at, last_seen_at, ip, user_agent, two_factor_pending)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.ID, record.UserID, record.CreatedAt, record.ExpiresAt,
-		record.LastSeenAt, record.IP, record.UserAgent)
+		record.LastSeenAt, record.IP, record.UserAgent, record.TwoFactorPending)
 	if err != nil {
 		return "", Session{}, fmt.Errorf("auth: create session: %w", err)
 	}
@@ -93,11 +110,12 @@ func (s *SessionStore) GetWithUser(ctx context.Context, token string) (Session, 
 
 	var record Session
 	account, err := user.ScanRow(scanBoth{s.db.QueryRow(ctx,
-		`SELECT s.id, s.user_id, s.created_at, s.expires_at, s.last_seen_at, s.ip, s.user_agent, `+
+		`SELECT s.id, s.user_id, s.created_at, s.expires_at, s.last_seen_at, s.ip, s.user_agent,
+		 s.two_factor_pending, `+
 			user.JoinColumns("u")+
 			` FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ?`, key),
 		[]any{&record.ID, &record.UserID, &record.CreatedAt, &record.ExpiresAt,
-			&record.LastSeenAt, &record.IP, &record.UserAgent}})
+			&record.LastSeenAt, &record.IP, &record.UserAgent, &record.TwoFactorPending}})
 	if err != nil {
 		if database.IsNotFound(err) || errors.Is(err, user.ErrNotFound) {
 			return Session{}, user.User{}, ErrSessionNotFound

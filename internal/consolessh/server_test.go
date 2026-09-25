@@ -637,3 +637,78 @@ func TestLangFromEnvRecognisesChineseAndEnglishPrefixes(t *testing.T) {
 		}
 	}
 }
+
+// An account with two-step sign-in must not get a console for a password.
+// Over a real listener and a real client, because the protocol step being
+// tested — partial success, then keyboard-interactive — is between the two.
+func TestSSHAsksForTheCodeAfterThePassword(t *testing.T) {
+	guarded := adminUser("guarded")
+	guarded.TwoFactorAt = 1
+	accounts := map[string]testAccount{"guarded": {password: "s3cret-pass", account: guarded}}
+
+	var asked []string
+	srv := startTestServer(t, Config{
+		Console:      newTestConsole(t),
+		Authenticate: fakeAuthenticate(accounts),
+		SecondFactor: func(_ context.Context, account user.User, code, _ string) error {
+			asked = append(asked, account.Username+":"+code)
+			if code != "123456" {
+				return errors.New("fake: wrong code")
+			}
+			return nil
+		},
+	})
+
+	dial := func(methods ...ssh.AuthMethod) error {
+		client, err := ssh.Dial("tcp", srv.Addr(), &ssh.ClientConfig{
+			User:            "guarded",
+			Auth:            methods,
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+			Timeout:         3 * time.Second,
+		})
+		if err == nil {
+			_ = client.Close()
+		}
+		return err
+	}
+	answer := func(code string) ssh.AuthMethod {
+		return ssh.KeyboardInteractive(func(_, _ string, questions []string, _ []bool) ([]string, error) {
+			answers := make([]string, len(questions))
+			for i := range answers {
+				answers[i] = code
+			}
+			return answers, nil
+		})
+	}
+
+	if err := dial(ssh.Password("s3cret-pass")); err == nil {
+		t.Fatal("a right password alone opened a console on a two-step account")
+	}
+	if err := dial(ssh.Password("s3cret-pass"), answer("000000")); err == nil {
+		t.Fatal("a wrong code opened a console")
+	}
+	if err := dial(ssh.Password("wrong-password"), answer("123456")); err == nil {
+		t.Fatal("a right code behind a wrong password opened a console")
+	}
+	if err := dial(ssh.Password("s3cret-pass"), answer("123456")); err != nil {
+		t.Fatalf("password and code were refused: %v", err)
+	}
+	for _, entry := range asked {
+		if entry != "guarded:000000" && entry != "guarded:123456" {
+			t.Errorf("the code was checked against %q", entry)
+		}
+	}
+}
+
+// Without anything to check a code with, such an account is refused rather
+// than let in on its password.
+func TestSSHRefusesATwoStepAccountWithNoWayToCheckTheCode(t *testing.T) {
+	guarded := adminUser("guarded")
+	guarded.TwoFactorAt = 1
+	srv := &Server{cfg: Config{Authenticate: fakeAuthenticate(map[string]testAccount{
+		"guarded": {password: "s3cret-pass", account: guarded},
+	})}}
+	if _, err := srv.passwordCallback(fakeConnMetadata{user: "guarded"}, []byte("s3cret-pass")); err == nil {
+		t.Fatal("a two-step account was admitted on its password")
+	}
+}

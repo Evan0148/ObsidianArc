@@ -465,6 +465,21 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     keywords: ['AI注册审查', '账号审核', '自动拒绝', '审查模型', '审查演练', 'signup review', 'account review'],
   },
   {
+    id: 'secTwoFactorPolicy',
+    pageSlug: 'security',
+    titleKey: 'secTwoFactorPolicy',
+    searchKeys: ['twoFactorPolicyHint', 'twoFactorPolicyLabel', 'twoFactorIssuerLabel', 'twoFactorRememberLabel'],
+    keywords: ['两步验证', '二次验证', '双重验证', '双因素', '验证器', '身份验证器', '强制绑定', '动态码',
+      '2FA', 'MFA', 'TOTP', 'two-factor', 'authenticator', 'google authenticator'],
+  },
+  {
+    id: 'secTwoFactorAdoption',
+    pageSlug: 'security',
+    titleKey: 'secTwoFactorAdoption',
+    searchKeys: ['twoFactorAdoptionHint', 'twoFactorAdminsWithout'],
+    keywords: ['两步验证', '启用率', '未绑定', '2FA', 'MFA', 'adoption'],
+  },
+  {
     id: 'secSecurityLog',
     pageSlug: 'security',
     titleKey: 'secSecurityLog',

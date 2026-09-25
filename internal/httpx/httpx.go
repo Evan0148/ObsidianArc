@@ -81,6 +81,13 @@ func Unauthorized(message string) *Error {
 	return newError(http.StatusUnauthorized, "unauthorized", message)
 }
 
+// UnauthorizedCode is Unauthorized for the one case that is not simply
+// "sign in": a session halfway through signing in, which the client has to
+// tell apart so it can ask for the rest rather than for the password again.
+func UnauthorizedCode(code, message string) *Error {
+	return newError(http.StatusUnauthorized, code, message)
+}
+
 func Forbidden(message string) *Error {
 	return newError(http.StatusForbidden, "forbidden", message)
 }

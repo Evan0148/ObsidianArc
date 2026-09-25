@@ -4,19 +4,25 @@
 // One screen with two modes rather than two pages: the fields and the layout
 // are nearly identical, and switching between them should not cost a
 // navigation or re-render the card.
+//
+// Signing in has a second stage for an account with two-step verification:
+// the same card asks for the code once the password was right. A provider
+// sign-in arrives at that stage by redirect, with the session store already
+// saying a code is wanted, so the card opens on it.
 
 import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { safeNext } from '@/lib/next';
-import { login, register, type Account } from '@/api/auth';
+import { safeNext, serverOwned } from '@/lib/next';
+import { completeSignIn, login, logout, register, type LoginResult } from '@/api/auth';
 import { signInURL } from '@/api/oauth';
 import OaField from '@/components/OaField.vue';
 import OaThemeToggle from '@/components/OaThemeToggle.vue';
 import OaTurnstile from '@/components/OaTurnstile.vue';
 import { t, type StringKey } from '@/composables/useI18n';
+import { ApiError } from '@/api/client';
 import { refusalText } from '@/lib/refusal';
 import { IconGithub, IconGoogle, IconKey, IconSpark, type OaIcon } from '@/icons';
-import { adopt, siteInfo } from '@/stores/session';
+import { adopt, forget, pendingSecondFactor, siteInfo } from '@/stores/session';
 
 const props = defineProps<{ mode: 'login' | 'register' }>();
 
@@ -59,6 +65,88 @@ const buttonLabel = ref('');
 const identifierField = ref<HTMLInputElement | null>(null);
 const passwordField = ref<HTMLInputElement | null>(null);
 const guard = ref<InstanceType<typeof OaTurnstile> | null>(null);
+
+// --- the second stage ----------------------------------------------------------
+
+const stage = computed(() => (!registering.value && pendingSecondFactor.value ? 'code' : 'password'));
+const code = ref('');
+/** A recovery code instead of one from the app: a different field, not a
+ *  different endpoint. */
+const recoveryMode = ref(false);
+const remember = ref(false);
+const rememberDays = computed(() => site.value.two_factor_remember_days ?? 0);
+const codeField = ref<HTMLInputElement | null>(null);
+
+/** Where to go once signed in. A path the router has no screen for is the
+ *  server's, and gets a real navigation. */
+async function proceed(): Promise<void> {
+  const next = safeNext(route.query['next']) || '/';
+  if (serverOwned(next)) {
+    window.location.assign(next);
+    return;
+  }
+  await router.replace(next);
+}
+
+async function askForCode(): Promise<void> {
+  pendingSecondFactor.value = true;
+  code.value = '';
+  recoveryMode.value = false;
+  error.value = '';
+  await nextTick();
+  codeField.value?.focus();
+}
+
+async function onCode(): Promise<void> {
+  const value = code.value.trim();
+  if (busy.value || !value) return;
+  busy.value = true;
+  error.value = '';
+  try {
+    const result = await completeSignIn(value, remember.value);
+    adopt(result.user);
+    await proceed();
+  } catch (failure) {
+    busy.value = false;
+    error.value = refusalText(failure);
+    // Timed out or already gone: the code has nothing to finish, so the card
+    // goes back to the password rather than asking for codes forever.
+    if (failure instanceof ApiError && (failure.code === 'two_factor_expired' || failure.code === 'account_banned')) {
+      forget();
+      await nextTick();
+      passwordField.value?.focus();
+      return;
+    }
+    code.value = '';
+    await nextTick();
+    codeField.value?.focus();
+  }
+}
+
+/** Six digits is the whole answer from an app, so there is nothing to wait for. */
+function onCodeInput(event: Event): void {
+  code.value = (event.target as HTMLInputElement).value;
+  if (!recoveryMode.value && code.value.replace(/\D/g, '').length === 6) void onCode();
+}
+
+function toggleRecovery(): void {
+  recoveryMode.value = !recoveryMode.value;
+  code.value = '';
+  error.value = '';
+  void nextTick(() => codeField.value?.focus());
+}
+
+/** Out of the half-way sign-in, which the server forgets too. */
+function startOver(): void {
+  void logout().catch(() => {
+    // Expired already; the cookie is worth nothing either way.
+  }).finally(() => {
+    forget();
+    password.value = '';
+    error.value = '';
+    void nextTick(() => identifierField.value?.focus());
+  });
+}
 
 // Challenged on sign-up or sign-in when the operator switched them on.
 // Never during first-run setup, where no challenge has been configured yet.
@@ -110,7 +198,7 @@ onMounted(() => {
     // sign-in that is long over.
     void router.replace({ path: route.path, query: {} });
   }
-  void nextTick(() => identifierField.value?.focus());
+  void nextTick(() => (stage.value === 'code' ? codeField.value : identifierField.value)?.focus());
 });
 
 async function onSubmit(): Promise<void> {
@@ -148,7 +236,7 @@ async function onSubmit(): Promise<void> {
     : 0;
 
   try {
-    const result: { user: Account } = registering.value
+    const result: LoginResult = registering.value
       ? await register({
           username: identity,
           password: secret,
@@ -159,11 +247,17 @@ async function onSubmit(): Promise<void> {
       : await login(identity, secret, guard.value?.token() ?? '');
 
     window.clearTimeout(reviewNote);
-    adopt(result.user);
     guard.value?.reset();
+    if (!result.user) {
+      busy.value = false;
+      buttonLabel.value = '';
+      await askForCode();
+      return;
+    }
+    adopt(result.user);
     // Back to whatever asked for a session — the consent screen, usually,
     // where another site is waiting on the answer.
-    await router.replace(safeNext(route.query['next']) || '/');
+    await proceed();
   } catch (failure) {
     window.clearTimeout(reviewNote);
     // A token is good for one submission, so a refusal for any reason — a
@@ -182,124 +276,170 @@ async function onSubmit(): Promise<void> {
 
 <template>
   <div class="oa-auth">
-    <form class="oa-auth-card" novalidate @submit.prevent="onSubmit">
+    <form class="oa-auth-card" novalidate @submit.prevent="stage === 'code' ? onCode() : onSubmit()">
       <div class="oa-auth-brand">
         <span class="oa-auth-mark"><IconSpark :size="15" /></span>
         <span>{{ site.name }}</span>
       </div>
 
-      <h1 class="oa-auth-title">
-        {{ setup ? t('firstAccountTitle') : registering ? t('createAccountTitle') : t('welcomeBack') }}
-      </h1>
-      <p class="oa-auth-sub">
-        {{ setup ? t('firstAccountBody') : registering ? t('createAccountBody') : t('welcomeBackBody') }}
-      </p>
-
-      <div class="oa-auth-form">
-        <OaField :label="identityLabel">
-          <input
-            ref="identifierField"
-            v-model="identifier"
-            type="text"
-            spellcheck="false"
-            :placeholder="identityLabel"
-            autocomplete="username"
-            maxlength="254"
-          >
-        </OaField>
-
-        <!-- The label carries whether it is optional; the hint carries which
-             addresses will be taken. Both are things you want before typing,
-             not after submitting. -->
-        <OaField
-          v-if="registering"
-          :label="emailRequired ? t('email') : t('emailOptional')"
-          :hint="emailHint"
-        >
-          <input
-            v-model="email"
-            type="email"
-            spellcheck="false"
-            :placeholder="domains.length ? `you@${domains[0]}` : 'you@example.com'"
-            autocomplete="email"
-            maxlength="254"
-            :required="emailRequired"
-          >
-        </OaField>
-
-        <OaField v-if="registering && qqEnabled" :label="qqRequired ? t('qq') : t('qqOptional')">
-          <input
-            v-model="qq"
-            type="text"
-            spellcheck="false"
-            :placeholder="t('qqPlaceholder')"
-            autocomplete="off"
-            maxlength="15"
-            :required="qqRequired"
-          >
-        </OaField>
-
-        <OaField :label="t('password')">
-          <input
-            ref="passwordField"
-            v-model="password"
-            type="password"
-            spellcheck="false"
-            :placeholder="registering ? t('passwordHint') : t('password')"
-            :autocomplete="registering ? 'new-password' : 'current-password'"
-            maxlength="256"
-          >
-        </OaField>
-
-        <OaTurnstile
-          v-if="guarded"
-          ref="guard"
-          :site-key="site.turnstile_site_key ?? ''"
-        />
-
-        <p class="oa-auth-error" role="alert" :hidden="!error">{{ error }}</p>
-
-        <button
-          type="submit"
-          class="oa-btn primary oa-btn-block"
-          :disabled="busy"
-          :data-busy="busy ? 'true' : undefined"
-        >
-          {{ buttonLabel || (registering ? t('createAccount') : t('signIn')) }}
-        </button>
-
-        <!-- Links rather than buttons, because each one is a navigation to
-             somebody else's site: the server answers with a redirect, which a
-             fetch could not follow anywhere useful. -->
-        <template v-if="providers.length">
-          <p class="oa-auth-or"><span>{{ t('orContinueWith') }}</span></p>
-          <div class="oa-auth-providers">
-            <a
-              v-for="provider in providers"
-              :key="provider.id"
-              class="oa-btn oa-auth-provider"
-              :href="signInURL(provider.id, { next: safeNext(route.query['next']) })"
+      <template v-if="stage === 'code'">
+        <h1 class="oa-auth-title">{{ t('twoFactorSignInTitle') }}</h1>
+        <p class="oa-auth-sub">
+          {{ recoveryMode ? t('twoFactorSignInRecoveryBody') : t('twoFactorSignInBody') }}
+        </p>
+        <div class="oa-auth-form">
+          <OaField :label="recoveryMode ? t('twoFactorRecoveryLabel') : t('twoFactorCodeLabel')">
+            <input
+              ref="codeField"
+              class="oa-2fa-code"
+              :value="code"
+              type="text"
+              :inputmode="recoveryMode ? 'text' : 'numeric'"
+              :autocomplete="recoveryMode ? 'off' : 'one-time-code'"
+              spellcheck="false"
+              :maxlength="recoveryMode ? 16 : 7"
+              :placeholder="recoveryMode ? 'xxxxx-xxxxx' : '000000'"
+              @input="onCodeInput"
             >
-              <component :is="mark(provider.id)" :size="15" />
-              <span>{{ t('continueWith', { provider: provider.name }) }}</span>
-            </a>
-          </div>
-        </template>
-      </div>
+          </OaField>
+          <label v-if="rememberDays > 0" class="oa-checkbox-field">
+            <input v-model="remember" type="checkbox">
+            <span>{{ t('twoFactorRemember', { days: rememberDays }) }}</span>
+          </label>
+          <p class="oa-auth-error" role="alert" :hidden="!error">{{ error }}</p>
+          <button
+            type="submit"
+            class="oa-btn primary oa-btn-block"
+            :disabled="busy || !code.trim()"
+            :data-busy="busy ? 'true' : undefined"
+          >
+            {{ busy ? t('twoFactorVerifying') : t('twoFactorVerify') }}
+          </button>
+        </div>
+        <p class="oa-auth-switch">
+          <button type="button" @click="toggleRecovery">
+            {{ recoveryMode ? t('twoFactorUseApp') : t('twoFactorUseRecovery') }}
+          </button>
+          <span> · </span>
+          <button type="button" @click="startOver">{{ t('twoFactorOtherAccount') }}</button>
+        </p>
+        <p v-if="recoveryMode" class="oa-auth-note">{{ t('twoFactorLostHelp') }}</p>
+      </template>
 
-      <p v-if="!setup" class="oa-auth-switch">
-        <template v-if="registering">
-          <span>{{ t('haveAccount') }}</span>
-          <button type="button" @click="router.push('/login')">{{ t('signIn') }}</button>
-        </template>
-        <template v-else-if="site.registration_enabled">
-          <span>{{ t('noAccount') }}</span>
-          <button type="button" @click="router.push('/register')">{{ t('createOne') }}</button>
-        </template>
-        <template v-else>{{ t('registrationClosed') }}</template>
-      </p>
+      <template v-else>
+        <h1 class="oa-auth-title">
+          {{ setup ? t('firstAccountTitle') : registering ? t('createAccountTitle') : t('welcomeBack') }}
+        </h1>
+        <p class="oa-auth-sub">
+          {{ setup ? t('firstAccountBody') : registering ? t('createAccountBody') : t('welcomeBackBody') }}
+        </p>
 
-      <p v-if="site.description" class="oa-auth-note">{{ site.description }}</p>
+        <div class="oa-auth-form">
+          <OaField :label="identityLabel">
+            <input
+              ref="identifierField"
+              v-model="identifier"
+              type="text"
+              spellcheck="false"
+              :placeholder="identityLabel"
+              autocomplete="username"
+              maxlength="254"
+            >
+          </OaField>
+
+          <!-- The label carries whether it is optional; the hint carries which
+               addresses will be taken. Both are things you want before typing,
+               not after submitting. -->
+          <OaField
+            v-if="registering"
+            :label="emailRequired ? t('email') : t('emailOptional')"
+            :hint="emailHint"
+          >
+            <input
+              v-model="email"
+              type="email"
+              spellcheck="false"
+              :placeholder="domains.length ? `you@${domains[0]}` : 'you@example.com'"
+              autocomplete="email"
+              maxlength="254"
+              :required="emailRequired"
+            >
+          </OaField>
+
+          <OaField v-if="registering && qqEnabled" :label="qqRequired ? t('qq') : t('qqOptional')">
+            <input
+              v-model="qq"
+              type="text"
+              spellcheck="false"
+              :placeholder="t('qqPlaceholder')"
+              autocomplete="off"
+              maxlength="15"
+              :required="qqRequired"
+            >
+          </OaField>
+
+          <OaField :label="t('password')">
+            <input
+              ref="passwordField"
+              v-model="password"
+              type="password"
+              spellcheck="false"
+              :placeholder="registering ? t('passwordHint') : t('password')"
+              :autocomplete="registering ? 'new-password' : 'current-password'"
+              maxlength="256"
+            >
+          </OaField>
+
+          <OaTurnstile
+            v-if="guarded"
+            ref="guard"
+            :site-key="site.turnstile_site_key ?? ''"
+          />
+
+          <p class="oa-auth-error" role="alert" :hidden="!error">{{ error }}</p>
+
+          <button
+            type="submit"
+            class="oa-btn primary oa-btn-block"
+            :disabled="busy"
+            :data-busy="busy ? 'true' : undefined"
+          >
+            {{ buttonLabel || (registering ? t('createAccount') : t('signIn')) }}
+          </button>
+
+          <!-- Links rather than buttons, because each one is a navigation to
+               somebody else's site: the server answers with a redirect, which a
+               fetch could not follow anywhere useful. -->
+          <template v-if="providers.length">
+            <p class="oa-auth-or"><span>{{ t('orContinueWith') }}</span></p>
+            <div class="oa-auth-providers">
+              <a
+                v-for="provider in providers"
+                :key="provider.id"
+                class="oa-btn oa-auth-provider"
+                :href="signInURL(provider.id, { next: safeNext(route.query['next']) })"
+              >
+                <component :is="mark(provider.id)" :size="15" />
+                <span>{{ t('continueWith', { provider: provider.name }) }}</span>
+              </a>
+            </div>
+          </template>
+        </div>
+
+        <p v-if="!setup" class="oa-auth-switch">
+          <template v-if="registering">
+            <span>{{ t('haveAccount') }}</span>
+            <button type="button" @click="router.push('/login')">{{ t('signIn') }}</button>
+          </template>
+          <template v-else-if="site.registration_enabled">
+            <span>{{ t('noAccount') }}</span>
+            <button type="button" @click="router.push('/register')">{{ t('createOne') }}</button>
+          </template>
+          <template v-else>{{ t('registrationClosed') }}</template>
+        </p>
+
+        <p v-if="site.description" class="oa-auth-note">{{ site.description }}</p>
+      </template>
     </form>
   </div>
 

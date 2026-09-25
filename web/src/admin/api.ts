@@ -350,6 +350,22 @@ export interface SecurityEvent {
   reason?: string;
 }
 
+/** How far the instance is from the two-step policy it wants. */
+export interface TwoFactorAdoption {
+  policy: 'optional' | 'backoffice' | 'admins' | 'everyone';
+  accounts: number;
+  enabled: number;
+  admins: number;
+  admins_enabled: number;
+  /** At most fifty, by username: the administrators a stricter policy would
+   *  stop at the door. */
+  admins_without: { id: string; username: string; nickname: string }[];
+  remember_days: number;
+  /** The name an app files the entry under when no issuer is set. */
+  issuer_fallback: string;
+  available: boolean;
+}
+
 /** The values actually present in the log, so the filters offer what exists. */
 export interface LogFacets {
   users: LogOption[];
@@ -511,6 +527,7 @@ export const adminApi = {
     api.post<{ client_secret: string }>(`/api/admin/applications/${id}/secret`, {}),
   deleteApplication: (id: string) =>
     api.delete<void>(`/api/admin/applications/${id}`),
+  twoFactorAdoption: () => api.get<TwoFactorAdoption>('/api/admin/security/two-factor'),
   securityEvents: (query = '') =>
     api.get<{ events: SecurityEvent[]; total: number; limit: number; offset: number }>(
       `/api/admin/security/events${query}`,
@@ -554,6 +571,8 @@ export const adminApi = {
   deleteUser: (id: string) => api.delete<void>(`/api/admin/users/${id}`),
   resetPassword: (id: string, newPassword: string) =>
     api.post<void>(`/api/admin/users/${id}/password`, { new_password: newPassword }),
+  resetTwoFactor: (id: string) =>
+    api.delete<{ user: Account }>(`/api/admin/users/${id}/two-factor`),
   // Only ever the record, never the token: the server keeps a digest, so
   // there is nothing an administrator could be shown even in principle.
   userKeys: (id: string) => api.get<{ keys: ApiKey[] }>(`/api/admin/users/${id}/keys`),

@@ -17,3 +17,15 @@ export function safeNext(raw: unknown): string {
   if (!value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) return '';
   return value;
 }
+
+/**
+ * Whether a destination belongs to the server rather than to the interface.
+ *
+ * The one that matters is /oauth/authorize: another site sends a signed-out
+ * visitor through the sign-in page with it as `next`, and the router has no
+ * such screen — handing it to the router drew "no such page" in place of the
+ * request the other site is waiting on. It needs a real navigation.
+ */
+export function serverOwned(path: string): boolean {
+  return path.startsWith('/oauth/authorize') || path.startsWith('/api/');
+}

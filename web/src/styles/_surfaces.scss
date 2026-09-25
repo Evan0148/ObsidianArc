@@ -4656,3 +4656,282 @@
   line-height: 1.6;
   resize: vertical;
 }
+
+/* --- two-step verification ---------------------------------------------------
+
+   The setup wizard, the code field on the sign-in card, the recovery codes,
+   and the adoption figures in the backoffice. Everything comes from the
+   tokens, with one deliberate exception: the QR code is black on white in
+   every theme. A scanner needs the contrast, a quiet zone the colour of the
+   page it sits on, and many cameras will not read an inverted code at all. */
+
+.oa-2fa-wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.oa-2fa-steps {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.oa-2fa-step {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--ai-text-secondary);
+  font-size: 11px;
+  text-align: center;
+}
+
+.oa-2fa-step-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--ai-field-bg);
+  font-size: 11px;
+  font-weight: 600;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.oa-2fa-step-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oa-2fa-step.active {
+  color: var(--ai-text);
+  font-weight: 600;
+}
+
+.oa-2fa-step.active .oa-2fa-step-dot,
+.oa-2fa-step.done .oa-2fa-step-dot {
+  background: var(--ai-primary);
+  color: var(--ai-primary-text);
+}
+
+/* Each step rises in the way a switched conversation does, so moving through
+   the wizard reads as the rest of the interface moving. */
+.oa-2fa-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: aiChatSwitch 0.34s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.oa-2fa-pane > .oa-field-hint {
+  margin: 0;
+}
+
+.oa-2fa-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--ai-badge-bg);
+  color: var(--ai-badge-text);
+}
+
+.oa-2fa-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.oa-2fa-apps {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--ai-field-bg);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.oa-2fa-qr {
+  align-self: center;
+  width: 188px;
+  height: 188px;
+  border-radius: 12px;
+}
+
+.oa-2fa-qr-light {
+  fill: #fff;
+}
+
+.oa-2fa-qr-dark {
+  fill: #000;
+}
+
+.oa-2fa-link {
+  align-self: center;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ai-primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.oa-2fa-link:hover {
+  text-decoration: underline;
+}
+
+.oa-2fa-key {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* The key is the row's copy control, as a client id is on the applications
+   screen: it is the one value that has to be moved to another program. */
+.oa-2fa-secret {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-align: left;
+  word-break: break-all;
+  cursor: pointer;
+}
+
+.oa-2fa-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Wide and spaced, the way the app draws the code it is being copied from.
+   Qualified by the field so it outranks the sign-in card's own input rule. */
+.oa-field input.oa-2fa-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 18px;
+  letter-spacing: 0.3em;
+  text-align: center;
+}
+
+.oa-2fa-codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--ai-field-bg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  list-style: none;
+  user-select: all;
+}
+
+.oa-2fa-codes li {
+  text-align: center;
+}
+
+.oa-2fa-card {
+  max-width: 400px;
+}
+
+.oa-2fa-card .oa-auth-sub {
+  margin-bottom: 16px;
+}
+
+.oa-2fa-status .oa-connection-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.oa-2fa-self a {
+  color: var(--ai-primary);
+}
+
+.oa-2fa-admin-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The backoffice's gate: one card where the page would be, drawn as the
+   workbench's own cards are, and no wider than the wizard needs, so it reads
+   as one thing to do rather than an empty page. */
+.oa-2fa-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 460px;
+  padding: 23px;
+  border-radius: 18px;
+  background: var(--ai-surface-card);
+}
+
+.oa-2fa-gate > .oa-field-hint {
+  margin: 0;
+}
+
+.oa-2fa-adoption {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.oa-2fa-adoption-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.oa-2fa-adoption-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.oa-2fa-adoption-figure {
+  color: var(--ai-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.oa-2fa-meter {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ai-field-bg);
+}
+
+.oa-2fa-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ai-primary);
+  transition: width 0.4s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.oa-2fa-subhead {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+}

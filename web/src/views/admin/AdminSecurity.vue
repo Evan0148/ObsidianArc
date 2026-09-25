@@ -8,7 +8,7 @@
 // junk accounts opens one page, not seven sections of another.
 
 import { computed, onMounted, ref } from 'vue';
-import { adminApi, type AdminModel, type Group, type SecurityEvent, type SignInApplication } from '@/admin/api';
+import { adminApi, type AdminModel, type Group, type SecurityEvent, type SignInApplication, type TwoFactorAdoption } from '@/admin/api';
 import { fetchSite } from '@/api/auth';
 import { ApiError } from '@/api/client';
 import OaPagination from '@/components/OaPagination.vue';
@@ -19,7 +19,7 @@ import AdminControlCard from './AdminControlCard.vue';
 import AdminWorkbench from './AdminWorkbench.vue';
 import type { WorkbenchGroup } from './workbench';
 import { useSettingsDraft } from './settingsDraft';
-import { IconUsers, IconLock, IconSpark, IconFile, IconSliders, IconKey, IconGithub, IconGoogle, IconCopy, IconCheck } from '@/icons';
+import { IconUsers, IconLock, IconSpark, IconFile, IconSliders, IconKey, IconGithub, IconGoogle, IconCopy, IconCheck, IconShield } from '@/icons';
 import OaNumberField from '@/components/OaNumberField.vue';
 import OaSelectField from '@/components/OaSelectField.vue';
 import OaSwitchField from '@/components/OaSwitchField.vue';
@@ -29,7 +29,7 @@ import { t } from '@/composables/useI18n';
 import { copyToClipboard } from '@/chat/markdown';
 import { initials } from '@/lib/account';
 import { absoluteTime } from '@/lib/format';
-import { site } from '@/stores/session';
+import { currentUser, site } from '@/stores/session';
 import { maskUser, maskLog, maskCredential } from '@/admin/safeMode';
 import AdminFailure from './AdminFailure.vue';
 import { useAdminView } from './adminView';
@@ -89,7 +89,46 @@ const form = ref({
   googleSecretHint: '',
   oauthAllowSignup: true,
   oauthLinkByEmail: true,
+  twoFactorPolicy: 'optional',
+  twoFactorIssuer: '',
+  twoFactorRememberDays: 0 as number | null,
 });
+
+// --- two-step verification ------------------------------------------------------
+//
+// The policy is a field like the others and saves with them. The adoption
+// figures beside it are read-only, and are what an operator looks at before
+// making the policy stricter: how many people it would stop at the door.
+
+const adoption = ref<TwoFactorAdoption | null>(null);
+
+async function loadAdoption(): Promise<void> {
+  try {
+    const result = await adminApi.twoFactorAdoption();
+    // An older server answers with less; the list is what the card iterates.
+    adoption.value = { ...result, admins_without: result.admins_without ?? [] };
+  } catch {
+    // The figures are context for the policy, not the policy; a failure here
+    // should not take the settings form down with it.
+  }
+}
+
+/** Anything above optional is refused for an operator without a second
+ *  step of their own, so the form says so before they try. */
+const selfWithout = computed(() => !(currentUser.value?.two_factor_at ?? 0));
+
+const policyHint = computed(() => {
+  switch (form.value.twoFactorPolicy) {
+    case 'backoffice': return t('twoFactorPolicyBackofficeHint');
+    case 'admins': return t('twoFactorPolicyAdminsHint');
+    case 'everyone': return t('twoFactorPolicyEveryoneHint');
+    default: return t('twoFactorPolicyOptionalHint');
+  }
+});
+
+function share(part: number, whole: number): string {
+  return whole > 0 ? `${Math.round((part / whole) * 100)}%` : '—';
+}
 
 
 
@@ -254,6 +293,9 @@ function collect(): Record<string, string> {
     'oauth.google_client_secret': form.value.googleSecret.trim(),
     'oauth.allow_signup': String(form.value.oauthAllowSignup),
     'oauth.link_by_email': String(form.value.oauthLinkByEmail),
+    'security.two_factor_policy': form.value.twoFactorPolicy,
+    'security.two_factor_issuer': form.value.twoFactorIssuer.trim(),
+    'security.two_factor_remember_days': String(form.value.twoFactorRememberDays ?? 0),
   };
 }
 
@@ -276,8 +318,11 @@ async function save(): Promise<void> {
     }
     saveLabel.value = t('saved');
     window.setTimeout(() => { saveLabel.value = ''; }, 1500);
+    void loadAdoption();
   } catch (failure) {
-    flash.value = failure instanceof ApiError ? failure.message : String(failure);
+    flash.value = failure instanceof ApiError && failure.code === 'two_factor_self'
+      ? t('twoFactorPolicySelfRefused')
+      : failure instanceof ApiError ? failure.message : String(failure);
     saveLabel.value = '';
   } finally {
     busy.value = false;
@@ -322,6 +367,11 @@ function reviewDecision(decision: string): string {
   if (decision === 'required') return t('securityDecisionRequired');
   if (decision === 'passed') return t('securityDecisionPassed');
   if (decision === 'failed') return t('securityDecisionFailed');
+  if (decision === 'enabled') return t('securityDecisionEnabled');
+  if (decision === 'disabled') return t('securityDecisionDisabled');
+  if (decision === 'reset') return t('securityDecisionReset');
+  if (decision === 'recovery_used') return t('securityDecisionRecoveryUsed');
+  if (decision === 'recovery_regenerated') return t('securityDecisionRecoveryRegenerated');
   return t('securityDecisionRestrict');
 }
 
@@ -330,6 +380,7 @@ function eventLabel(event: string): string {
   if (event === 'api_restriction') return t('securityEventAPIRestriction');
   if (event === 'api_restriction_lifted') return t('securityEventAPIRestrictionLifted');
   if (event === 'chat_challenge') return t('securityEventChatChallenge');
+  if (event === 'two_factor') return t('securityEventTwoFactor');
   return event;
 }
 
@@ -355,7 +406,7 @@ async function load(): Promise<void> {
     // reviews a sign-up, and a select needs its options. The groups arrive
     // with the settings already.
     const [data, modelsResult] = await Promise.all([
-      adminApi.settings(), adminApi.modelOptions(), loadEvents(), loadApplications(),
+      adminApi.settings(), adminApi.modelOptions(), loadEvents(), loadApplications(), loadAdoption(),
     ]);
     const values = data.settings;
     mailConfigured.value = data.mail_configured ?? false;
@@ -400,6 +451,9 @@ async function load(): Promise<void> {
       googleSecretHint: values['oauth.google_client_secret'] ?? '',
       oauthAllowSignup: (values['oauth.allow_signup'] ?? 'true') === 'true',
       oauthLinkByEmail: (values['oauth.link_by_email'] ?? 'true') === 'true',
+      twoFactorPolicy: values['security.two_factor_policy'] ?? 'optional',
+      twoFactorIssuer: values['security.two_factor_issuer'] ?? '',
+      twoFactorRememberDays: Number(values['security.two_factor_remember_days'] ?? 0),
     };
     accept();
   } catch (failure) {
@@ -414,10 +468,11 @@ const categories: WorkbenchGroup[] = [
   { id: 'verification', label: 'controlVerification', hint: 'controlVerificationHint', icon: IconLock, sections: ['secTurnstile', 'secVerificationScenes', 'secChatChallenge'] },
   { id: 'review', label: 'controlReview', hint: 'controlReviewHint', icon: IconSpark, sections: ['secSignupReview', 'secReviewTrial'] },
   { id: 'signin', label: 'controlSignIn', hint: 'controlSignInHint', icon: IconGithub, sections: ['secOAuth', 'secApplications'] },
+  { id: 'twofactor', label: 'controlTwoFactor', hint: 'controlTwoFactorHint', icon: IconShield, sections: ['secTwoFactorPolicy', 'secTwoFactorAdoption'] },
   { id: 'events', label: 'controlEvents', hint: 'controlEventsHint', icon: IconFile, sections: ['secSecurityLog'] },
 ];
 
-const columns: [string[], string[]] = [['secAccounts', 'secRegistrationLimits', 'secTurnstile', 'secChatChallenge', 'secSignupReview'], ['secRegistration', 'secVerificationScenes', 'secReviewTrial']];
+const columns: [string[], string[]] = [['secAccounts', 'secRegistrationLimits', 'secTurnstile', 'secChatChallenge', 'secSignupReview', 'secTwoFactorPolicy'], ['secRegistration', 'secVerificationScenes', 'secReviewTrial', 'secTwoFactorAdoption']];
 
 onMounted(load);
 </script>
@@ -545,6 +600,39 @@ onMounted(load);
           :hint="t('signupReviewRefusalHint')"
         />
       </AdminControlCard>
+      <AdminControlCard id="secTwoFactorPolicy" v-show="visible('secTwoFactorPolicy')" :title="t('secTwoFactorPolicy')" :icon="IconShield" :hint="t('twoFactorPolicyHint')">
+        <OaSelectField
+          v-model="form.twoFactorPolicy"
+          :label="t('twoFactorPolicyLabel')"
+          :hint="policyHint"
+          :options="[
+            { value: 'optional', label: t('twoFactorPolicyOptional') },
+            { value: 'backoffice', label: t('twoFactorPolicyBackoffice') },
+            { value: 'admins', label: t('twoFactorPolicyAdmins') },
+            { value: 'everyone', label: t('twoFactorPolicyEveryone') },
+          ]"
+        />
+        <!-- Said before the save rather than after it: the server refuses a
+             policy that would shut its author out of this screen. -->
+        <p v-if="selfWithout" class="oa-field-hint oa-2fa-self">
+          {{ t('twoFactorPolicySelfNote') }}
+          <RouterLink to="/settings?tab=security">{{ t('twoFactorSetUpMine') }}</RouterLink>
+        </p>
+        <OaTextField
+          v-model="form.twoFactorIssuer"
+          :label="t('twoFactorIssuerLabel')"
+          :placeholder="adoption?.issuer_fallback || site?.name || ''"
+          :hint="t('twoFactorIssuerHint')"
+          :max-length="64"
+        />
+        <OaNumberField
+          v-model="form.twoFactorRememberDays"
+          :label="t('twoFactorRememberLabel')"
+          :hint="t('twoFactorRememberHint')"
+          :min="0"
+          :max="365"
+        />
+      </AdminControlCard>
     </template>
     <template #right="{ visible }">
       <AdminControlCard id="secRegistration" v-show="visible('secRegistration')" :title="t('secRegistration')" :icon="IconUsers">
@@ -614,6 +702,34 @@ onMounted(load);
           </button>
           <p class="oa-field-hint">{{ trial.answer }}</p>
         </div>
+      </AdminControlCard>
+      <AdminControlCard id="secTwoFactorAdoption" v-show="visible('secTwoFactorAdoption')" :title="t('secTwoFactorAdoption')" :icon="IconUsers" :hint="t('twoFactorAdoptionHint')">
+        <template v-if="adoption">
+          <div class="oa-2fa-adoption">
+            <div v-for="row in [
+              { label: t('twoFactorAdoptionAccounts'), part: adoption.enabled, whole: adoption.accounts },
+              { label: t('twoFactorAdoptionAdmins'), part: adoption.admins_enabled, whole: adoption.admins },
+            ]" :key="row.label" class="oa-2fa-adoption-row">
+              <div class="oa-2fa-adoption-head">
+                <span>{{ row.label }}</span>
+                <span class="oa-2fa-adoption-figure">
+                  {{ t('twoFactorAdoptionOf', { enabled: row.part, total: row.whole }) }} · {{ share(row.part, row.whole) }}
+                </span>
+              </div>
+              <div class="oa-2fa-meter" role="presentation">
+                <span :style="{ width: row.whole > 0 ? `${(row.part / row.whole) * 100}%` : '0%' }" />
+              </div>
+            </div>
+          </div>
+          <h4 class="oa-2fa-subhead">{{ t('twoFactorAdminsWithout') }}</h4>
+          <p v-if="!adoption.admins_without.length" class="oa-field-hint">{{ t('twoFactorAdminsAllSet') }}</p>
+          <div v-else class="oa-badge-row">
+            <OaBadge v-for="member in adoption.admins_without" :key="member.id" tone="warning">
+              @{{ maskUser(member.username) }}
+            </OaBadge>
+          </div>
+        </template>
+        <p v-else class="oa-table-empty">{{ t('loading') }}</p>
       </AdminControlCard>
     </template>
     <template #default="{ visible }">

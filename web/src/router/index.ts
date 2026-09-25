@@ -1,6 +1,6 @@
 // The routing table.
 //
-// Ten screens and one nested layout, so the table below is the whole of it.
+// Eleven screens and one nested layout, so the table below is the whole of it.
 // The two things worth reading are the nesting and the guards.
 //
 // The nesting: /settings, /keys, /usage, /feedback and /about are children of
@@ -25,8 +25,8 @@
 // first paint of everyone who only came to chat.
 
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
-import { safeNext } from '@/lib/next';
-import { currentUser, isAdmin, canAdmin, siteInfo } from '@/stores/session';
+import { safeNext, serverOwned } from '@/lib/next';
+import { currentUser, isAdmin, canAdmin, pendingSecondFactor, siteInfo } from '@/stores/session';
 import AboutPanel from '@/views/AboutPanel.vue';
 import ArchivePanel from '@/views/ArchivePanel.vue';
 import AuthView from '@/views/AuthView.vue';
@@ -38,6 +38,7 @@ import KeysPanel from '@/views/KeysPanel.vue';
 import NotFoundView from '@/views/NotFoundView.vue';
 import RootView from '@/views/RootView.vue';
 import SettingsPanel from '@/views/SettingsPanel.vue';
+import TwoFactorEnrolView from '@/views/TwoFactorEnrolView.vue';
 import UptimePanel from '@/views/UptimePanel.vue';
 import UsagePanel from '@/views/UsagePanel.vue';
 import VerifyView from '@/views/VerifyView.vue';
@@ -57,6 +58,9 @@ const routes: RouteRecordRaw[] = [
   // has no account yet, which is the whole point of the form. What stands in
   // for a session is the signed cookie the callback left behind.
   { path: '/oauth/complete', component: CompleteSignupView },
+  // Where the two-step policy holds an account until it enrols. A page for
+  // the reason the consent screen is one: nothing behind it would work.
+  { path: '/two-factor', component: TwoFactorEnrolView, meta: { auth: true } },
 
   {
     path: '/',
@@ -109,6 +113,28 @@ router.beforeEach((to) => {
   // site is waiting on.
   if (needsSession && !signedIn) {
     return { path: '/login', query: { next: to.fullPath }, replace: true };
+  }
+
+  // Halfway through signing in: the password was right and the code is
+  // still wanted, whatever the front door is set to show.
+  if (!signedIn && pendingSecondFactor.value && to.path === '/') {
+    return { path: '/login', replace: true };
+  }
+
+  // The operator's policy wants a second step on this account before it does
+  // anything else. The server refuses the rest regardless; this only saves
+  // drawing a screen made of refusals.
+  if (signedIn && currentUser.value?.two_factor_enrol && to.path !== '/two-factor') {
+    const next = to.path === '/' ? undefined : to.fullPath;
+    return { path: '/two-factor', query: next ? { next } : {}, replace: true };
+  }
+  if (to.path === '/two-factor' && signedIn && !currentUser.value?.two_factor_enrol) {
+    const next = safeNext(to.query['next']);
+    if (next && serverOwned(next)) {
+      window.location.assign(next);
+      return false;
+    }
+    return { path: next || '/', replace: true };
   }
 
   // The address itself. Signed in it is the chat; signed out it is whatever

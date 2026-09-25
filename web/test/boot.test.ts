@@ -51,6 +51,14 @@ const ACCOUNT: Account = {
 const EMPTY_BODIES: Array<[RegExp, unknown]> = [
   [/\/api\/admin\/references/, { groups: [], models: [], providers: [] }],
   [/\/api\/admin\/security\/events/, { events: [], total: 0 }],
+  [/\/api\/admin\/security\/two-factor/, {
+    policy: 'optional', accounts: 0, enabled: 0, admins: 0, admins_enabled: 0,
+    admins_without: [], remember_days: 0, issuer_fallback: 'Obsidian Arc', available: true,
+  }],
+  [/\/api\/profile\/two-factor$/, {
+    available: true, enabled: false, enabled_at: 0, recovery_remaining: 0,
+    mandatory: false, policy: 'optional', remember_days: 0,
+  }],
   [/\/api\/health/, { status: 'ok', version: 'vtest', uptime_sec: 1 }],
   [/\/api\/announcements/, { announcements: [], unread: 0, popup: null }],
   [/\/api\/conversations/, { conversations: [] }],
@@ -479,6 +487,29 @@ describe('what moves, and what does not', () => {
     expect(host.querySelector<HTMLInputElement>('#secAttachments input')?.value).toBe('18');
     await search('#secAttachments input[type="number"]', '12');
     expect(host.querySelector('.oa-control-save-state')?.textContent).toContain(t('controlSaved'));
+  });
+
+  // The operator's policy holds an account at the door until it enrols. The
+  // server refuses the rest regardless; the router only saves drawing a
+  // screen made of refusals, and must still let the enrolment screen mount.
+  it('sends an account the policy is holding to enrol, and nowhere else', async () => {
+    adopt({ ...ACCOUNT, two_factor_enrol: true });
+    await mountAt('/settings');
+    expect(router.currentRoute.value.path).toBe('/two-factor');
+    expect(router.currentRoute.value.query['next']).toBe('/settings');
+    expect(host.querySelector('.oa-auth-title')?.textContent).toBe(t('twoFactorRequiredTitle'));
+    expect(host.querySelector('.oa-2fa-wizard')).not.toBeNull();
+  });
+
+  it('draws the setup in place of a backoffice page the policy has closed', async () => {
+    adopt({ ...ACCOUNT, role: 'super_admin', two_factor_backoffice: true });
+    await mountAt('/admin/users');
+    expect(host.querySelector('.oa-admin-title')?.textContent).toBe(t('twoFactorGateTitle'));
+    expect(host.querySelector('.oa-2fa-gate .oa-2fa-wizard')).not.toBeNull();
+    // The page itself never mounted, so it asked the server for nothing.
+    expect(host.querySelector('#usersList')).toBeNull();
+    // The rail stays, so it is clear where this is.
+    expect(host.querySelector('.oa-admin-rail')).not.toBeNull();
   });
 
   it('opens hidden categories for deep links and keeps local search from hiding the target', async () => {

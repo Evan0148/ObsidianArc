@@ -49,6 +49,12 @@ export function refusalText(failure: unknown, domains: string[] = []): string {
       return t('emailDomainRejected', { domains: allowed(failure, domains).join(', ') });
     case 'signups_throttled':
       return t('signupsThrottled', { count: Number(failure.details['retry_after_seconds'] ?? 60) });
+    case 'too_many_attempts':
+      return t('tooManyAttempts', { count: Number(failure.details['retry_after_seconds'] ?? 60) });
+    case 'two_factor_code':
+      return t('twoFactorCodeWrong');
+    case 'two_factor_expired':
+      return t('twoFactorExpired');
     default: {
       const named = allowed(failure, []);
       if (named.length) return t('emailDomainRejected', { domains: named.join(', ') });

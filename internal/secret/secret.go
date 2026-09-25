@@ -29,6 +29,13 @@ const (
 	// directory — two instances against one database have to sign with
 	// the same key — and a database backup should not be a signing key.
 	PurposeSigningKey = "obsidian-arc/oidc-signing-key"
+	// The shared secret an authenticator app holds for an account. Sealed for
+	// the reason a provider key is: a database dump must not be a set of
+	// working second factors.
+	PurposeTwoFactor = "obsidian-arc/two-factor-secret"
+	// Not a Box: the key that keys the digests of recovery codes and signs
+	// the remembered-browser cookie. See DeriveKey.
+	PurposeTwoFactorDigest = "obsidian-arc/two-factor-digest"
 )
 
 var ErrDecrypt = errors.New("secret: could not decrypt (wrong key, or the value is corrupt)")
@@ -39,17 +46,9 @@ type Box struct {
 }
 
 func New(masterKey []byte, purpose string) (*Box, error) {
-	if len(masterKey) == 0 {
-		return nil, errors.New("secret: master key is empty")
-	}
-
-	derived := make([]byte, 32)
-	// No salt: the master key is already high-entropy and instance-wide, and
-	// a random salt would have to be stored somewhere to derive the same key
-	// again. The purpose string is the domain separator.
-	reader := hkdf.New(sha256.New, masterKey, nil, []byte(purpose))
-	if _, err := io.ReadFull(reader, derived); err != nil {
-		return nil, fmt.Errorf("secret: derive key: %w", err)
+	derived, err := DeriveKey(masterKey, purpose)
+	if err != nil {
+		return nil, err
 	}
 
 	block, err := aes.NewCipher(derived)
@@ -61,6 +60,27 @@ func New(masterKey []byte, purpose string) (*Box, error) {
 		return nil, fmt.Errorf("secret: new GCM: %w", err)
 	}
 	return &Box{aead: aead}, nil
+}
+
+// DeriveKey returns 32 bytes that belong to one purpose and nothing else.
+//
+// Exported for the values that are compared rather than read back — a digest
+// of a recovery code, the signature on a cookie — where an AEAD is the wrong
+// tool but the instance secret is still the right root. A purpose used here
+// must never also be given to New.
+func DeriveKey(masterKey []byte, purpose string) ([]byte, error) {
+	if len(masterKey) == 0 {
+		return nil, errors.New("secret: master key is empty")
+	}
+	derived := make([]byte, 32)
+	// No salt: the master key is already high-entropy and instance-wide, and
+	// a random salt would have to be stored somewhere to derive the same key
+	// again. The purpose string is the domain separator.
+	reader := hkdf.New(sha256.New, masterKey, nil, []byte(purpose))
+	if _, err := io.ReadFull(reader, derived); err != nil {
+		return nil, fmt.Errorf("secret: derive key: %w", err)
+	}
+	return derived, nil
 }
 
 // Seal returns nonce || ciphertext || tag, ready to store in a BLOB column.

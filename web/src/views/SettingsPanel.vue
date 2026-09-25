@@ -14,7 +14,7 @@
 // with.
 
 import { computed, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import OaIconButton from '@/components/OaIconButton.vue';
 import OaPanel from '@/components/OaPanel.vue';
 import OaScrollArea from '@/components/OaScrollArea.vue';
@@ -24,22 +24,30 @@ import { IconCollapse, IconExpand } from '@/icons';
 import AccountSection from './settings/AccountSection.vue';
 import AppearanceSection from './settings/AppearanceSection.vue';
 import ChatSection from './settings/ChatSection.vue';
+import SecuritySection from './settings/SecuritySection.vue';
 import { matchesSettings, type SettingsGroup } from './settings/search';
 
-type Category = 'appearance' | 'chat' | 'account';
+type Category = 'appearance' | 'chat' | 'account' | 'security';
 
 const CATEGORIES: Array<{ id: Category; label: StringKey }> = [
   { id: 'appearance', label: 'secAppearance' },
   { id: 'chat', label: 'secChat' },
   { id: 'account', label: 'account' },
+  { id: 'security', label: 'secSecurity' },
 ];
 
 const router = useRouter();
+const route = useRoute();
 
 const panel = ref<InstanceType<typeof OaPanel> | null>(null);
 const scroll = ref<InstanceType<typeof OaScrollArea> | null>(null);
 
-const category = ref<Category>('appearance');
+// A link can name the tab — the backoffice sends an administrator straight to
+// the security one to turn on the second step a policy is asking for.
+const requested = route?.query['tab'];
+const category = ref<Category>(
+  CATEGORIES.some((entry) => entry.id === requested) ? requested as Category : 'appearance',
+);
 const query = ref('');
 const searching = computed(() => !!query.value.trim());
 const visibleGroups = computed(() => {
@@ -51,6 +59,7 @@ const visibleGroups = computed(() => {
     wallpaper: visible('wallpaper', 'appearance'),
     chat: visible('chat', 'chat'),
     account: (['profile', 'connections', 'authorizations', 'password', 'data'] as const).some((group) => visible(group, 'account')),
+    security: visible('twofactor', 'security'),
   };
 });
 watch(query, () => {
@@ -140,6 +149,9 @@ function toggleFullscreen(): void {
           <ChatSection v-show="visibleGroups.chat" />
           <div v-show="visibleGroups.account" class="oa-settings-group">
             <AccountSection :query="query" />
+          </div>
+          <div v-show="visibleGroups.security" class="oa-settings-group">
+            <SecuritySection :query="query" />
           </div>
         </div>
       </OaScrollArea>

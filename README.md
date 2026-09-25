@@ -45,6 +45,7 @@
 - **服务健康与可用性监控**：实时记录运行时间与健康状态；对空闲模型进行定时探活；支持连续失败自动熔断与警告阈值（`health.warn_below`）；管理员可在系统设置中控制普通用户是否可见状态页面，对非管理员请求自动脱敏上游信息。
 - **图像实验室（Image Lab）**：支持图像生成模型调用、宽高比切换、灯箱缩放与图片下载；支持在后台独立标记模型的生图能力。
 - **用量核算与配额控制**：每次对话和 API 调用记录到用量账本；支持按 5 小时、周、月周期，针对请求次数、Token 消耗或积分设置限制；使用数据库行锁避免并发透支。
+- **两步验证（2FA）**：用户可在「设置 → 安全」中按向导绑定身份验证器（TOTP，兼容 Google Authenticator、Microsoft Authenticator 等），扫码或手动输入密钥，并获得一次性恢复码；登录（含 GitHub / Google 登录与 SSH 终端）在密码之后再要求验证码。管理员可在「安全 → 两步验证」中设置强制策略：可选、管理员进入后台时必须绑定、所有管理员必须绑定、所有用户必须绑定；可设置验证器中显示的名称与「记住浏览器」天数，查看启用情况，并为丢失手机的用户重置两步验证。
 - **界面与安全设计**：前端采用 Vue 模板插值渲染，不使用 `innerHTML` 与 `v-html`；上游 API Key 在数据库中加密存储；提供浅色、深色与跟随系统的界面配色。
 
 ---
@@ -140,6 +141,7 @@ Online documentation is hosted on Cloudflare Pages:
 - **Uptime Monitoring and Circuit Breaking**: Uptime tracking and health status checks; automated periodic probe checks for idle models; automatic circuit breaking on consecutive upstream failures and warning thresholds (`health.warn_below`); configurable public visibility with credential stripping for non-admin requests.
 - **Image Lab**: Standalone image generation interface with aspect-ratio selection, lightbox zoom, and download controls; capability flags distinguish drawing models from text models.
 - **Usage Accounting and Rate Limits**: Per-turn usage recorded into an append-only ledger; supports request count, token, and credit limits across 5-hour, weekly, and monthly windows; row-level database locks prevent concurrent overdrafts.
+- **Two-step verification (2FA)**: A guided setup under Settings → Security binds an authenticator app (TOTP — Google Authenticator, Microsoft Authenticator and the like) by QR code or typed key, with one-time recovery codes. Signing in — with a password, with GitHub or Google, or over the SSH terminal — then asks for a code as well. Operators choose who must have it (nobody, administrators before using the backoffice, all administrators, or everyone), the name apps show, and how long a browser may be remembered; they can see adoption and reset it for somebody who lost their phone.
 - **Security and Rendering**: Frontend uses Vue template bindings with no `innerHTML` or `v-html`; upstream credentials stored encrypted; dark, light, and system theme options.
 
 ---
@@ -150,11 +152,11 @@ Online documentation is hosted on Cloudflare Pages:
 
 | 指标 / Metric | 实测数据 / Measurement |
 | --- | --- |
-| 二进制体积 / Binary size | 20.7 MB（Linux amd64；使用 `-tags nosqlite` 为 17.0 MB） |
+| 二进制体积 / Binary size | 20.9 MB（Linux amd64；使用 `-tags nosqlite` 为 17.2 MB） |
 | 冷启动就绪时间 / Cold start | ~28 ms |
 | 空闲内存占用 / Idle RSS | ~16 MB |
 | 20 并发流式峰值 / Peak under 20 concurrency | ~54 MB 内存，11 个 OS 线程 |
-| 首次加载传输体积 / Wire payload | 打开对话界面传输 168.92 kB（140.85 kB JS + 28.07 kB CSS）；中文语言包 (28.84 kB)、管理后台 (72.51 kB)、终端 (7.31 kB)、公式渲染器 (3.65 kB) 按需分包加载 |
+| 首次加载传输体积 / Wire payload | 打开对话界面传输 176.74 kB（147.32 kB JS + 29.42 kB CSS）；中文语言包 (30.78 kB)、管理后台 (75.46 kB)、终端 (7.20 kB)、公式渲染器 (3.61 kB) 按需分包加载 |
 | 后台常驻协程 / Background goroutines | 1 个（10 分钟周期的系统清理协程） |
 | Go 直接依赖 / Direct Go dependencies | 3 个（SQLite 驱动、pgx、x/crypto） |
 | 前端运行时依赖 / Frontend runtime dependencies | 4 个（`vue`、`vue-router`、`@vueuse/core`、`lucide-vue-next`） |

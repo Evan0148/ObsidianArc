@@ -13,6 +13,7 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/database"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/group"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/mail"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/secret"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/settings"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/turnstile"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/user"
@@ -61,6 +62,18 @@ type Service struct {
 	// that needs mail reports itself as unavailable rather than
 	// failing halfway through.
 	mailer *mail.Sender
+
+	// Two-step sign-in. The box seals the secrets authenticator apps hold;
+	// the key signs remembered browsers and keys recovery-code digests.
+	// Both are nil on a build with no instance secret, where two-step
+	// sign-in reports itself unavailable rather than inventing a key.
+	twoFactorBox *secret.Box
+	twoFactorKey []byte
+	// Its own budget, apart from the password limiter's: see spendCode.
+	codes *Limiter
+	// Told when the second step is switched on or off, or a recovery code
+	// is spent. Nil records nothing.
+	OnTwoFactor func(context.Context, TwoFactorEvent)
 }
 
 func NewService(
@@ -71,7 +84,7 @@ func NewService(
 	mailer *mail.Sender,
 	cfg config.Config,
 ) *Service {
-	return &Service{
+	service := &Service{
 		db:       db,
 		users:    users,
 		groups:   groups,
@@ -80,9 +93,18 @@ func NewService(
 		hasher:   NewHasher(cfg.Password),
 		cfg:      cfg.Session,
 		limiter:  NewLimiter(),
+		codes:    NewLimiter(),
 		signups:  newSignupGate(),
 		mailer:   mailer,
 	}
+	if len(cfg.SecretKey) > 0 {
+		box, boxErr := secret.New(cfg.SecretKey, secret.PurposeTwoFactor)
+		key, keyErr := secret.DeriveKey(cfg.SecretKey, secret.PurposeTwoFactorDigest)
+		if boxErr == nil && keyErr == nil {
+			service.twoFactorBox, service.twoFactorKey = box, key
+		}
+	}
+	return service
 }
 
 func (s *Service) Sessions() *SessionStore { return s.sessions }
@@ -555,6 +577,9 @@ type LoginInput struct {
 	Password   string
 	IP         string
 	UA         string
+	// The remembered-browser cookie, when there is one. It stands in for the
+	// code, never for the password.
+	Remembered string
 }
 
 // Login verifies a credential and issues a session.
@@ -562,6 +587,9 @@ type LoginInput struct {
 // Every failure path returns the same error, and an unknown account still
 // pays for a full Argon2id verification, so neither the message nor the
 // timing distinguishes "no such user" from "wrong password".
+//
+// An account with two-step sign-in comes back as *SecondFactorRequired
+// carrying a pending token: the password was right, and nothing is open yet.
 func (s *Service) Login(ctx context.Context, in LoginInput) (user.User, string, error) {
 	if err := s.LoginChallenge.Check(ctx, in.Turnstile, in.IP); err != nil {
 		return user.User{}, "", err
@@ -617,13 +645,11 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (user.User, string, 
 		}
 	}
 
-	token, _, err := s.sessions.Create(ctx, account.ID, s.cfg.TTL, in.IP, in.UA)
+	token, err := s.secondStep(ctx, account, in.Remembered, in.IP, in.UA)
 	if err != nil {
 		return user.User{}, "", err
 	}
-	now := time.Now().UnixMilli()
-	_ = s.users.MarkLogin(ctx, account.ID, now)
-	account.LastLoginAt = now
+	account.LastLoginAt = time.Now().UnixMilli()
 	return account, token, nil
 }
 
@@ -780,6 +806,10 @@ func (s *Service) SetPassword(ctx context.Context, userID, newPassword string, a
 // Authenticate resolves a cookie to its account. A disabled account is
 // rejected here, so a session issued before the account was disabled stops
 // working on its next request rather than at its next expiry.
+//
+// A session still waiting for its second step is refused with
+// ErrSignInIncomplete: it proves a password, and a password is not what an
+// account with two-step sign-in agreed to be enough.
 func (s *Service) Authenticate(ctx context.Context, token string) (user.User, Session, error) {
 	session, account, err := s.sessions.GetWithUser(ctx, token)
 	if err != nil {
@@ -787,6 +817,9 @@ func (s *Service) Authenticate(ctx context.Context, token string) (user.User, Se
 	}
 	if !account.IsActive() {
 		return user.User{}, Session{}, ErrAccountDisabled
+	}
+	if session.TwoFactorPending {
+		return user.User{}, Session{}, ErrSignInIncomplete
 	}
 	if time.Since(time.UnixMilli(account.LastActiveAt)) >= time.Minute {
 		now := time.Now().UnixMilli()
