@@ -308,72 +308,80 @@ async function remove(project: Project): Promise<void> {
         </div>
 
         <!-- Expanded project conversations -->
-        <div v-if="editingID !== project.id && expandedProjects[project.id]" class="ai-project-convs-wrap">
-          <button
-            type="button"
-            class="ai-project-new-chat"
-            :title="t('newConversationInProject')"
-            @click.stop="createProjectChat(project.id)"
-          >
-            <IconPlus :size="12" />
-            <span>{{ t('newConversationInProject') }}</span>
-          </button>
-
-          <span v-if="loadingProjects[project.id]" class="ai-chat-list-live">
-            <span class="ai-chat-spinner" />
-          </span>
-
-          <template v-else-if="projectConversations[project.id]?.length">
-            <div
-              v-for="conv in projectConversations[project.id]"
-              :key="conv.id"
-              class="ai-chat-list-item ai-project-conv-item"
-              :class="{ active: conv.id === activeID }"
-              @contextmenu.prevent="onRowContextMenu($event)"
-            >
+        <div
+          v-if="editingID !== project.id"
+          class="ai-project-convs-collapse"
+          :class="{ open: !!expandedProjects[project.id] }"
+        >
+          <div class="ai-project-convs-inner">
+            <div class="ai-project-convs-wrap">
               <button
                 type="button"
-                class="ai-chat-list-open"
-                @click="openProjectConv(project.id, conv.id)"
-                @dblclick="rename(conv)"
+                class="ai-project-new-chat"
+                :title="t('newConversationInProject')"
+                @click.stop="createProjectChat(project.id)"
               >
-                <span class="ai-chat-list-title">{{ conv.title || t('newChat') }}</span>
+                <IconPlus :size="12" />
+                <span>{{ t('newConversationInProject') }}</span>
               </button>
-              <span
-                v-if="conv.id === pendingID"
-                class="ai-chat-list-live"
-                :title="t('thinking')"
-              ><span class="ai-chat-spinner" /></span>
-              <OaMenu group-class="ai-chat-item-menu" :menu-class="'ai-chat-context-menu' + (openUpMap[conv.id] ? ' open-up' : '')">
-                <template #trigger="{ open: menuOpen, toggle }">
+
+              <span v-if="loadingProjects[project.id]" class="ai-chat-list-live">
+                <span class="ai-chat-spinner" />
+              </span>
+
+              <template v-else-if="projectConversations[project.id]?.length">
+                <div
+                  v-for="conv in projectConversations[project.id]"
+                  :key="conv.id"
+                  class="ai-chat-list-item ai-project-conv-item"
+                  :class="{ active: conv.id === activeID }"
+                  @contextmenu.prevent="onRowContextMenu($event)"
+                >
                   <button
                     type="button"
-                    class="ai-chat-list-more"
-                    :class="{ active: menuOpen }"
-                    :title="t('moreOptions')"
-                    :aria-label="t('moreOptions')"
-                    aria-haspopup="menu"
-                    :aria-expanded="menuOpen ? 'true' : 'false'"
-                    @click.stop="handleMenuTrigger($event, conv.id, toggle)"
+                    class="ai-chat-list-open"
+                    @click="openProjectConv(project.id, conv.id)"
+                    @dblclick="rename(conv)"
                   >
-                    <IconMoreVertical :size="13" />
+                    <span class="ai-chat-list-title">{{ conv.title || t('newChat') }}</span>
                   </button>
-                </template>
-                <template #default="{ close }">
-                  <OaMenuItem :title="t('rename')" @click.stop="close(); rename(conv)">
-                    <template #leading><IconEdit :size="13" /></template>
-                  </OaMenuItem>
-                  <OaMenuItem v-if="canArchive" :title="t('archive')" @click.stop="close(); archiveProjectConv(project, conv)">
-                    <template #leading><IconArchive :size="13" /></template>
-                  </OaMenuItem>
-                  <OaMenuItem v-if="canDelete" :title="t('deleteChat')" @click.stop="close(); removeProjectConv(project, conv)">
-                    <template #leading><IconTrash :size="13" /></template>
-                  </OaMenuItem>
-                </template>
-              </OaMenu>
+                  <span
+                    v-if="conv.id === pendingID"
+                    class="ai-chat-list-live"
+                    :title="t('thinking')"
+                  ><span class="ai-chat-spinner" /></span>
+                  <OaMenu group-class="ai-chat-item-menu" :menu-class="'ai-chat-context-menu' + (openUpMap[conv.id] ? ' open-up' : '')">
+                    <template #trigger="{ open: menuOpen, toggle }">
+                      <button
+                        type="button"
+                        class="ai-chat-list-more"
+                        :class="{ active: menuOpen }"
+                        :title="t('moreOptions')"
+                        :aria-label="t('moreOptions')"
+                        aria-haspopup="menu"
+                        :aria-expanded="menuOpen ? 'true' : 'false'"
+                        @click.stop="handleMenuTrigger($event, conv.id, toggle)"
+                      >
+                        <IconMoreVertical :size="13" />
+                      </button>
+                    </template>
+                    <template #default="{ close }">
+                      <OaMenuItem :title="t('rename')" @click.stop="close(); rename(conv)">
+                        <template #leading><IconEdit :size="13" /></template>
+                      </OaMenuItem>
+                      <OaMenuItem v-if="canArchive" :title="t('archive')" @click.stop="close(); archiveProjectConv(project, conv)">
+                        <template #leading><IconArchive :size="13" /></template>
+                      </OaMenuItem>
+                      <OaMenuItem v-if="canDelete" :title="t('deleteChat')" @click.stop="close(); removeProjectConv(project, conv)">
+                        <template #leading><IconTrash :size="13" /></template>
+                      </OaMenuItem>
+                    </template>
+                  </OaMenu>
+                </div>
+              </template>
+              <p v-else class="ai-project-empty-convs">{{ t('noProjectConversations') }}</p>
             </div>
-          </template>
-          <p v-else class="ai-project-empty-convs">{{ t('noProjectConversations') }}</p>
+          </div>
         </div>
       </template>
     </OaScrollArea>

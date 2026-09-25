@@ -219,6 +219,11 @@ defineExpose({ focus: () => composer.value?.focus() });
              own mode, and a toggle over a running thread would offer to
              change something it cannot. -->
         <div class="ai-mode-switch" role="tablist" :aria-label="t('modeChat')">
+          <span
+            class="ai-mode-pill"
+            :class="{ 'mode-work': pendingMode === 'work' }"
+            aria-hidden="true"
+          />
           <button
             v-for="option in MODES"
             :key="option"
@@ -231,16 +236,27 @@ defineExpose({ focus: () => composer.value?.focus() });
           >{{ t(option === 'work' ? 'modeWork' : 'modeChat') }}</button>
         </div>
 
-        <h3 class="ai-chat-empty-title">{{ isWork ? t('workGreeting') : greeting() }}</h3>
-        <p class="ai-chat-empty-body">{{ isWork ? t('workBlurb') : t('emptyBody') }}</p>
-        <div v-if="!isWork" class="ai-chat-suggestions">
-          <button
-            v-for="key in suggestions"
-            :key="key"
-            type="button"
-            class="ai-chat-suggestion"
-            @click="ask(key)"
-          >{{ t(key) }}</button>
+        <div class="ai-chat-empty-intro-wrap">
+          <Transition name="ai-mode-text" mode="out-in">
+            <div :key="pendingMode" class="ai-chat-empty-intro">
+              <h3 class="ai-chat-empty-title">{{ isWork ? t('workGreeting') : greeting() }}</h3>
+              <p class="ai-chat-empty-body">{{ isWork ? t('workBlurb') : t('emptyBody') }}</p>
+            </div>
+          </Transition>
+        </div>
+
+        <div class="ai-chat-suggestions-accordion" :class="{ open: !isWork }">
+          <div class="ai-chat-suggestions-inner">
+            <div class="ai-chat-suggestions">
+              <button
+                v-for="key in suggestions"
+                :key="key"
+                type="button"
+                class="ai-chat-suggestion"
+                @click="ask(key)"
+              >{{ t(key) }}</button>
+            </div>
+          </div>
         </div>
       </div>
     </OaScrollArea>

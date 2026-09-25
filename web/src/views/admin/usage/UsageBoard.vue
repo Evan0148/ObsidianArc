@@ -14,6 +14,7 @@ import { compactNumber, relativeTime } from '@/lib/format';
 import { formatDuration, percent } from './scale';
 import { metricOf, type BoardKind, type BoardMetric } from './shape';
 import { maskUser, maskProvider, maskBilling, isMasked } from '@/admin/safeMode';
+import { IconChevron } from '@/icons';
 
 const props = withDefaults(defineProps<{
   rows: readonly UsageBreakdown[];
@@ -44,7 +45,9 @@ const total = computed(() => props.metric === 'users'
   // widest row's audience rather than of a sum that counts some twice.
   ? Math.max(0, ...ranked.value.map((row) => row.users ?? 0))
   : ranked.value.reduce((sum, row) => sum + metricOf(row, props.metric), 0));
-const shown = computed(() => expanded.value ? ranked.value : ranked.value.slice(0, props.limit));
+const topRows = computed(() => ranked.value.slice(0, props.limit));
+const extraRows = computed(() => ranked.value.slice(props.limit));
+const shown = computed(() => expanded.value ? ranked.value : topRows.value);
 
 function value(row: UsageBreakdown): string {
   const figure = metricOf(row, props.metric);
@@ -93,7 +96,7 @@ function notes(row: UsageBreakdown): string[] {
   <p v-if="!ranked.length" class="oa-board-empty">{{ props.emptyText }}</p>
   <template v-else>
     <ol class="oa-board" :class="`oa-board-${props.kind}`">
-      <li v-for="(row, index) in shown" :key="row.key || '·'">
+      <li v-for="(row, index) in topRows" :key="row.key || `top-${index}`">
         <component
           :is="props.selectable && row.key ? 'button' : 'div'"
           :type="props.selectable && row.key ? 'button' : undefined"
@@ -116,9 +119,49 @@ function notes(row: UsageBreakdown): string[] {
           </span>
         </component>
       </li>
+
+      <li v-if="extraRows.length" class="oa-board-collapse-item">
+        <div class="oa-board-collapse" :class="{ open: expanded }">
+          <div class="oa-board-collapse-inner">
+            <ol class="oa-board-sublist">
+              <li v-for="(row, i) in extraRows" :key="row.key || `extra-${i}`">
+                <component
+                  :is="props.selectable && row.key ? 'button' : 'div'"
+                  :type="props.selectable && row.key ? 'button' : undefined"
+                  class="oa-board-row"
+                  :title="props.selectable && row.key ? t('boardDrill', { name: name(row) }) : undefined"
+                  @click="props.selectable && row.key && emit('select', row.key)"
+                >
+                  <span class="oa-board-rank">{{ String(props.limit + i + 1).padStart(2, '0') }}</span>
+                  <span class="oa-board-mark" aria-hidden="true">{{ initial(row) }}</span>
+                  <span class="oa-board-main">
+                    <span class="oa-board-line">
+                      <span class="oa-board-name">{{ name(row) }}</span>
+                      <strong class="oa-board-value">{{ value(row) }}</strong>
+                    </span>
+                    <span class="oa-board-line oa-board-sub">
+                      <span class="oa-board-notes">{{ notes(row).join(' · ') }}</span>
+                      <small>{{ percent(share(row)) }}</small>
+                    </span>
+                    <span class="oa-board-track" aria-hidden="true"><span :style="{ width: `${Math.max(share(row) * 100, share(row) > 0 ? 1.5 : 0)}%` }" /></span>
+                  </span>
+                </component>
+              </li>
+            </ol>
+          </div>
+        </div>
+      </li>
     </ol>
-    <button v-if="ranked.length > props.limit" type="button" class="oa-board-more" @click="expanded = !expanded">
-      {{ expanded ? t('boardFewer') : t('boardAll', { count: ranked.length }) }}
+    <button
+      v-if="ranked.length > props.limit"
+      type="button"
+      class="oa-board-more"
+      :class="{ open: expanded }"
+      :aria-expanded="expanded"
+      @click="expanded = !expanded"
+    >
+      <span>{{ expanded ? t('boardFewer') : t('boardAll', { count: ranked.length }) }}</span>
+      <IconChevron :size="12" class="oa-board-more-chevron" :class="{ open: expanded }" />
     </button>
   </template>
 </template>

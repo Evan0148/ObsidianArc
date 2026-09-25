@@ -456,11 +456,34 @@
   align-items: center;
   flex-shrink: 0;
   color: var(--ai-text-secondary);
-  transition: transform 0.15s ease;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ai-project-chevron.expanded {
   transform: rotate(90deg);
+}
+
+.ai-project-convs-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 0.34s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.26s cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0.34s;
+  overflow: hidden;
+
+  &.open {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+  }
+}
+
+.ai-project-convs-inner {
+  min-height: 0;
+  overflow: hidden;
 }
 
 .ai-project-convs-wrap {
@@ -825,7 +848,7 @@
   content: '▸';
   display: inline-block;
   margin-right: 6px;
-  transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ai-thinking.open > .ai-thinking-head::before,
@@ -839,8 +862,8 @@
   opacity: 0;
   overflow: hidden;
   transition:
-    grid-template-rows 0.3s cubic-bezier(0.2, 0, 0, 1),
-    opacity 0.25s cubic-bezier(0.2, 0, 0, 1);
+    grid-template-rows 0.34s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.26s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ai-thinking.open > .ai-thinking-content,
@@ -859,6 +882,13 @@
   color: var(--ai-text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
+  transform: translateY(-2px);
+  transition: transform 0.34s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ai-thinking.open .ai-thinking-body,
+.ai-thinking[open] .ai-thinking-body {
+  transform: translateY(0);
 }
 
 /* One call the model made on the work surface. Same collapsed-box shape as
@@ -869,16 +899,23 @@
   padding: 6px 10px;
   border-radius: 12px;
   background: var(--ai-surface-container-low);
+  transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ai-tool-call-head {
   display: flex;
   align-items: center;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   gap: 8px;
   cursor: pointer;
   list-style: none;
   user-select: none;
   padding: 2px 0;
+  text-align: left;
 }
 
 .ai-tool-call-head::-webkit-details-marker {
@@ -888,11 +925,32 @@
 .ai-tool-call-head::before {
   content: '▸';
   flex: none;
-  transition: transform 0.15s ease;
+  color: var(--ai-text-secondary);
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.ai-tool-call.open > .ai-tool-call-head::before,
 .ai-tool-call[open] > .ai-tool-call-head::before {
   transform: rotate(90deg);
+}
+
+.ai-tool-call-content {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  overflow: hidden;
+  transition:
+    grid-template-rows 0.34s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.26s cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0.34s;
+}
+
+.ai-tool-call.open > .ai-tool-call-content,
+.ai-tool-call[open] > .ai-tool-call-content {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
 }
 
 /* The command name, not prose, so it reads as code even collapsed. */
@@ -934,10 +992,18 @@
 }
 
 .ai-tool-call-body {
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
   margin-top: 6px;
+  transform: translateY(-3px);
+  transition: transform 0.34s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ai-tool-call.open .ai-tool-call-body,
+.ai-tool-call[open] .ai-tool-call-body {
+  transform: translateY(0);
 }
 
 .ai-tool-call-label {
@@ -1062,15 +1128,40 @@
    A segmented pill, like every other choice here: no outline, and the fill
    is what says which one is on. */
 .ai-mode-switch {
+  position: relative;
   display: inline-flex;
   gap: 2px;
   margin: 0 0 18px;
   padding: 3px;
   border-radius: 999px;
   background: var(--ai-surface-container-low);
+  user-select: none;
+}
+
+.ai-mode-pill {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 8px) / 2);
+  border-radius: 999px;
+  background: var(--ai-surface-container-high);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 0.5px 1px rgba(0, 0, 0, 0.04);
+  transition: transform 0.34s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+  z-index: 0;
+
+  &.mode-work {
+    transform: translateX(calc(100% + 2px));
+  }
 }
 
 .ai-mode-choice {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  min-width: 68px;
+  text-align: center;
   padding: 6px 20px;
   border: none;
   border-radius: 999px;
@@ -1079,16 +1170,27 @@
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.16s ease, color 0.16s ease;
+  transition:
+    color 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+
+  &:hover {
+    color: var(--ai-text);
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+
+  &.active {
+    color: var(--ai-text);
+    font-weight: 600;
+  }
 }
 
-.ai-mode-choice:hover {
-  color: var(--ai-text);
-}
-
-.ai-mode-choice.active {
+/* Fallback background if pill is not rendered */
+.ai-mode-switch:not(:has(.ai-mode-pill)) .ai-mode-choice.active {
   background: var(--ai-surface-container-high);
-  color: var(--ai-text);
 }
 
 /* What the work surface may reach, on the composer row beside the model.
@@ -1111,6 +1213,27 @@
   color: var(--ai-danger);
 }
 
+.ai-chat-empty-intro-wrap {
+  min-height: 48px;
+}
+
+.ai-mode-text-enter-active,
+.ai-mode-text-leave-active {
+  transition:
+    opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ai-mode-text-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.ai-mode-text-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
 .ai-chat-empty-title {
   margin: 0 0 6px;
   font-size: 14px;
@@ -1122,6 +1245,34 @@
   font-size: 12px;
   line-height: 1.6;
   color: var(--ai-text-secondary);
+}
+
+.ai-chat-suggestions-accordion {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+  visibility: hidden;
+  transition:
+    grid-template-rows 0.36s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.36s cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0.36s;
+  overflow: hidden;
+
+  &.open {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+    visibility: visible;
+  }
+}
+
+.ai-chat-suggestions-inner {
+  min-height: 0;
+  overflow: hidden;
 }
 
 .ai-chat-suggestions {
@@ -1140,10 +1291,20 @@
   font-size: 12px;
   text-align: left;
   cursor: pointer;
-}
+  transition:
+    background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 
-.ai-chat-suggestion:hover {
-  background: var(--ai-state-hover);
+  &:hover {
+    background: var(--ai-state-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+  }
+
+  &:active {
+    transform: translateY(0) scale(0.98);
+  }
 }
 
 .ai-chat-setup {
