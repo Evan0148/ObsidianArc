@@ -197,8 +197,8 @@ func (h *Handlers) callback(w http.ResponseWriter, r *http.Request) {
 	if next == "" {
 		next = "/"
 	}
-	token, err := h.service.auth.StartSession(r.Context(), account, h.address(r), r.UserAgent(),
-		h.service.auth.RememberedFrom(r))
+	ip, ua := h.address(r), r.UserAgent()
+	token, err := h.service.auth.StartSession(r.Context(), account, ip, ua, h.service.auth.RememberedFrom(r))
 	// The provider vouched for them and the account wants a code as well.
 	// The pending session goes into the cookie and the sign-in page asks
 	// for the rest, then carries on to wherever this was going.
@@ -213,6 +213,10 @@ func (h *Handlers) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.service.auth.SetCookie(w, token)
+	// Reached only past the *SecondFactorRequired branch above, so this is
+	// always a full session — a provider vouching for somebody is a first
+	// factor the same way a password is (see StartSession's own comment).
+	h.service.auth.AttachDevice(r.Context(), w, r, account, token, ip, ua)
 	http.Redirect(w, r, next, http.StatusFound)
 }
 
@@ -298,8 +302,8 @@ func (h *Handlers) completeSignup(w http.ResponseWriter, r *http.Request) error 
 	// An account this form just opened has no second step yet — but the
 	// completion can also land on an existing account by address, and that
 	// one may.
-	token, err := h.service.auth.StartSession(r.Context(), account, h.address(r), r.UserAgent(),
-		h.service.auth.RememberedFrom(r))
+	ip, ua := h.address(r), r.UserAgent()
+	token, err := h.service.auth.StartSession(r.Context(), account, ip, ua, h.service.auth.RememberedFrom(r))
 	var second *auth.SecondFactorRequired
 	if errors.As(err, &second) {
 		h.clearPending(w)
@@ -311,6 +315,9 @@ func (h *Handlers) completeSignup(w http.ResponseWriter, r *http.Request) error 
 	}
 	h.clearPending(w)
 	h.service.auth.SetCookie(w, token)
+	// Reached only past the *SecondFactorRequired branch above, so this is
+	// always a full session.
+	h.service.auth.AttachDevice(r.Context(), w, r, account, token, ip, ua)
 	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"redirect": next})
 }
 

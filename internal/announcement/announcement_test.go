@@ -8,6 +8,7 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/config"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/database"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/group"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/notify"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/user"
 )
 
@@ -199,6 +200,116 @@ func TestEmptyDisplayModeBecomesOnce(t *testing.T) {
 	record := f.write(t, Input{Title: "Unset", Published: true})
 	if record.DisplayMode != DisplayOnce {
 		t.Errorf("display mode = %q, want %q", record.DisplayMode, DisplayOnce)
+	}
+}
+
+// Publishing reaches everyone; editing an already-published notice, or
+// saving a draft, must not ring the bell a second time or a first one.
+func TestPublishingNotifiesEveryoneOnceOnTheTransition(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	notifyStore := notify.NewStore(f.store.db)
+	f.store.Notify = notifyStore
+	everyone := user.User{CreatedAt: 0}
+
+	draft, err := f.store.Create(ctx, Input{Title: "Draft", Published: false})
+	if err != nil {
+		t.Fatalf("create draft: %v", err)
+	}
+	if notices, err := notifyStore.List(ctx, everyone, 10, 0); err != nil || len(notices) != 0 {
+		t.Fatalf("notices after a draft = %+v (err %v), want none", notices, err)
+	}
+
+	live := f.write(t, Input{Title: "Maintenance window", Published: true})
+	notices, err := notifyStore.List(ctx, everyone, 10, 0)
+	if err != nil {
+		t.Fatalf("list notices: %v", err)
+	}
+	if len(notices) != 1 || notices[0].Kind != "announcement" || notices[0].Params["title"] != "Maintenance window" {
+		t.Fatalf("notices = %+v, want the one publish notice", notices)
+	}
+
+	// Editing the wording of something already live is not "something new".
+	if _, err := f.store.Update(ctx, live.ID, Input{Title: "Maintenance window (updated)", Published: true}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if notices, err = notifyStore.List(ctx, everyone, 10, 0); err != nil || len(notices) != 1 {
+		t.Fatalf("notices after an edit = %+v (err %v), want still just the one", notices, err)
+	}
+
+	// Publishing the draft afterwards is its own transition and does ring
+	// the bell.
+	if _, err := f.store.Update(ctx, draft.ID, Input{Title: "Draft", Published: true}); err != nil {
+		t.Fatalf("publish the draft: %v", err)
+	}
+	if notices, err = notifyStore.List(ctx, everyone, 10, 0); err != nil || len(notices) != 2 {
+		t.Fatalf("notices after publishing the draft = %+v (err %v), want two", notices, err)
+	}
+
+	// nil Notify — every instance before this feature — must keep working.
+	f.store.Notify = nil
+	if _, err := f.store.Create(ctx, Input{Title: "Unnotified", Published: true}); err != nil {
+		t.Errorf("create with Notify unset: %v", err)
+	}
+}
+
+// A retracted headline must not keep ringing in every account's bell for the
+// rest of the retention window: unpublishing removes the notice the publish
+// produced, the same way it would if a reader had never seen it pushed at
+// all.
+func TestUnpublishingRetractsTheNotice(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	notifyStore := notify.NewStore(f.store.db)
+	f.store.Notify = notifyStore
+	everyone := user.User{CreatedAt: 0}
+
+	live := f.write(t, Input{Title: "Maintenance window", Published: true})
+	if notices, err := notifyStore.List(ctx, everyone, 10, 0); err != nil || len(notices) != 1 {
+		t.Fatalf("notices after publish = %+v (err %v), want one", notices, err)
+	}
+
+	if _, err := f.store.Update(ctx, live.ID, Input{Title: live.Title, Published: false}); err != nil {
+		t.Fatalf("unpublish: %v", err)
+	}
+	if notices, err := notifyStore.List(ctx, everyone, 10, 0); err != nil || len(notices) != 0 {
+		t.Fatalf("notices after unpublishing = %+v (err %v), want none", notices, err)
+	}
+
+	// Publishing it again is its own transition and rings the bell again.
+	if _, err := f.store.Update(ctx, live.ID, Input{Title: live.Title, Published: true}); err != nil {
+		t.Fatalf("republish: %v", err)
+	}
+	if notices, err := notifyStore.List(ctx, everyone, 10, 0); err != nil || len(notices) != 1 {
+		t.Fatalf("notices after republishing = %+v (err %v), want one again", notices, err)
+	}
+}
+
+// Deleting a published announcement outright must retract it the same way
+// unpublishing does — there is no editor left afterwards to unpublish it
+// from.
+func TestDeletingAPublishedAnnouncementRetractsItsNotice(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	notifyStore := notify.NewStore(f.store.db)
+	f.store.Notify = notifyStore
+	everyone := user.User{CreatedAt: 0}
+
+	live := f.write(t, Input{Title: "Going away", Published: true})
+	unrelated := f.write(t, Input{Title: "Staying", Published: true})
+	if notices, err := notifyStore.List(ctx, everyone, 10, 0); err != nil || len(notices) != 2 {
+		t.Fatalf("notices after two publishes = %+v (err %v), want two", notices, err)
+	}
+
+	if err := f.store.Delete(ctx, live.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	notices, err := notifyStore.List(ctx, everyone, 10, 0)
+	if err != nil {
+		t.Fatalf("list notices: %v", err)
+	}
+	if len(notices) != 1 || notices[0].Params["title"] != unrelated.Title {
+		t.Fatalf("notices after deleting one = %+v, want only the unrelated one left", notices)
 	}
 }
 

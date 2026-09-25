@@ -330,6 +330,61 @@ func TestDisablingProviderWhileAddingModelLeavesModelDisabled(t *testing.T) {
 	}
 }
 
+// The guard the health checker leans on: two callers racing the same
+// decision against the same enabled model must not both believe they were
+// the one that flipped it. The WHERE clause is what makes this safe with no
+// separate lock — the check and the write are one statement, so only the
+// caller whose write actually finds the row still enabled changes anything.
+func TestDisableIfEnabledFlipsExactlyOnceUnderConcurrency(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	upstream := f.provider(t, "Example")
+	record := f.model(t, upstream.ID, "flaky-model")
+
+	const racers = 8
+	start := make(chan struct{})
+	flips := make(chan bool, racers)
+	errs := make(chan error, racers)
+	var wg sync.WaitGroup
+	wg.Add(racers)
+	for range racers {
+		go func() {
+			defer wg.Done()
+			<-start
+			flipped, err := f.models.DisableIfEnabled(ctx, record.ID)
+			flips <- flipped
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(flips)
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	trueCount := 0
+	for flipped := range flips {
+		if flipped {
+			trueCount++
+		}
+	}
+	if trueCount != 1 {
+		t.Fatalf("%d of %d racing calls reported flipping the model, want exactly 1", trueCount, racers)
+	}
+
+	stored, err := f.models.ByID(ctx, record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Enabled || !stored.AutoDisabled {
+		t.Fatalf("model = %+v, want it disabled with the auto-disabled flag set", stored)
+	}
+}
+
 // Authorize returns everything a turn needs, including the decrypted
 // credential, in one query.
 func TestAuthorizeResolvesTheProvider(t *testing.T) {

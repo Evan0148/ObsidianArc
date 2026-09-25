@@ -95,6 +95,9 @@ const form = ref({
   twoFactorRememberDays: 0 as number | null,
   backofficeMode: 'off',
   backofficeMinutes: 15 as number | null,
+  backofficeNetwork: false,
+  backofficeBrowser: false,
+  newDeviceEmail: false,
 });
 
 // --- two-step verification ------------------------------------------------------
@@ -326,6 +329,9 @@ function collect(): Record<string, string> {
     'security.two_factor_remember_days': String(form.value.twoFactorRememberDays ?? 0),
     'security.two_factor_backoffice_mode': form.value.backofficeMode,
     'security.two_factor_backoffice_minutes': String(form.value.backofficeMinutes ?? 15),
+    'security.two_factor_backoffice_network': String(form.value.backofficeNetwork),
+    'security.two_factor_backoffice_browser': String(form.value.backofficeBrowser),
+    'security.new_device_email': String(form.value.newDeviceEmail),
   };
 }
 
@@ -415,6 +421,7 @@ function eventLabel(event: string): string {
   if (event === 'api_restriction_lifted') return t('securityEventAPIRestrictionLifted');
   if (event === 'chat_challenge') return t('securityEventChatChallenge');
   if (event === 'two_factor') return t('securityEventTwoFactor');
+  if (event === 'new_device') return t('securityEventNewDevice');
   if (event === 'console_command') return t('securityEventConsoleCommand');
   return event;
 }
@@ -491,6 +498,9 @@ async function load(): Promise<void> {
       twoFactorRememberDays: Number(values['security.two_factor_remember_days'] ?? 0),
       backofficeMode: values['security.two_factor_backoffice_mode'] ?? 'off',
       backofficeMinutes: Number(values['security.two_factor_backoffice_minutes'] ?? 15),
+      backofficeNetwork: values['security.two_factor_backoffice_network'] === 'true',
+      backofficeBrowser: values['security.two_factor_backoffice_browser'] === 'true',
+      newDeviceEmail: values['security.new_device_email'] === 'true',
     };
     accept();
   } catch (failure) {
@@ -669,6 +679,15 @@ onMounted(load);
           :min="0"
           :max="365"
         />
+        <!-- Inert without SMTP for the reason verifyEmail is: the server
+             checks for mail before sending, so the switch alone does nothing. -->
+        <div :class="{ 'oa-field-inert': !mailConfigured }">
+          <OaSwitchField
+            v-model="form.newDeviceEmail"
+            :label="t('newDeviceEmailLabel')"
+            :hint="mailConfigured ? t('newDeviceEmailHint') : t('verifyEmailNoMail')"
+          />
+        </div>
       </AdminControlCard>
       <AdminControlCard id="secBackofficeVerify" v-show="visible('secBackofficeVerify')" :title="t('secBackofficeVerify')" :icon="IconLock" :hint="t('backofficeVerifyHint')">
         <OaSelectField
@@ -690,6 +709,10 @@ onMounted(load);
           :min="1"
           :max="10080"
         />
+        <template v-if="form.backofficeMode !== 'off'">
+          <OaSwitchField v-model="form.backofficeNetwork" :label="t('backofficeNetwork')" :hint="t('backofficeNetworkHint')" />
+          <OaSwitchField v-model="form.backofficeBrowser" :label="t('backofficeBrowser')" :hint="t('backofficeBrowserHint')" />
+        </template>
         <p v-if="selfWithout && form.backofficeMode !== 'off'" class="oa-field-hint oa-2fa-self">
           {{ t('twoFactorPolicySelfNote') }}
           <RouterLink to="/settings?tab=security">{{ t('twoFactorSetUpMine') }}</RouterLink>

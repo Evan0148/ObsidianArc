@@ -66,38 +66,26 @@ func (h *Handlers) dashboard(w http.ResponseWriter, r *http.Request) error {
 	dayBefore := usage.Filter{Since: now.Add(-48 * time.Hour).UnixMilli(), Until: day.Since}
 	week := usage.Filter{Since: now.AddDate(0, 0, -7).UnixMilli()}
 
-	today, err := h.usage.Totals(ctx, day)
-	if err != nil {
-		return httpx.Internal(err)
-	}
-	yesterday, err := h.usage.Totals(ctx, dayBefore)
-	if err != nil {
-		return httpx.Internal(err)
-	}
-	thisWeek, err := h.usage.Totals(ctx, week)
-	if err != nil {
-		return httpx.Internal(err)
-	}
 	metric := r.URL.Query().Get("metric")
-	topModels, err := h.usage.GroupBy(ctx, "model", metric, week)
-	if err != nil {
-		return httpx.Internal(err)
-	}
-	topUsers, err := h.usage.GroupBy(ctx, "user", metric, week)
-	if err != nil {
-		return httpx.Internal(err)
-	}
-	series, err := h.usage.Series(ctx, week, 6*time.Hour, zone)
-	if err != nil {
-		return httpx.Internal(err)
-	}
-	// When in the week people use it: the shape an operator plans
-	// maintenance around, and the one a total over seven days hides.
-	heatmap, err := h.usage.Heatmap(ctx, week, zone)
-	if err != nil {
-		return httpx.Internal(err)
-	}
-	recent, _, err := h.usage.List(ctx, usage.Filter{Limit: 8})
+	var (
+		today, yesterday, thisWeek usage.Totals
+		topModels, topUsers        []usage.Breakdown
+		series                     []usage.Point
+		heatmap                    []usage.Slot
+		recent                     []usage.Record
+	)
+	err = together(
+		func() (err error) { today, err = h.usage.Totals(ctx, day); return },
+		func() (err error) { yesterday, err = h.usage.Totals(ctx, dayBefore); return },
+		func() (err error) { thisWeek, err = h.usage.Totals(ctx, week); return },
+		func() (err error) { topModels, err = h.usage.GroupBy(ctx, "model", metric, week); return },
+		func() (err error) { topUsers, err = h.usage.GroupBy(ctx, "user", metric, week); return },
+		func() (err error) { series, err = h.usage.Series(ctx, week, 6*time.Hour, zone); return },
+		// When in the week people use it: the shape an operator plans
+		// maintenance around, and the one a total over seven days hides.
+		func() (err error) { heatmap, err = h.usage.Heatmap(ctx, week, zone); return },
+		func() (err error) { recent, _, err = h.usage.List(ctx, usage.Filter{Limit: 8}); return },
+	)
 	if err != nil {
 		return httpx.Internal(err)
 	}
@@ -196,6 +184,9 @@ var writableSettings = map[string]bool{
 	settings.TwoFactorRememberDays:      true,
 	settings.TwoFactorBackofficeMode:    true,
 	settings.TwoFactorBackofficeMinutes: true,
+	settings.TwoFactorBackofficeNetwork: true,
+	settings.TwoFactorBackofficeBrowser: true,
+	settings.NewDeviceEmail:             true,
 	settings.ChatAgentMaxRounds:         true,
 	settings.ChatChallengeRequests:      true,
 	settings.ChatChallengeWindowSecs:    true,

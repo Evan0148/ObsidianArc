@@ -38,6 +38,7 @@ func (h *Handlers) completeSignIn(w http.ResponseWriter, r *http.Request) error 
 		return twoFactorError(w, err)
 	}
 	h.service.SetCookie(w, token)
+	h.service.AttachDevice(r.Context(), w, r, account, token, httpx.ClientIP(r, h.trust), r.UserAgent())
 	if body.Remember {
 		h.service.Remember(w, account)
 	}
@@ -74,8 +75,9 @@ func (h *Handlers) enableTwoFactor(w http.ResponseWriter, r *http.Request) error
 	if err := httpx.DecodeJSON(w, r, &body, 4*1024); err != nil {
 		return err
 	}
+	ip, userAgent := clientOf(r, h.trust)
 	codes, updated, err := h.service.EnableTwoFactor(r.Context(), account.ID, body.Code, session.ID,
-		httpx.ClientIP(r, h.trust))
+		ip, userAgent)
 	if err != nil {
 		return twoFactorError(w, err)
 	}
@@ -119,7 +121,10 @@ func (h *Handlers) enterBackoffice(w http.ResponseWriter, r *http.Request) error
 	if err := httpx.DecodeJSON(w, r, &body, 4*1024); err != nil {
 		return err
 	}
-	err := h.service.EnterBackoffice(r.Context(), MustUser(r.Context()), body.Code, httpx.ClientIP(r, h.trust))
+	// The browser's address and agent, not the dispatched request's: typed
+	// into the web terminal, this arrives from inside the process.
+	ip, userAgent := clientOf(r, h.trust)
+	err := h.service.EnterBackoffice(r.Context(), MustUser(r.Context()), body.Code, ip, userAgent)
 	if errors.Is(err, ErrNoBackofficeVisit) {
 		return httpx.BadRequest("There is nothing here to unlock the backoffice for.")
 	}

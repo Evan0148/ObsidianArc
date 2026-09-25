@@ -13,6 +13,17 @@ import { t } from '../composables/useI18n';
 // Re-exported so an admin screen imports one module, the way every other
 // shape on this surface already does.
 export type { ApiKey };
+
+/** A session on the operator's side of the same list `DeviceSession` is for
+ *  an account's own screen — no "current" flag, since nothing about the
+ *  operator's own browser belongs in somebody else's device list. */
+export interface AdminSession {
+  id: string;
+  created_at: number;
+  last_seen_at: number;
+  ip: string;
+  user_agent: string;
+}
 import type { Account, Role, AccountStatus } from '../api/auth';
 import type { Conversation, Message } from '../api/chat';
 
@@ -578,6 +589,11 @@ export const adminApi = {
   userKeys: (id: string) => api.get<{ keys: ApiKey[] }>(`/api/admin/users/${id}/keys`),
   revokeUserKey: (id: string, keyID: string) =>
     api.delete<void>(`/api/admin/users/${id}/keys/${keyID}`),
+
+  userSessions: (id: string) => api.get<{ sessions: AdminSession[] }>(`/api/admin/users/${id}/sessions`),
+  revokeUserSession: (id: string, sessionID: string) =>
+    api.delete<void>(`/api/admin/users/${id}/sessions/${sessionID}`),
+  revokeAllUserSessions: (id: string) => api.delete<void>(`/api/admin/users/${id}/sessions`),
 
   userConversations: (id: string, query = '') =>
     api.get<{ conversations: Conversation[]; total: number }>(`/api/admin/users/${id}/conversations${query}`),

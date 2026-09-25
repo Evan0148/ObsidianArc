@@ -1,0 +1,133 @@
+// Turns a notification's kind + params into words and a glyph, in whichever
+// language the reader has chosen.
+//
+// The one rule this file exists to keep true: the server never sends a
+// sentence, only kind and params, so every string a reader sees for a
+// notification is produced here, at render time — a new language, or a
+// change of wording, is a change to this file alone.
+
+import { t, tn } from '@/composables/useI18n';
+import {
+  IconBell, IconInfo, IconLayers, IconLock, IconMessage, IconPulse, IconRefresh, IconShield, IconUser,
+  type OaIcon,
+} from '@/icons';
+import type { Notification } from '@/api/notifications';
+import type { StringKey } from '@/i18n';
+import { describeUserAgent } from '@/lib/ua';
+
+export interface NotificationText {
+  title: string;
+  body: string;
+  icon: OaIcon;
+}
+
+function text(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function count(value: unknown): number {
+  return typeof value === 'number' ? value : 0;
+}
+
+// What an administrator changed, as the server names it. Keys rather than
+// words on the wire, so the list reads in the reader's language; a key this
+// build does not know is left out rather than shown raw.
+const CHANGED: Record<string, StringKey> = {
+  profile: 'notifyWhatProfile',
+  role: 'notifyWhatRole',
+  group: 'notifyWhatGroup',
+  status: 'notifyWhatStatus',
+  api: 'notifyWhatAPI',
+  password: 'notifyWhatPassword',
+};
+
+const TWO_FACTOR: Record<string, StringKey> = {
+  enabled: 'notifyBodyTwoFactorEnabled',
+  disabled: 'notifyBodyTwoFactorDisabled',
+  reset: 'notifyBodyTwoFactorReset',
+  recovery_used: 'notifyBodyTwoFactorRecoveryUsed',
+  recovery_regenerated: 'notifyBodyTwoFactorRecoveryRegenerated',
+};
+
+function changed(value: unknown): string {
+  if (!Array.isArray(value)) return '';
+  return value
+    .map((key) => (typeof key === 'string' && CHANGED[key] ? t(CHANGED[key]) : ''))
+    .filter(Boolean)
+    .join(t('notifyWhatJoin'));
+}
+
+/** Describes one notification for the toast stack and the bell's list. */
+export function describeNotification(n: Notification): NotificationText {
+  const params = n.params ?? {};
+  switch (n.kind) {
+    case 'feedback_new':
+      return {
+        title: t('notifyTitleFeedbackNew'),
+        body: t('notifyBodyFeedbackNew', { title: text(params['title']) }),
+        icon: IconMessage,
+      };
+    case 'feedback_reply':
+      return { title: t('notifyTitleFeedbackReply'), body: t('notifyBodyFeedbackReply'), icon: IconMessage };
+    case 'announcement':
+      return {
+        title: t('notifyTitleAnnouncement'),
+        body: t('notifyBodyAnnouncement', { title: text(params['title']) }),
+        icon: IconInfo,
+      };
+    case 'cards_granted':
+      return {
+        title: t('notifyTitleCardsGranted'),
+        body: tn(count(params['count']), 'notifyBodyCardsGrantedOne', 'notifyBodyCardsGrantedOther'),
+        icon: IconLayers,
+      };
+    case 'quota_reset':
+      return { title: t('notifyTitleQuotaReset'), body: t('notifyBodyQuotaReset'), icon: IconRefresh };
+    case 'account_changed': {
+      const what = changed(params['what']);
+      return {
+        title: t('notifyTitleAccountChanged'),
+        body: what ? t('notifyBodyAccountChangedWhat', { what }) : t('notifyBodyAccountChanged'),
+        icon: IconUser,
+      };
+    }
+    case 'model_disabled':
+      return {
+        title: t('notifyTitleModelDisabled'),
+        body: t('notifyBodyModelDisabled', { model: text(params['model']) }),
+        icon: IconPulse,
+      };
+    case 'signup_flagged': {
+      const username = text(params['username']);
+      return {
+        title: username ? t('notifyTitleSignupFlaggedUser', { username }) : t('notifyTitleSignupFlagged'),
+        body: t('notifyBodySignupFlagged'),
+        icon: IconShield,
+      };
+    }
+    case 'new_device_login': {
+      const ua = text(params['ua']);
+      const ip = text(params['ip']);
+      return {
+        title: t('notifyTitleNewDeviceLogin'),
+        body: ua || ip
+          ? t('notifyBodyNewDeviceLoginFrom', { device: describeUserAgent(ua), ip: ip ? ` (${ip})` : '' })
+          : t('notifyBodyNewDeviceLogin'),
+        icon: IconShield,
+      };
+    }
+    case 'two_factor_changed': {
+      const kind = text(params['kind']);
+      return {
+        title: t('notifyTitleTwoFactorChanged'),
+        body: TWO_FACTOR[kind] ? t(TWO_FACTOR[kind]) : t('notifyBodyTwoFactorChanged'),
+        icon: IconLock,
+      };
+    }
+    default:
+      // A kind this build has never heard of — an older client after a
+      // server adds one. Shown rather than dropped: a blank title reads as a
+      // bug, a generic one reads as "something happened".
+      return { title: t('notifyTitleGeneric'), body: n.kind, icon: IconBell };
+  }
+}

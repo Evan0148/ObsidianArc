@@ -9,7 +9,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
 import {
   adminApi, emptyPolicy,
-  type Account, type AccountStatus, type ApiKey, type CardHolding, type Conversation,
+  type Account, type AccountStatus, type AdminSession, type ApiKey, type CardHolding, type Conversation,
   type Group, type Message, type QuotaWindowKind, type Role, type UsageBreakdown,
 } from '@/admin/api';
 import { ApiError } from '@/api/client';
@@ -37,6 +37,7 @@ import type { Stat } from '@/components/stat';
 import { t, tn } from '@/composables/useI18n';
 import { IconTrash } from '@/icons';
 import { absoluteTime, compactNumber, relativeTime } from '@/lib/format';
+import { describeUserAgent } from '@/lib/ua';
 import { currentUser, canAdmin, isSuperAdmin } from '@/stores/session';
 import { isMasked, maskUser, maskLog, maskBilling, maskCredential } from '@/admin/safeMode';
 import AdminFailure from './AdminFailure.vue';
@@ -137,6 +138,13 @@ const cards = ref<CardHolding | null>(null);
 /** Every model the account has used, by tokens: what its spending goes on. */
 const models = ref<UsageBreakdown[]>([]);
 const keys = ref<ApiKey[] | null>(null);
+const sessions = ref<AdminSession[] | null>(null);
+// Kept apart from `sessions` staying null: null-forever would read as "still
+// loading" and an empty array would read as "signed in nowhere", and a 403 on
+// a restricted operator is neither.
+const sessionsError = ref('');
+const revokingSession = ref('');
+const signOutAllBusy = ref(false);
 const conversations = ref<Conversation[] | null>(null);
 const conversationPage = ref<PageState>({ page: 1, pageSize: 20 });
 const conversationTotal = ref(0);
@@ -276,6 +284,8 @@ async function open(id: string): Promise<void> {
   mode.value = 'account';
   conversationPage.value.page = 1;
   keys.value = null;
+  sessions.value = null;
+  sessionsError.value = '';
   grantLabel.value = '';
   rescheduleLabel.value = '';
   rescheduling.value = '';
@@ -366,6 +376,11 @@ async function open(id: string): Promise<void> {
   void adminApi.userKeys(id)
     .then(({ keys: list }) => { keys.value = list; })
     .catch(() => { keys.value = []; });
+  void adminApi.userSessions(id)
+    .then(({ sessions: list }) => { sessions.value = list; })
+    .catch((failure: unknown) => {
+      sessionsError.value = failure instanceof ApiError ? failure.message : String(failure);
+    });
 }
 
 async function save(): Promise<void> {
@@ -560,6 +575,30 @@ function revokeKey(key: ApiKey): void {
     .catch((failure: unknown) => {
       panelError.value = failure instanceof ApiError ? failure.message : String(failure);
     });
+}
+
+function revokeSession(session: AdminSession): void {
+  const row = account.value;
+  if (!row) return;
+  revokingSession.value = session.id;
+  adminApi.revokeUserSession(row.id, session.id)
+    .then(() => { sessions.value = (sessions.value ?? []).filter((entry) => entry.id !== session.id); })
+    .catch((failure: unknown) => {
+      panelError.value = failure instanceof ApiError ? failure.message : String(failure);
+    })
+    .finally(() => { revokingSession.value = ''; });
+}
+
+function signOutEverywhere(): void {
+  const row = account.value;
+  if (!row) return;
+  signOutAllBusy.value = true;
+  adminApi.revokeAllUserSessions(row.id)
+    .then(() => { sessions.value = []; })
+    .catch((failure: unknown) => {
+      panelError.value = failure instanceof ApiError ? failure.message : String(failure);
+    })
+    .finally(() => { signOutAllBusy.value = false; });
 }
 
 // Stepping in rather than stacking: the panel replaces itself and offers a
@@ -1031,6 +1070,48 @@ const state = { q: '', role: '', status: '', group: '' };
           </div>
         </div>
       </div>
+
+      <OaFormSection :title="t('secDevices')" :hint="t('adminSessionsHint')" />
+      <div class="oa-keys-list">
+        <p v-if="sessionsError" class="oa-menu-empty">{{ sessionsError }}</p>
+        <p v-else-if="sessions === null" class="oa-menu-empty">{{ t('loading') }}</p>
+        <p v-else-if="!sessions.length" class="oa-menu-empty">{{ t('devicesEmpty') }}</p>
+        <div v-for="deviceSession in sessions ?? []" v-else :key="deviceSession.id" class="oa-key-row">
+          <div class="oa-key-info">
+            <div class="oa-key-title">
+              <span class="oa-key-name">{{ describeUserAgent(deviceSession.user_agent) }}</span>
+            </div>
+            <div class="oa-key-meta">
+              <span>{{ maskLog(deviceSession.ip) }}</span>
+              <span>{{ t('deviceLastActive', { when: relativeTime(deviceSession.last_seen_at) }) }}</span>
+            </div>
+          </div>
+          <!-- Signing somebody else out asks first, in place, the way every
+               other irreversible action in this interface does. -->
+          <div class="oa-key-actions">
+            <OaConfirmButton
+              class="oa-icon-btn danger"
+              :armed-label="t('confirmWord')"
+              :armed-title="t('deviceSignOutConfirm')"
+              :resting-title="t('deviceSignOut')"
+              :disabled="revokingSession === deviceSession.id"
+              @confirm="revokeSession(deviceSession)"
+            >
+              <IconTrash :size="15" />
+            </OaConfirmButton>
+          </div>
+        </div>
+      </div>
+      <OaConfirmButton
+        v-if="sessions && sessions.length > 1"
+        class="oa-btn"
+        :label="t('signOutEverywhere')"
+        :armed-label="t('confirmWord')"
+        :armed-title="t('signOutEverywhereConfirm', { name: maskUser(account.username) })"
+        :resting-title="t('signOutEverywhere')"
+        :disabled="signOutAllBusy"
+        @confirm="signOutEverywhere"
+      />
 
       <OaFormSection :title="t('secConversations')" :hint="t('conversationsHint')" />
       <button type="button" class="oa-btn" @click="openConversations">

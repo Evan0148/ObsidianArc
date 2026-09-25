@@ -74,6 +74,15 @@ type Service struct {
 	// Told when the second step is switched on or off, or a recovery code
 	// is spent. Nil records nothing.
 	OnTwoFactor func(context.Context, TwoFactorEvent)
+	// The caller's address as the proxy settings resolve it, for the check
+	// that ends a backoffice visit when the network changes. Set by the
+	// wiring, which owns the proxy trust; nil skips that check.
+	ClientIP func(*http.Request) string
+	// Told after a sign-in from a device this account has not used before.
+	// Called detached (see RecordDevice) so a slow or failing subscriber —
+	// the security log, a notification — cannot turn a sign-in that already
+	// succeeded into one that fails. Nil records nothing.
+	OnNewDevice func(context.Context, NewDeviceEvent)
 }
 
 func NewService(

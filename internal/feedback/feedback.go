@@ -25,6 +25,7 @@ import (
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/database"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/id"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/notify"
 )
 
 // Kind is what the reader is telling us: something is broken, or something
@@ -168,7 +169,14 @@ type Thread struct {
 	Replies  []Reply  `json:"replies"`
 }
 
-type Store struct{ db *database.DB }
+type Store struct {
+	db *database.DB
+	// Set by the wiring, never by NewStore: nil is what every existing test
+	// and every instance that predates this feature gets, and nil means
+	// exactly "push nothing" rather than a nil-pointer panic waiting for a
+	// caller that forgot it.
+	Notify *notify.Store
+}
 
 func NewStore(db *database.DB) *Store { return &Store{db: db} }
 
@@ -295,6 +303,18 @@ func (s *Store) Create(ctx context.Context, userID string, in Input) (Feedback, 
 			record.Title, record.Body, record.CreatedAt, record.UpdatedAt)
 		if err != nil {
 			return fmt.Errorf("feedback: insert: %w", err)
+		}
+
+		// In the same transaction as the report it is about: an operator must
+		// never be told about a report that the write below it rolled back.
+		if s.Notify != nil {
+			if err := s.Notify.Push(ctx, tx, notify.Notification{
+				Audience: notify.AudienceAdmins, Permission: "feedback",
+				Kind: "feedback_new", Params: map[string]any{"title": record.Title},
+				Link: "/admin/feedback/" + record.ID,
+			}); err != nil {
+				return fmt.Errorf("feedback: notify: %w", err)
+			}
 		}
 		return nil
 	})
@@ -520,6 +540,18 @@ func (s *Store) AddReply(ctx context.Context, in ReplyInput) (Reply, error) {
 			in.FromStaff, !in.FromStaff, now, in.FeedbackID)
 		if err != nil {
 			return fmt.Errorf("feedback: mark unread: %w", err)
+		}
+
+		// Only the operator's half is a notice: the author's own replies land
+		// where the operator already reads everything, on the backoffice's own
+		// unread flag above, not in an inbox meant for the other side.
+		if in.FromStaff && s.Notify != nil {
+			if err := s.Notify.Push(ctx, tx, notify.Notification{
+				Audience: notify.AudienceUser, UserID: owner,
+				Kind: "feedback_reply", Link: "/feedback",
+			}); err != nil {
+				return fmt.Errorf("feedback: notify: %w", err)
+			}
 		}
 		return nil
 	})

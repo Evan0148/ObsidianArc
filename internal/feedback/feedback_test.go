@@ -11,6 +11,7 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/config"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/database"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/group"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/notify"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/user"
 )
 
@@ -648,5 +649,62 @@ func TestAReplyNeedsSomethingInIt(t *testing.T) {
 		FeedbackID: "01ARZ3NDEKTSV4RRFFQ69G5FAV", UserID: author.ID, Body: "x",
 	}); !errors.Is(err, ErrNotFound) {
 		t.Errorf("reply to a thread that is not there = %v, want ErrNotFound", err)
+	}
+}
+
+// A new report tells the operators who can act on it; a staff answer tells
+// the one account waiting on it. Neither notice is sent the other way: an
+// author's own reply is not news to the author, and it is not carried to an
+// inbox meant for the operator's side either — it already moved the
+// operator_unread flag every list in this package already reads.
+func TestReportsAndStaffRepliesNotify(t *testing.T) {
+	store, author, staff := fixture(t)
+	ctx := context.Background()
+	notifyStore := notify.NewStore(store.db)
+	store.Notify = notifyStore
+
+	record, err := store.Create(ctx, author.ID, report(KindBug, PriorityHigh, "Streaming stalls"))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	admin := user.User{ID: "01ARZ3NDEKTSV4RRFFQ69G5FAA", Role: user.RoleAdmin, AdminPermissions: []string{"feedback"}}
+	notices, err := notifyStore.List(ctx, admin, 10, 0)
+	if err != nil {
+		t.Fatalf("list admin notices: %v", err)
+	}
+	if len(notices) != 1 || notices[0].Kind != "feedback_new" || notices[0].Link != "/admin/feedback/"+record.ID {
+		t.Fatalf("admin notices = %+v, want one feedback_new pointing at the new report", notices)
+	}
+
+	if _, err := store.AddReply(ctx, ReplyInput{
+		FeedbackID: record.ID, UserID: staff.ID, FromStaff: true, Body: "Which model?",
+	}); err != nil {
+		t.Fatalf("staff reply: %v", err)
+	}
+	authorAccount := user.User{ID: author.ID}
+	authorNotices, err := notifyStore.List(ctx, authorAccount, 10, 0)
+	if err != nil {
+		t.Fatalf("list author notices: %v", err)
+	}
+	if len(authorNotices) != 1 || authorNotices[0].Kind != "feedback_reply" {
+		t.Fatalf("author notices = %+v, want one feedback_reply", authorNotices)
+	}
+
+	// The author answering back is not itself a notice — for the operator or
+	// for anybody else.
+	if _, err := store.AddReply(ctx, ReplyInput{
+		FeedbackID: record.ID, UserID: author.ID, Body: "The fast one.", RequireOwner: true,
+	}); err != nil {
+		t.Fatalf("author reply: %v", err)
+	}
+	if authorNotices, err = notifyStore.List(ctx, authorAccount, 10, 0); err != nil || len(authorNotices) != 1 {
+		t.Fatalf("author notices after their own reply = %+v (err %v), want still just the one", authorNotices, err)
+	}
+
+	// A nil Notify — every instance before this feature, and every other test
+	// in this file — must keep working exactly as it did.
+	store.Notify = nil
+	if _, err := store.Create(ctx, author.ID, report(KindIdea, PriorityLow, "Unnotified")); err != nil {
+		t.Errorf("create with Notify unset: %v", err)
 	}
 }

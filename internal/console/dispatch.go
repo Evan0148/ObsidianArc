@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/auth"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/httpx"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/user"
 )
 
@@ -80,7 +81,10 @@ func NewDispatcher(mux http.Handler) Dispatcher {
 		req.RemoteAddr = "127.0.0.1:0"
 
 		rec := newRecorder()
-		mux.ServeHTTP(rec, req)
+		// Recovered here because nothing further up will: the SSH console
+		// runs this on a goroutine of its own, outside the server's
+		// middleware, and a handler's panic there ends the whole process.
+		httpx.Recover()(mux).ServeHTTP(rec, req)
 		return Response{Status: rec.status, Body: rec.body.Bytes()}, nil
 	}
 }

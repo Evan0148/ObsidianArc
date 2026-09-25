@@ -485,6 +485,34 @@ func (s *Store) Update(ctx context.Context, modelID string, in Update) (Model, e
 	return next, nil
 }
 
+// DisableIfEnabled is the liveness checker's own write, never an operator's:
+// it turns a model off and marks it AutoDisabled, but only if the row is
+// still enabled as of this call.
+//
+// The checker reads a whole snapshot of models, decides on each one against
+// its own copy, and two instances sharing a database can read the same
+// enabled model and both decide to disable it. An unconditional UPDATE would
+// have both writes succeed and both callers believe they were the one that
+// changed something, which is what used to double the notice. The guard is
+// the WHERE clause itself rather than a separate read-then-write: the
+// condition is checked and applied by the database as one statement, so the
+// second instance's write finds the row no longer enabled and changes
+// nothing, which is what its return value reports.
+func (s *Store) DisableIfEnabled(ctx context.Context, modelID string) (bool, error) {
+	result, err := s.db.Exec(ctx,
+		`UPDATE models SET enabled = ?, auto_disabled = ?, updated_at = ?
+		 WHERE id = ? AND enabled = ?`,
+		false, true, time.Now().UnixMilli(), modelID, true)
+	if err != nil {
+		return false, fmt.Errorf("model: disable if enabled: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("model: disable if enabled rows affected: %w", err)
+	}
+	return affected == 1, nil
+}
+
 // The public API name has a unique index (idx_models_api_name). Multiple
 // entries for the same model_id under a provider are permitted.
 func (s *Store) whichDuplicate(ctx context.Context, apiName, exceptID string) error {

@@ -29,6 +29,7 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/id"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/idp"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/model"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/notify"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/provider"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/quota"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/reqlog"
@@ -69,6 +70,10 @@ type Handlers struct {
 	// The caller's address as the proxy settings resolve it, for the
 	// security log. Nil records none.
 	ClientIP func(*http.Request) string
+	// Where an administrative action tells the account it acted on, or every
+	// administrator, that something happened. Set by the wiring; nil means
+	// "push nothing", which is every instance predating this feature.
+	Notify *notify.Store
 
 	// Not injected: it is two fields of state that only the resources page
 	// has any use for, and it is meaningless before the first request.
@@ -172,6 +177,9 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.Handle("DELETE /api/admin/users/{id}/two-factor", protected("users", h.resetTwoFactor))
 	mux.Handle("GET /api/admin/users/{id}/keys", protected("users", h.userKeys))
 	mux.Handle("DELETE /api/admin/users/{id}/keys/{key}", protected("users", h.revokeUserKey))
+	mux.Handle("GET /api/admin/users/{id}/sessions", protected("users", h.userSessions))
+	mux.Handle("DELETE /api/admin/users/{id}/sessions/{sid}", protected("users", h.revokeUserSession))
+	mux.Handle("DELETE /api/admin/users/{id}/sessions", protected("users", h.revokeAllUserSessions))
 	mux.Handle("GET /api/admin/users/{id}/conversations", protected("users", h.userConversations))
 	mux.Handle("GET /api/admin/users/{id}/conversations/{conversation}", protected("users", h.userTranscript))
 

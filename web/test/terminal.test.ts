@@ -108,6 +108,16 @@ afterEach(() => {
 });
 
 describe('the admin terminal', () => {
+  // The rule that makes the terminal take the chat's whole width is keyed on
+  // this class. OaPanel's root is a Teleport, which used to drop a caller's
+  // class without a word, so the rule matched nothing and the terminal sat at
+  // 720px beside an empty half of the screen.
+  it('carries its own class onto the panel, where the full-width rule finds it', async () => {
+    await mountTerminal();
+    const panel = host.querySelector('aside.oa-panel');
+    expect(panel?.classList.contains('oa-terminal-panel')).toBe(true);
+  });
+
   it('prints the spec banner as the first block', async () => {
     await mountTerminal();
     const banner = host.querySelector('.oa-terminal-block-banner');

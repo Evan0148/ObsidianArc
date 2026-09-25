@@ -37,7 +37,7 @@ func enrolled(t *testing.T, f *fixture, username string) (user.User, string, []s
 	}
 	step := totp.Step(time.Now())
 	code, _ := totp.Code(setup.Secret, step)
-	codes, updated, err := f.auth.EnableTwoFactor(ctx, account.ID, code, session.ID, "")
+	codes, updated, err := f.auth.EnableTwoFactor(ctx, account.ID, code, session.ID, "", "")
 	if err != nil {
 		t.Fatalf("enable two-step for %s: %v", username, err)
 	}
@@ -244,14 +244,14 @@ func TestEnablingNeedsACodeFromTheSecretHandedOut(t *testing.T) {
 	}
 	_, session, _ := f.auth.Authenticate(ctx, token)
 
-	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, "123456", session.ID, ""); !errors.Is(err, ErrTwoFactorNoSetup) {
+	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, "123456", session.ID, "", ""); !errors.Is(err, ErrTwoFactorNoSetup) {
 		t.Fatalf("enabling with no setup: %v", err)
 	}
 	setup, err := f.auth.BeginTwoFactor(ctx, account)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())+20), session.ID, ""); !errors.Is(err, ErrTwoFactorCode) {
+	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())+20), session.ID, "", ""); !errors.Is(err, ErrTwoFactorCode) {
 		t.Fatalf("a code from the wrong time was accepted: %v", err)
 	}
 
@@ -260,7 +260,7 @@ func TestEnablingNeedsACodeFromTheSecretHandedOut(t *testing.T) {
 		time.Now().Add(-2*setupTTL).UnixMilli(), account.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())), session.ID, ""); !errors.Is(err, ErrTwoFactorNoSetup) {
+	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())), session.ID, "", ""); !errors.Is(err, ErrTwoFactorNoSetup) {
 		t.Fatalf("a stale setup was accepted: %v", err)
 	}
 
@@ -285,7 +285,7 @@ func TestEnablingEndsOtherSessions(t *testing.T) {
 	}
 	_, session, _ := f.auth.Authenticate(ctx, token)
 	setup, _ := f.auth.BeginTwoFactor(ctx, account)
-	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())), session.ID, ""); err != nil {
+	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())), session.ID, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := f.auth.Authenticate(ctx, token); err != nil {
@@ -487,7 +487,7 @@ func TestARememberedBrowserSkipsTheCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())), "", ""); err != nil {
+	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())), "", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := loginWith(value); !errors.As(err, &second) {
@@ -606,10 +606,10 @@ func TestTheBackofficeAsksForItsOwnCode(t *testing.T) {
 	if f.auth.BackofficeLocked(request, user.User{Role: user.RoleUser, TwoFactorAt: 1}) {
 		t.Fatal("an ordinary account was locked")
 	}
-	if err := f.auth.EnterBackoffice(ctx, account, spend(), ""); !errors.Is(err, ErrNoBackofficeVisit) {
+	if err := f.auth.EnterBackoffice(ctx, account, spend(), "", ""); !errors.Is(err, ErrNoBackofficeVisit) {
 		t.Fatalf("entered with nothing to hold the visit: %v", err)
 	}
-	if err := f.auth.EnterBackoffice(request, account, spend(), ""); err != nil {
+	if err := f.auth.EnterBackoffice(request, account, spend(), "", ""); err != nil {
 		t.Fatalf("enter: %v", err)
 	}
 	account, request, session := browser()
@@ -630,7 +630,7 @@ func TestTheBackofficeAsksForItsOwnCode(t *testing.T) {
 	if !f.auth.BackofficeLocked(connection, account) {
 		t.Fatal("a new connection started open")
 	}
-	if err := f.auth.EnterBackoffice(connection, account, spend(), ""); err != nil {
+	if err := f.auth.EnterBackoffice(connection, account, spend(), "", ""); err != nil {
 		t.Fatalf("enter over ssh: %v", err)
 	}
 	if f.auth.BackofficeLocked(connection, account) {
@@ -648,7 +648,7 @@ func TestTheBackofficeAsksForItsOwnCode(t *testing.T) {
 	if err := f.settings.Set(ctx, settings.TwoFactorBackofficeMinutes, "5"); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.auth.EnterBackoffice(request, account, spend(), ""); err != nil {
+	if err := f.auth.EnterBackoffice(request, account, spend(), "", ""); err != nil {
 		t.Fatal(err)
 	}
 	account, request, session = browser()
@@ -719,7 +719,7 @@ func TestEnrollingOpensTheBackofficeAndResettingClosesIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())), session.ID, ""); err != nil {
+	if _, _, err := f.auth.EnableTwoFactor(ctx, account.ID, codeAt(t, setup.Secret, totp.Step(time.Now())), session.ID, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	current := func() (user.User, context.Context) {
@@ -738,5 +738,69 @@ func TestEnrollingOpensTheBackofficeAndResettingClosesIt(t *testing.T) {
 	_, session, _ = f.auth.Authenticate(ctx, token)
 	if session.BackofficeAt != 0 {
 		t.Fatal("a reset left a visit open that the removed factor had proved")
+	}
+}
+
+// With the operator's switches on, a visit proved from one address or browser
+// ends at the first real request from another, before any handler runs.
+func TestABackofficeVisitEndsWhenTheRequestMoves(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	for key, value := range map[string]string{
+		settings.TwoFactorBackofficeMode:    settings.BackofficeVerifyIdle,
+		settings.TwoFactorBackofficeNetwork: "true",
+		settings.TwoFactorBackofficeBrowser: "true",
+	} {
+		if err := f.settings.Set(ctx, key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.auth.ClientIP = func(r *http.Request) string { return r.Header.Get("X-Test-IP") }
+	admin, _, codes, _ := enrolled(t, f, "founder")
+	token, _, err := f.auth.Sessions().Create(ctx, admin.ID, time.Hour, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var seen Session
+	handler := f.auth.Attach()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen, _ = SessionFrom(r.Context())
+	}))
+	request := func(ip, ua string) Session {
+		r := httptest.NewRequest(http.MethodGet, "/api/admin/dashboard", nil)
+		r.AddCookie(&http.Cookie{Name: "obsidian_session", Value: token})
+		r.Header.Set("X-Test-IP", ip)
+		r.Header.Set("User-Agent", ua)
+		handler.ServeHTTP(httptest.NewRecorder(), r)
+		return seen
+	}
+	enter := func() {
+		t.Helper()
+		_, session, _ := f.auth.Authenticate(ctx, token)
+		if err := f.auth.EnterBackoffice(context.WithValue(ctx, sessionContextKey, session), admin, codes[0], "203.0.113.1", "Browser/1"); err != nil {
+			t.Fatal(err)
+		}
+		codes = codes[1:]
+	}
+
+	enter()
+	if request("203.0.113.1", "Browser/1").BackofficeAt == 0 {
+		t.Fatal("the same address and browser lost the visit")
+	}
+	if request("198.51.100.9", "Browser/1").BackofficeAt != 0 {
+		t.Fatal("a new address kept the visit")
+	}
+	enter()
+	if request("203.0.113.1", "Other/2").BackofficeAt != 0 {
+		t.Fatal("a new browser kept the visit")
+	}
+
+	// Switched off, moving is fine.
+	if err := f.settings.Set(ctx, settings.TwoFactorBackofficeNetwork, "false"); err != nil {
+		t.Fatal(err)
+	}
+	enter()
+	if request("198.51.100.9", "Browser/1").BackofficeAt == 0 {
+		t.Fatal("the network switch is off but a new address ended the visit")
 	}
 }

@@ -36,6 +36,9 @@ const TERMS = {
     'secSecurity', 'secTwoFactor', 'twoFactorIntro', 'twoFactorSetUp', 'twoFactorRegenerate',
     'twoFactorTurnOff', 'twoFactorRecoveryLabel', 'twoFactorAppTitle',
   ],
+  devices: [
+    'secDevices', 'devicesIntro', 'deviceThisDevice', 'deviceSignOut', 'deviceSignOutOthers',
+  ],
 } satisfies Record<string, StringKey[]>;
 
 export type SettingsGroup = keyof typeof TERMS;

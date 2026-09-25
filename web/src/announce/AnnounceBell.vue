@@ -9,6 +9,7 @@
 // tab and would be pointless to store.
 
 import { computed, onMounted, ref } from 'vue';
+import type { Notification } from '@/api/notifications';
 import {
   fetchAnnouncements,
   markAllRead,
@@ -22,6 +23,10 @@ import OaMenuItem from '@/components/OaMenuItem.vue';
 import { t } from '@/composables/useI18n';
 import { IconBell } from '@/icons';
 import { relativeTime } from '@/lib/format';
+import { describeNotification } from '@/lib/notification-text';
+import {
+  markAllNotificationsRead, notificationList, notificationsUnread, openNotification,
+} from '@/stores/notifications';
 import AnnouncementSheet from './AnnouncementSheet.vue';
 
 // Announcements shown during this page load, so an "every visit" one does not
@@ -32,9 +37,23 @@ const feed = ref<AnnouncementFeed>({ announcements: [], unread: 0, popup: null }
 const showing = ref<Announcement | null>(null);
 const menu = ref<InstanceType<typeof OaMenu> | null>(null);
 
-const label = computed(() => (feed.value.unread
-  ? `${t('announcements')} · ${t('announcementsUnread', { count: feed.value.unread })}`
+// The badge is one dot for two feeds: a reader does not care whether what is
+// waiting is an announcement or a notification, only that the bell has
+// something for them.
+const totalUnread = computed(() => feed.value.unread + notificationsUnread.value);
+const label = computed(() => (totalUnread.value
+  ? `${t('announcements')} · ${t('announcementsUnread', { count: totalUnread.value })}`
   : t('announcements')));
+
+// The announcements section above already lists an announcement row by its
+// own title; listing it again down here, worded as a notification, would
+// count and show the same arrival twice.
+const notificationRows = computed(() => notificationList.value.filter((record) => record.kind !== 'announcement'));
+
+function onNotificationClick(close: () => void, n: Notification): void {
+  close();
+  void openNotification(n);
+}
 
 /**
  * `popup: false` for the refresh that happens because the reader opened the
@@ -92,7 +111,7 @@ onMounted(() => void refresh());
         @click="onTrigger(open); toggle()"
       >
         <IconBell :size="17" />
-        <span v-if="feed.unread > 0" class="oa-bell-dot" />
+        <span v-if="totalUnread > 0" class="oa-bell-dot" />
       </OaIconButton>
     </template>
 
@@ -121,6 +140,30 @@ onMounted(() => void refresh());
           <span class="oa-menu-unread" />
         </template>
       </OaMenuItem>
+
+      <!-- The same menu's second half: system notifications, kept apart from
+           announcements above rather than merged into one list, so the read
+           state and the "mark all" action stay each feed's own. -->
+      <div class="oa-menu-head oa-menu-head-secondary">
+        <span class="oa-menu-head-name">{{ t('notifications') }}</span>
+        <button
+          v-if="notificationsUnread > 0"
+          type="button"
+          class="oa-menu-head-action"
+          @click="close(); markAllNotificationsRead()"
+        >
+          {{ t('notificationMarkAllRead') }}
+        </button>
+      </div>
+
+      <p v-if="!notificationRows.length" class="oa-menu-empty">{{ t('notificationsEmpty') }}</p>
+      <OaMenuItem
+        v-for="record in notificationRows"
+        :key="record.id"
+        :title="describeNotification(record).title"
+        :sub="relativeTime(record.created_at)"
+        @click="onNotificationClick(close, record)"
+      />
     </template>
   </OaMenu>
 

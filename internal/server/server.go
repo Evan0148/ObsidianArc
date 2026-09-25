@@ -37,6 +37,7 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/idp"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/mail"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/model"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/notify"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/oauth"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/project"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/provider"
@@ -73,9 +74,14 @@ type Server struct {
 	quota         *quota.Service
 	requests      *reqlog.Store
 	idp           *idp.Store
+	notify        *notify.Store
 	health        *health.Checker
 	// nil when no SSH address is configured, which is the default.
 	ssh *consolessh.Server
+	// What the console dispatches into: the API with no Attach in front of
+	// it, which is how a command arrives over SSH. Kept so a test can send a
+	// request the way SSH does, without a session of its own.
+	consoleAPI http.Handler
 }
 
 func New(ctx context.Context, deps Deps) (*Server, error) {
@@ -117,6 +123,13 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	conversations := conversation.NewStore(db)
 	announcements := announcement.NewStore(db)
 	feedbackStore := feedback.NewStore(db)
+	notifyStore := notify.NewStore(db)
+	// Set on every store that raises one, rather than threaded through each
+	// constructor: nil elsewhere would mean "wire this one later and hope
+	// nothing calls it before then", and every store already treats a nil
+	// Notify as "push nothing" for its own tests.
+	feedbackStore.Notify = notifyStore
+	announcements.Notify = notifyStore
 	usageStore := usage.NewStore(db)
 	requestLog := reqlog.NewStore(db)
 	securityLog := securityevents.NewStore(db)
@@ -270,6 +283,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	authService.ClientIP = func(r *http.Request) string { return httpx.ClientIP(r, proxyTrust) }
 	if cfg.TrustProxy && len(cfg.TrustedProxies) == 0 {
 		slog.WarnContext(ctx, "trusting forwarded headers from any private address; "+
 			"set OBSIDIAN_TRUSTED_PROXIES to the proxy's address if it is reachable directly")
@@ -637,6 +651,36 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		}); err != nil {
 			slog.ErrorContext(ctx, "could not record a two-step change", "error", err)
 		}
+		// Told to the account too, in the bell: the change was made from a
+		// signed-in session, and if that session was not its owner's, the
+		// owner hears about it wherever they are signed in.
+		if err := notifyStore.Push(ctx, nil, notify.Notification{
+			Audience: notify.AudienceUser, UserID: event.Account.ID,
+			Kind: "two_factor_changed", Params: map[string]any{"kind": event.Kind},
+			Link: "/settings?tab=security",
+		}); err != nil {
+			slog.ErrorContext(ctx, "could not notify a two-step change", "error", err)
+		}
+	}
+	// A sign-in from a device the account had not used before: logged where
+	// the operator looks after a takeover, and told to the owner, who is the
+	// one person who can say it was not them.
+	authService.OnNewDevice = func(ctx context.Context, event auth.NewDeviceEvent) {
+		if err := securityLog.Record(ctx, nil, securityevents.Event{
+			Event: securityevents.EventNewDevice, Severity: securityevents.SeverityInfo,
+			UserID: event.Account.ID, Username: event.Account.Username,
+			IP: event.IP, Source: "user", Reason: event.UserAgent,
+		}); err != nil {
+			slog.ErrorContext(ctx, "could not record a new device", "error", err)
+		}
+		if err := notifyStore.Push(ctx, nil, notify.Notification{
+			Audience: notify.AudienceUser, UserID: event.Account.ID,
+			Kind:   "new_device_login",
+			Params: map[string]any{"ip": event.IP, "ua": event.UserAgent},
+			Link:   "/settings?tab=security",
+		}); err != nil {
+			slog.ErrorContext(ctx, "could not notify a new device", "error", err)
+		}
 	}
 	authService.OnSignupReview = func(ctx context.Context, in auth.RegisterInput, account *user.User, review auth.SignupReview) {
 		event := securityevents.Event{
@@ -654,6 +698,17 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		}
 		if err := securityLog.Record(ctx, nil, event); err != nil {
 			slog.ErrorContext(ctx, "could not record signup review", "error", err)
+		}
+		// Only what the reviewer held back: a notice for every approval
+		// would be a notice per sign-up, and nobody reads those.
+		if review.Decision == auth.SignupRestrict || review.Decision == auth.SignupRefuse {
+			if err := notifyStore.Push(ctx, nil, notify.Notification{
+				Audience: notify.AudienceAdmins, Permission: "security",
+				Kind: "signup_flagged", Params: map[string]any{"username": in.Username},
+				Link: "/admin/security",
+			}); err != nil {
+				slog.ErrorContext(ctx, "could not notify a flagged signup", "error", err)
+			}
 		}
 	}
 
@@ -787,7 +842,14 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	adminHandlers.TryReview = adminTryReview
 	adminHandlers.Origin = publicOrigin
 	adminHandlers.ClientIP = func(r *http.Request) string { return httpx.ClientIP(r, proxyTrust) }
+	adminHandlers.Notify = notifyStore
 	adminHandlers.Routes(mux)
+
+	// The browser's own inbox. Behind auth.RequireUser alone — never the
+	// console's mux, whose parity tests treat it as the account-facing route
+	// it is (see consoleExempt in internal/console) — because what it shows
+	// is computed per account rather than gated by an administrative grant.
+	notify.NewHandlers(notifyStore).Routes(mux)
 
 	// The console is a client of the administrative API, not a second
 	// implementation of it. Its own mux carries the same handlers mounted the
@@ -1019,8 +1081,10 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		quota:         quotaService,
 		requests:      requestLog,
 		idp:           idpStore,
+		notify:        notifyStore,
+		consoleAPI:    consoleAPI,
 		health: &health.Checker{
-			Store: healthStore, Models: models, Providers: providers, Registry: registry,
+			Store: healthStore, Models: models, Providers: providers, Registry: registry, Notify: notifyStore,
 		},
 	}, nil
 }
@@ -1167,6 +1231,13 @@ func (s *Server) sweep(ctx context.Context) {
 	// Counter buckets whose window has long since rolled over. The ledger is
 	// never pruned: it is the audit trail.
 	_, _ = s.quota.PruneCounters(sweepCtx)
+	// The bell keeps about a month, unlike the security log: a notice is a
+	// nudge to look at something, not a record kept for its own sake.
+	if s.notify != nil {
+		if _, err := s.notify.Prune(sweepCtx, time.Now().Add(-30*24*time.Hour)); err != nil {
+			slog.ErrorContext(sweepCtx, "could not prune notifications", "error", err)
+		}
+	}
 	s.sweepHealth(ctx)
 }
 

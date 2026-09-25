@@ -187,8 +187,11 @@ function enrolled(user: Account): void {
 const stepUp = computed(() => !!currentUser.value?.two_factor_backoffice_verify && !gated.value);
 const visit = ref<'checking' | 'locked' | 'open'>(stepUp.value ? 'checking' : 'open');
 
-async function checkVisit(): Promise<void> {
-  if (!stepUp.value) {
+// Forced when the server has just turned a request away: the account the
+// shell holds may predate the operator switching the door on, and trusting it
+// would leave the page drawing that refusal as an error instead of the door.
+async function checkVisit(force = false): Promise<void> {
+  if (!stepUp.value && !force) {
     visit.value = 'open';
     return;
   }
@@ -197,7 +200,7 @@ async function checkVisit(): Promise<void> {
     const { user } = await fetchMe();
     if (disposed) return;
     currentUser.value = user;
-    visit.value = user.two_factor_backoffice_locked ? 'locked' : 'open';
+    visit.value = user.two_factor_backoffice_verify && user.two_factor_backoffice_locked ? 'locked' : 'open';
   } catch {
     // Unknown is locked: the door costs a code, a page drawn behind a door
     // that was shut costs a screen of refusals.
@@ -207,7 +210,10 @@ async function checkVisit(): Promise<void> {
 
 // The account can change under the shell — finishing the enrolment gate
 // above turns the door on — so the question is asked again when it does.
-watch(stepUp, () => { void checkVisit(); });
+watch(stepUp, () => {
+  // Already settled by the forced check that changed the account.
+  if (visit.value === 'open') void checkVisit();
+});
 
 function unlocked(): void {
   visit.value = 'open';
@@ -215,7 +221,7 @@ function unlocked(): void {
 }
 
 function onLocked(): void {
-  if (stepUp.value) visit.value = 'locked';
+  void checkVisit(true);
 }
 
 // Leaving is what ends a visit in the every-visit mode, so it is said on the
@@ -414,10 +420,12 @@ onMounted(() => {
          Keying only navigation keeps saves from replaying the entrance. -->
     <div :key="current.slug" class="oa-admin-main" :class="[`enter-${direction}`, { 'oa-admin-main-dashboard': !current.slug && allowed && !gated && visit === 'open' }]">
       <!-- The overview owns its editorial heading; other pages keep the shared toolbar. -->
-      <div v-if="current.slug || !allowed || gated || visit !== 'open'" class="oa-admin-head" :ref="attachActions">
+      <!-- None while a card stands in for the page: it says what it is itself,
+           and a heading above an empty page is what made it look lost. -->
+      <div v-if="(current.slug || !allowed) && !gated && visit === 'open'" class="oa-admin-head" :ref="attachActions">
         <div>
-          <h1 class="oa-admin-title">{{ gated ? t('twoFactorGateTitle') : visit !== 'open' ? t('administration') : title }}</h1>
-          <p class="oa-admin-subtitle" :hidden="!subtitle || gated || visit !== 'open'">{{ subtitle }}</p>
+          <h1 class="oa-admin-title">{{ title }}</h1>
+          <p class="oa-admin-subtitle" :hidden="!subtitle">{{ subtitle }}</p>
         </div>
         <span class="oa-admin-head-spacer" />
       </div>
@@ -427,12 +435,15 @@ onMounted(() => {
         wrap-class="oa-admin-body-wrap"
         scroll-class="oa-admin-body"
       >
-        <div v-if="gated" class="oa-2fa-gate">
-          <p class="oa-field-hint">{{ t('twoFactorGateBody') }}</p>
-          <TwoFactorWizard @done="enrolled" />
+        <div v-if="gated || visit !== 'open'" class="oa-2fa-stage">
+          <div v-if="gated" class="oa-2fa-gate">
+            <h2 class="oa-2fa-title">{{ t('twoFactorGateTitle') }}</h2>
+            <p class="oa-field-hint">{{ t('twoFactorGateBody') }}</p>
+            <TwoFactorWizard @done="enrolled" />
+          </div>
+          <p v-else-if="visit === 'checking'" class="oa-table-empty">{{ t('backofficeChecking') }}</p>
+          <AdminUnlock v-else @unlocked="unlocked" />
         </div>
-        <p v-else-if="visit === 'checking'" class="oa-table-empty">{{ t('backofficeChecking') }}</p>
-        <AdminUnlock v-else-if="visit === 'locked'" @unlocked="unlocked" />
         <component v-else-if="allowed" :is="current.component" :key="bodyKey" />
         <div v-else class="oa-permission-empty" role="alert">
           <IconLock :size="28" />

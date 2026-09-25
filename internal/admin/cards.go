@@ -3,6 +3,7 @@ package admin
 import (
 	"net/http"
 
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/auth"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/card"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/httpx"
 )
@@ -110,6 +111,8 @@ func (h *Handlers) grantCards(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return card.TranslateError(err)
 	}
+	h.tellAccount(r.Context(), auth.MustUser(r.Context()), userID, "cards_granted", "/usage",
+		map[string]any{"count": len(granted)})
 	return httpx.WriteJSON(w, http.StatusCreated, map[string]any{"cards": granted})
 }
 

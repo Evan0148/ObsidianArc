@@ -52,6 +52,10 @@ const (
 	// Two-step sign-in switched on or off, reset by an administrator, or a
 	// recovery code spent. The decision field says which.
 	EventTwoFactor = "two_factor"
+	// A full sign-in from a device the account had not used before. Kept
+	// beside the two-step entries because it is the first thing to look at
+	// when somebody says they never signed in from there.
+	EventNewDevice = "new_device"
 
 	maxReasonChars = 500
 	MaxPageSize    = 200

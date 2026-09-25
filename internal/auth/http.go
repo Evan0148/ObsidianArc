@@ -97,6 +97,9 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/profile/two-factor/recovery", protected(h.regenerateRecovery))
 	mux.HandleFunc("POST /api/profile/two-factor/backoffice", protected(h.enterBackoffice))
 	mux.HandleFunc("POST /api/profile/two-factor/backoffice/leave", protected(h.leaveBackoffice))
+	mux.HandleFunc("GET /api/profile/sessions", protected(h.listSessions))
+	mux.HandleFunc("DELETE /api/profile/sessions/{id}", protected(h.revokeSession))
+	mux.HandleFunc("POST /api/profile/sessions/revoke-others", protected(h.revokeOtherSessions))
 }
 
 // --- payloads ---------------------------------------------------------------
@@ -378,6 +381,8 @@ func (h *Handlers) register(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
+	ip := httpx.ClientIP(r, h.trust)
+	ua := r.UserAgent()
 	account, token, err := h.service.Register(r.Context(), RegisterInput{
 		Turnstile: body.Turnstile,
 		Username:  body.Username,
@@ -385,14 +390,17 @@ func (h *Handlers) register(w http.ResponseWriter, r *http.Request) error {
 		QQ:        body.QQ,
 		Password:  body.Password,
 		Nickname:  body.Nickname,
-		IP:        httpx.ClientIP(r, h.trust),
-		UA:        r.UserAgent(),
+		IP:        ip,
+		UA:        ua,
 	})
 	if err != nil {
 		return h.registrationError(err)
 	}
 
 	h.service.SetCookie(w, token)
+	// A full session every time — Register never asks for a second step, an
+	// account this fresh has never had the chance to switch one on.
+	h.service.AttachDevice(r.Context(), w, r, account, token, ip, ua)
 	return httpx.WriteJSON(w, http.StatusCreated, map[string]any{"user": h.account(r, account)})
 }
 
@@ -408,12 +416,14 @@ func (h *Handlers) login(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
+	ip := httpx.ClientIP(r, h.trust)
+	ua := r.UserAgent()
 	account, token, err := h.service.Login(r.Context(), LoginInput{
 		Turnstile:  body.Turnstile,
 		Identifier: body.Identifier,
 		Password:   body.Password,
-		IP:         httpx.ClientIP(r, h.trust),
-		UA:         r.UserAgent(),
+		IP:         ip,
+		UA:         ua,
 		Remembered: h.service.RememberedFrom(r),
 	})
 	// The password was right and the account wants a code too. The pending
@@ -452,6 +462,9 @@ func (h *Handlers) login(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	h.service.SetCookie(w, token)
+	// Reached only past the *SecondFactorRequired branch above, so this is
+	// always a full session.
+	h.service.AttachDevice(r.Context(), w, r, account, token, ip, ua)
 	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"user": h.account(r, account)})
 }
 
@@ -636,6 +649,88 @@ func (h *Handlers) putWallpaper(w http.ResponseWriter, r *http.Request) error {
 func (h *Handlers) deleteWallpaper(w http.ResponseWriter, r *http.Request) error {
 	account := MustUser(r.Context())
 	if err := h.preferences.ClearWallpaper(r.Context(), account.ID); err != nil {
+		return httpx.Internal(err)
+	}
+	return httpx.NoContent(w)
+}
+
+// --- signed-in devices --------------------------------------------------------
+//
+// A session's own id is never shown: it is the row key a stolen cookie's
+// digest would also be, and showing it would turn "compare what you see here
+// with what's in your browser" into a way to hand a screen-reader the same
+// secret the cookie holds. sessionRef's first sixteen hex characters are
+// unique in practice for the handful of sessions one account ever holds at
+// once, and worthless to anyone who does not already have the full id.
+
+type sessionPayload struct {
+	ID         string `json:"id"`
+	CreatedAt  int64  `json:"created_at"`
+	LastSeenAt int64  `json:"last_seen_at"`
+	IP         string `json:"ip"`
+	UserAgent  string `json:"user_agent"`
+	Current    bool   `json:"current"`
+}
+
+func sessionsToPayload(sessions []Session, currentID string) []sessionPayload {
+	out := make([]sessionPayload, 0, len(sessions))
+	for _, s := range sessions {
+		out = append(out, sessionPayload{
+			ID:         sessionRef(s.ID),
+			CreatedAt:  s.CreatedAt,
+			LastSeenAt: s.LastSeenAt,
+			IP:         s.IP,
+			UserAgent:  s.UserAgent,
+			Current:    s.ID == currentID,
+		})
+	}
+	return out
+}
+
+func (h *Handlers) listSessions(w http.ResponseWriter, r *http.Request) error {
+	account := MustUser(r.Context())
+	current, _ := SessionFrom(r.Context())
+	sessions, err := h.service.Sessions().ListByUser(r.Context(), account.ID)
+	if err != nil {
+		return httpx.Internal(err)
+	}
+	return httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"sessions": sessionsToPayload(sessions, current.ID),
+	})
+}
+
+func (h *Handlers) revokeSession(w http.ResponseWriter, r *http.Request) error {
+	account := MustUser(r.Context())
+	current, hasCurrent := SessionFrom(r.Context())
+	ref := r.PathValue("id")
+	if !ValidSessionRef(ref) {
+		return httpx.BadRequest("Malformed session id.")
+	}
+	if hasCurrent && sessionRef(current.ID) == ref {
+		return httpx.Conflict("current_session",
+			`That is this session. Use "sign out other devices" instead.`)
+	}
+	removed, err := h.service.Sessions().DeleteByPrefixForUser(r.Context(), account.ID, ref)
+	if err != nil {
+		return httpx.Internal(err)
+	}
+	if !removed {
+		return httpx.NotFound("No such session.")
+	}
+	return httpx.NoContent(w)
+}
+
+func (h *Handlers) revokeOtherSessions(w http.ResponseWriter, r *http.Request) error {
+	account := MustUser(r.Context())
+	current, hasCurrent := SessionFrom(r.Context())
+	// "Others" is measured against this session. The SSH console has none, and
+	// an empty id would match every row — signing out everything, including
+	// the browser the command's own help promises to keep.
+	if !hasCurrent || current.ID == "" {
+		return httpx.Conflict("no_current_session",
+			"There is no session here to keep. Sign out a specific device instead.")
+	}
+	if _, err := h.service.Sessions().DeleteOthers(r.Context(), account.ID, current.ID); err != nil {
 		return httpx.Internal(err)
 	}
 	return httpx.NoContent(w)

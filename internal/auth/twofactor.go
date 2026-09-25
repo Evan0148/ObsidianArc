@@ -21,6 +21,7 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/httpx"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/qr"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/settings"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/text"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/totp"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/user"
 )
@@ -267,7 +268,7 @@ var ErrNoBackofficeVisit = errors.New("auth: this request cannot hold a backoffi
 
 // EnterBackoffice takes a code for the visit this request belongs to. Same
 // secret, same replay guard, same guessing budget as signing in.
-func (s *Service) EnterBackoffice(ctx context.Context, account user.User, code, ip string) error {
+func (s *Service) EnterBackoffice(ctx context.Context, account user.User, code, ip, userAgent string) error {
 	if !account.TwoFactorEnabled() {
 		return ErrTwoFactorDisabled
 	}
@@ -281,12 +282,33 @@ func (s *Service) EnterBackoffice(ctx context.Context, account user.User, code, 
 	}
 	now := time.Now().UnixMilli()
 	if hasSession {
-		return s.sessions.SetBackofficeAt(ctx, session.ID, now)
+		return s.sessions.EnterBackofficeVisit(ctx, session.ID, now, ip, userAgent)
 	}
 	grant.mu.Lock()
 	grant.at = now
 	grant.mu.Unlock()
 	return nil
+}
+
+// backofficeMoved reports whether a request no longer comes from where this
+// session's visit was proved, by the operator's switches. Only a real browser
+// request can be asked: a command the web terminal dispatches in-process has
+// no address or browser of its own, which is why this runs in Attach.
+func (s *Service) backofficeMoved(session Session, ip, userAgent string) bool {
+	if session.BackofficeAt == 0 || !s.BackofficeVerifyOn() {
+		return false
+	}
+	// A visit opened before visits were bound has nothing to compare with.
+	// Ending it would lock the operator out the moment they switched the
+	// binding on, over a difference that says nothing about who is asking.
+	if session.BackofficeIP == "" && session.BackofficeUA == "" {
+		return false
+	}
+	if s.settings.Bool(settings.TwoFactorBackofficeNetwork) && ip != session.BackofficeIP {
+		return true
+	}
+	return s.settings.Bool(settings.TwoFactorBackofficeBrowser) &&
+		text.Truncate(userAgent, MaxUserAgentChars) != session.BackofficeUA
 }
 
 // LeaveBackoffice ends this browser session's visit — in the one mode where
@@ -452,7 +474,7 @@ func (s *Service) BeginTwoFactor(ctx context.Context, account user.User) (TwoFac
 // Every other session on the account is signed out: none of them proved the
 // second factor, and a stolen one should not outlive the lock that was just
 // fitted because somebody suspected it.
-func (s *Service) EnableTwoFactor(ctx context.Context, userID, code, keepSessionID, ip string) ([]string, user.User, error) {
+func (s *Service) EnableTwoFactor(ctx context.Context, userID, code, keepSessionID, ip, userAgent string) ([]string, user.User, error) {
 	if !s.TwoFactorAvailable() {
 		return nil, user.User{}, ErrTwoFactorUnavailable
 	}
@@ -514,9 +536,12 @@ func (s *Service) EnableTwoFactor(ctx context.Context, userID, code, keepSession
 		}
 		// The code just typed is as good a proof as the backoffice's door
 		// asks for, so the session that typed it walks straight in rather
-		// than being asked for another one a second later.
-		if _, err := tx.Exec(ctx, `UPDATE sessions SET backoffice_at = ? WHERE id = ?`,
-			now.UnixMilli(), keepSessionID); err != nil {
+		// than being asked for another one a second later — bound to where
+		// it typed it, as a visit through the door is, or the operator's
+		// network and browser switches would end it on the next request.
+		if _, err := tx.Exec(ctx,
+			`UPDATE sessions SET backoffice_at = ?, backoffice_ip = ?, backoffice_ua = ? WHERE id = ?`,
+			now.UnixMilli(), ip, text.Truncate(userAgent, MaxUserAgentChars), keepSessionID); err != nil {
 			return fmt.Errorf("auth: open the backoffice visit: %w", err)
 		}
 		account.TwoFactorAt = now.UnixMilli()

@@ -34,6 +34,11 @@ import OaIconButton from './OaIconButton.vue';
 import OaResizer from './OaResizer.vue';
 import OaScrollArea from './OaScrollArea.vue';
 
+// The root is a Teleport, which has no element for a caller's class to land
+// on, so Vue would drop it without a word — which is how the terminal's
+// full-width rule matched nothing. Handed to the panel itself instead.
+defineOptions({ inheritAttrs: false });
+
 const props = withDefaults(defineProps<{
   title: string;
   /** Drops the footer entirely, for a panel whose sections each save themselves. */
@@ -317,6 +322,7 @@ defineExpose({
 <template>
   <Teleport v-if="host" :to="host">
     <aside
+      v-bind="$attrs"
       ref="panel"
       class="oa-panel"
       :class="{ open: shown, fullscreen: zoomed, zooming, swapping, replacing, 'no-footer': !props.footer }"

@@ -35,6 +35,13 @@ type Session struct {
 	// When this session last proved a code for the backoffice, or last used
 	// the backoffice after proving one; zero when it has not, or has left.
 	BackofficeAt int64
+	// The address and browser that proved it, for the operator's switches
+	// that end a visit when either changes.
+	BackofficeIP string
+	BackofficeUA string
+	// The device this session was signed in from; empty for a session issued
+	// before devices were recorded, which Attach fills in on its next visit.
+	DeviceID string
 }
 
 var ErrSessionNotFound = errors.New("auth: session not found")
@@ -53,6 +60,40 @@ func NewSessionStore(db *database.DB) *SessionStore { return &SessionStore{db: d
 func HashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
+}
+
+// sessionRefLength is how much of a session's id the "signed-in devices"
+// screen is shown and asked to send back — enough of a 256-bit hash that a
+// caller cannot feasibly guess another session's, short enough to read as an
+// id rather than the row key it actually is.
+const sessionRefLength = 16
+
+// ValidSessionRef reports whether s could be one of the opaque ids this
+// package hands out for a session — never the full stored id, and never the
+// token. Guards a path parameter before it reaches DeleteByPrefixForUser's
+// LIKE query, the way id.Valid guards a ULID before a lookup.
+func ValidSessionRef(s string) bool {
+	if len(s) != sessionRefLength {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// sessionRef is the opaque id a session is shown as: HashToken's own hex
+// alphabet, so ValidSessionRef's check on the way back in is exact rather
+// than a guess at what Go's hex encoding happens to produce.
+func sessionRef(id string) string {
+	// No session at all — a request dispatched from the SSH console carries
+	// none — is no ref, not a slice past the end of an empty string.
+	if len(id) < sessionRefLength {
+		return ""
+	}
+	return id[:sessionRefLength]
 }
 
 // Create issues a session and returns the token to put in the cookie. The
@@ -114,12 +155,12 @@ func (s *SessionStore) GetWithUser(ctx context.Context, token string) (Session, 
 	var record Session
 	account, err := user.ScanRow(scanBoth{s.db.QueryRow(ctx,
 		`SELECT s.id, s.user_id, s.created_at, s.expires_at, s.last_seen_at, s.ip, s.user_agent,
-		 s.two_factor_pending, s.backoffice_at, `+
+		 s.two_factor_pending, s.backoffice_at, s.backoffice_ip, s.backoffice_ua, s.device_id, `+
 			user.JoinColumns("u")+
 			` FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ?`, key),
 		[]any{&record.ID, &record.UserID, &record.CreatedAt, &record.ExpiresAt,
 			&record.LastSeenAt, &record.IP, &record.UserAgent, &record.TwoFactorPending,
-			&record.BackofficeAt}})
+			&record.BackofficeAt, &record.BackofficeIP, &record.BackofficeUA, &record.DeviceID}})
 	if err != nil {
 		if database.IsNotFound(err) || errors.Is(err, user.ErrNotFound) {
 			return Session{}, user.User{}, ErrSessionNotFound
@@ -160,6 +201,16 @@ func (s *SessionStore) Touch(ctx context.Context, sessionID string, ttl time.Dur
 	return nil
 }
 
+// EnterBackofficeVisit records a proved visit and where it was proved from.
+func (s *SessionStore) EnterBackofficeVisit(ctx context.Context, sessionID string, at int64, ip, userAgent string) error {
+	if _, err := s.db.Exec(ctx,
+		`UPDATE sessions SET backoffice_at = ?, backoffice_ip = ?, backoffice_ua = ? WHERE id = ?`,
+		at, ip, text.Truncate(userAgent, MaxUserAgentChars), sessionID); err != nil {
+		return fmt.Errorf("auth: record backoffice entry: %w", err)
+	}
+	return nil
+}
+
 // SetBackofficeAt records, or with zero clears, this session's entry to the
 // backoffice.
 func (s *SessionStore) SetBackofficeAt(ctx context.Context, sessionID string, at int64) error {
@@ -189,6 +240,89 @@ func (s *SessionStore) DeleteByUser(ctx context.Context, q database.Queryer, use
 	}
 	if _, err := q.Exec(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID); err != nil {
 		return fmt.Errorf("auth: delete user sessions: %w", err)
+	}
+	return nil
+}
+
+// ListByUser is this account's own "signed-in devices" list: its full
+// sessions, most recently active first. Pending ones are excluded — a
+// password proved with no code yet is not a signed-in device, and showing
+// one in this list would offer a "sign out" button for something that was
+// never signed in to begin with.
+func (s *SessionStore) ListByUser(ctx context.Context, userID string) ([]Session, error) {
+	rows, err := s.db.Query(ctx,
+		`SELECT id, user_id, created_at, expires_at, last_seen_at, ip, user_agent
+		 FROM sessions WHERE user_id = ? AND two_factor_pending = ?
+		 ORDER BY last_seen_at DESC`, userID, false)
+	if err != nil {
+		return nil, fmt.Errorf("auth: list sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Session
+	for rows.Next() {
+		var record Session
+		if err := rows.Scan(&record.ID, &record.UserID, &record.CreatedAt, &record.ExpiresAt,
+			&record.LastSeenAt, &record.IP, &record.UserAgent); err != nil {
+			return nil, fmt.Errorf("auth: scan session: %w", err)
+		}
+		out = append(out, record)
+	}
+	return out, rows.Err()
+}
+
+// DeleteByPrefixForUser removes one of this account's own sessions by the
+// opaque id the profile screen shows it as — the first 16 hex characters of
+// the stored session id, never the token — scoped to the account so one
+// caller can never reach another's row by guessing at it. It reports whether
+// a row actually matched, which is the 404-or-not decision the caller makes.
+//
+// ValidSessionRef must have refused anything that is not exactly that shape
+// before this is called: prefix becomes the left side of a LIKE, and an
+// unchecked wildcard here could only ever widen the match within this same
+// account's own rows, but "delete one session" silently deleting several
+// because of a stray "%" is still the wrong answer.
+func (s *SessionStore) DeleteByPrefixForUser(ctx context.Context, userID, prefix string) (bool, error) {
+	result, err := s.db.Exec(ctx,
+		`DELETE FROM sessions WHERE user_id = ? AND id LIKE ? AND two_factor_pending = ?`,
+		userID, prefix+"%", false)
+	if err != nil {
+		return false, fmt.Errorf("auth: revoke session: %w", err)
+	}
+	removed, err := result.RowsAffected()
+	if err != nil {
+		return false, nil
+	}
+	return removed > 0, nil
+}
+
+// DeleteOthers is "sign out other devices": every session on the account
+// except keepSessionID. Unlike DeleteByUser ("sign out everywhere"), the
+// caller's own session survives it.
+func (s *SessionStore) DeleteOthers(ctx context.Context, userID, keepSessionID string) (int64, error) {
+	result, err := s.db.Exec(ctx,
+		`DELETE FROM sessions WHERE user_id = ? AND id <> ? AND two_factor_pending = ?`,
+		userID, keepSessionID, false)
+	if err != nil {
+		return 0, fmt.Errorf("auth: revoke other sessions: %w", err)
+	}
+	removed, err := result.RowsAffected()
+	if err != nil {
+		return 0, nil
+	}
+	return removed, nil
+}
+
+// SetDeviceID attaches a device identity to a session, once RecordDevice has
+// resolved one for it. Takes a Queryer, like DeleteByUser, so RecordDevice
+// can write it inside the same transaction as the device row it belongs
+// beside — both commit together, or neither does.
+func (s *SessionStore) SetDeviceID(ctx context.Context, q database.Queryer, sessionID, deviceID string) error {
+	if q == nil {
+		q = s.db
+	}
+	if _, err := q.Exec(ctx, `UPDATE sessions SET device_id = ? WHERE id = ?`, deviceID, sessionID); err != nil {
+		return fmt.Errorf("auth: attach device: %w", err)
 	}
 	return nil
 }

@@ -15,11 +15,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/database"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/id"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/notify"
 )
 
 // How an announcement asks for attention.
@@ -76,7 +78,13 @@ type Announcement struct {
 	Read bool `json:"read"`
 }
 
-type Store struct{ db *database.DB }
+type Store struct {
+	db *database.DB
+	// Set by the wiring, never by NewStore: nil is what every existing test
+	// and every instance that predates this feature gets, and nil means
+	// "push nothing" rather than a nil-pointer panic.
+	Notify *notify.Store
+}
 
 func NewStore(db *database.DB) *Store { return &Store{db: db} }
 
@@ -146,11 +154,22 @@ func (s *Store) Create(ctx context.Context, in Input) (Announcement, error) {
 	if err != nil {
 		return Announcement{}, fmt.Errorf("announcement: create: %w", err)
 	}
+	if record.Published {
+		s.notifyPublished(ctx, record)
+	}
 	return record, nil
 }
 
 func (s *Store) Update(ctx context.Context, announcementID string, in Input) (Announcement, error) {
 	in, err := validate(in)
+	if err != nil {
+		return Announcement{}, err
+	}
+
+	// Read before the write so publishing can be told apart from an edit to
+	// something already published — the notice is for "there is something
+	// new to read", not for every touch-up of the wording afterwards.
+	previous, err := s.ByID(ctx, announcementID)
 	if err != nil {
 		return Announcement{}, err
 	}
@@ -168,13 +187,67 @@ func (s *Store) Update(ctx context.Context, announcementID string, in Input) (An
 	if affected, _ := result.RowsAffected(); affected == 0 {
 		return Announcement{}, ErrNotFound
 	}
-	return s.ByID(ctx, announcementID)
+	updated, err := s.ByID(ctx, announcementID)
+	if err != nil {
+		return Announcement{}, err
+	}
+	switch {
+	case !previous.Published && updated.Published:
+		s.notifyPublished(ctx, updated)
+	case previous.Published && !updated.Published:
+		// Unpublishing is a retraction: whatever the bell told every account
+		// was no longer true the moment this saved, so the notice goes with
+		// it rather than sitting in 30 days of inboxes for something nobody
+		// can any longer click through to read.
+		s.retract(ctx, announcementID)
+	}
+	return updated, nil
+}
+
+// notifyPublished tells every account there is something new to read.
+//
+// Not inside a transaction — this store writes without one — so it runs
+// detached afterwards on its own short timeout rather than hold the
+// operator's save open, and a failure here is logged rather than turning a
+// successful publish into a failed request: the announcement is saved either
+// way, and a missed bell is a smaller loss than losing the edit.
+func (s *Store) notifyPublished(ctx context.Context, record Announcement) {
+	if s.Notify == nil {
+		return
+	}
+	pushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if err := s.Notify.Push(pushCtx, nil, notify.Notification{
+		Audience: notify.AudienceAll, Kind: "announcement", Ref: record.ID,
+		Params: map[string]any{"title": record.Title}, Link: "/",
+	}); err != nil {
+		slog.ErrorContext(ctx, "announcement: notify publish", "error", err, "id", record.ID)
+	}
+}
+
+// retract removes every notice this announcement's publish produced, so a
+// retracted or deleted announcement stops repeating its headline in every
+// account's bell for the rest of the retention window.
+//
+// Detached for the same reason notifyPublished is: this store writes without
+// a transaction, so a slow retract runs on its own short timeout afterwards
+// rather than turn a successful delete or edit into a failed request.
+func (s *Store) retract(ctx context.Context, announcementID string) {
+	if s.Notify == nil {
+		return
+	}
+	retractCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if _, err := s.Notify.Retract(retractCtx, nil, "announcement", announcementID); err != nil {
+		slog.ErrorContext(ctx, "announcement: retract notices", "error", err, "id", announcementID)
+	}
 }
 
 func (s *Store) Delete(ctx context.Context, announcementID string) error {
 	if _, err := s.db.Exec(ctx, `DELETE FROM announcements WHERE id = ?`, announcementID); err != nil {
 		return fmt.Errorf("announcement: delete: %w", err)
 	}
+	s.retract(ctx, announcementID)
 	return nil
 }
 

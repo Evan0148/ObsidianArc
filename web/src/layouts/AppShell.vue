@@ -13,6 +13,7 @@ import { ref, type HTMLAttributes } from 'vue';
 import { useRouter } from 'vue-router';
 import AnnounceBell from '@/announce/AnnounceBell.vue';
 import OaThemeToggle from '@/components/OaThemeToggle.vue';
+import OaToastStack from '@/components/OaToastStack.vue';
 import { providePanelHost } from '@/composables/usePanelHost';
 import { t } from '@/composables/useI18n';
 import { IconImage } from '@/icons';
@@ -94,5 +95,9 @@ defineExpose({ body });
     <div :ref="keepBody" class="oa-chat-root" :class="props.bodyClass">
       <slot />
     </div>
+
+    <!-- Fixed-position overlay, so where it sits in the tree does not matter;
+         gated the same as the bell above, for the same reason. -->
+    <OaToastStack v-if="currentUser" />
   </div>
 </template>

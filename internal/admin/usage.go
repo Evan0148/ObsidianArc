@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/auth"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/httpx"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/id"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/notify"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/quota"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/usage"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/user"
@@ -48,6 +50,7 @@ func (h *Handlers) resetQuota(w http.ResponseWriter, r *http.Request) error {
 		if err := h.quota.ResetAll(r.Context()); err != nil {
 			return httpx.Internal(err)
 		}
+		h.notifyQuotaReset(r.Context(), notify.Notification{Audience: notify.AudienceAll})
 		return httpx.WriteJSON(w, http.StatusOK, map[string]any{"accounts": total})
 
 	case "group":
@@ -58,7 +61,9 @@ func (h *Handlers) resetQuota(w http.ResponseWriter, r *http.Request) error {
 		// meant asking the user list for as many rows as the group holds, and
 		// that list clamps a page above two hundred back down to fifty — so a
 		// group any larger than that was reset fifty accounts at a time while
-		// reporting success. The reset selects its own rows now.
+		// reporting success. The reset selects its own rows now, and for the
+		// same reason a per-member notice is not sent here: naming them all
+		// would be the query this was written to avoid.
 		_, total, err := h.users.List(r.Context(), user.ListFilter{GroupID: body.ID, Limit: 1})
 		if err != nil {
 			return httpx.Internal(err)
@@ -78,6 +83,7 @@ func (h *Handlers) resetQuota(w http.ResponseWriter, r *http.Request) error {
 		if err := h.quota.Reset(r.Context(), []string{body.ID}); err != nil {
 			return httpx.Internal(err)
 		}
+		h.notifyQuotaReset(r.Context(), notify.Notification{Audience: notify.AudienceUser, UserID: body.ID})
 		return httpx.WriteJSON(w, http.StatusOK, map[string]any{"accounts": 1})
 	}
 
@@ -167,24 +173,10 @@ func (h *Handlers) usageSummary(w http.ResponseWriter, r *http.Request) error {
 	}
 	ctx := r.Context()
 
-	totals, err := h.usage.Totals(ctx, filter)
-	if err != nil {
-		return httpx.Internal(err)
-	}
-
 	// What "the most" means is the caller's to choose: the most requests, the
 	// most tokens, the most money, or the most people. The ranking happens in
 	// SQL, so a top fifty is the top fifty of the thing that was asked for.
 	metric := r.URL.Query().Get("metric")
-
-	breakdowns := map[string][]usage.Breakdown{}
-	for _, dimension := range []string{"model", "provider", "user", "group", "status"} {
-		rows, err := h.usage.GroupBy(ctx, dimension, metric, filter)
-		if err != nil {
-			return httpx.Internal(err)
-		}
-		breakdowns[dimension] = rows
-	}
 
 	// Hourly for a short range, daily for a long one: a month of hourly
 	// buckets is seven hundred points nobody can read.
@@ -204,37 +196,52 @@ func (h *Handlers) usageSummary(w http.ResponseWriter, r *http.Request) error {
 	if span > 3*24*time.Hour {
 		bucket = 24 * time.Hour
 	}
-	series, err := h.usage.Series(ctx, filter, bucket, zone)
-	if err != nil {
-		return httpx.Internal(err)
-	}
 
+	var (
+		totals   usage.Totals
+		previous *usage.Totals
+		series   []usage.Point
+		heatmap  []usage.Slot
+		rpm      int64
+	)
+	dimensions := []string{"model", "provider", "user", "group", "status"}
+	ranked := make([][]usage.Breakdown, len(dimensions))
+	reads := []func() error{
+		func() (err error) { totals, err = h.usage.Totals(ctx, filter); return },
+		func() (err error) { series, err = h.usage.Series(ctx, filter, bucket, zone); return },
+		func() (err error) { heatmap, err = h.usage.Heatmap(ctx, filter, zone); return },
+		func() (err error) { rpm, err = h.usage.CurrentRPM(ctx, filter); return },
+	}
+	for i, dimension := range dimensions {
+		reads = append(reads, func() (err error) {
+			ranked[i], err = h.usage.GroupBy(ctx, dimension, metric, filter)
+			return
+		})
+	}
 	// The same length of time immediately before, so a figure can say which
 	// way it moved. Only for a bounded window: "all time" has no before.
-	var previous *usage.Totals
 	if filter.Since > 0 {
 		before := filter
 		before.Until = filter.Since
 		before.Since = filter.Since - span.Milliseconds()
-		earlier, err := h.usage.Totals(ctx, before)
-		if err != nil {
-			return httpx.Internal(err)
-		}
-		previous = &earlier
+		reads = append(reads, func() error {
+			earlier, err := h.usage.Totals(ctx, before)
+			previous = &earlier
+			return err
+		})
 	}
-
-	heatmap, err := h.usage.Heatmap(ctx, filter, zone)
-	if err != nil {
+	if err := together(reads...); err != nil {
 		return httpx.Internal(err)
 	}
+	breakdowns := map[string][]usage.Breakdown{}
+	for i, dimension := range dimensions {
+		breakdowns[dimension] = ranked[i]
+	}
 
+	// After the rest, not beside it: the grid is drawn for the top of the
+	// account and model rankings, so it cannot be asked for before them.
 	matrix := Matrix{Rows: keysOf(breakdowns["user"], matrixUsers), Cols: keysOf(breakdowns["model"], matrixModels)}
 	if matrix.Cells, err = h.usage.Cross(ctx, "user", "model", matrix.Rows, matrix.Cols, filter); err != nil {
-		return httpx.Internal(err)
-	}
-
-	rpm, err := h.usage.CurrentRPM(ctx, filter)
-	if err != nil {
 		return httpx.Internal(err)
 	}
 
@@ -434,4 +441,18 @@ func int64Param(raw string, fallback int64) int64 {
 		return fallback
 	}
 	return value
+}
+
+// notifyQuotaReset tells whoever the reset was for. n names the audience and
+// the account for a "user" reset; Kind and Link are filled in here so every
+// call site agrees on what this event is called.
+//
+// Detached with its own short timeout rather than joined to the write above:
+// ResetAll and Reset already committed by the time this runs, so there is no
+// transaction left to share, and a slow notify write must not turn a
+// successful reset into a failed request.
+func (h *Handlers) notifyQuotaReset(ctx context.Context, n notify.Notification) {
+	n.Kind = "quota_reset"
+	n.Link = "/usage"
+	h.push(ctx, n)
 }

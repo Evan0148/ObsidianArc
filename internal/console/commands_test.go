@@ -103,6 +103,9 @@ var consoleExempt = map[string]string{
 	"GET /api/attachments/{id}":                     "downloading an image, which the terminal cannot show",
 	"GET /api/preferences/wallpaper":                "the wallpaper image itself; pref wallpaper-clear removes it",
 	"PUT /api/preferences/wallpaper":                "uploading a wallpaper image, which the terminal cannot pick",
+	"GET /api/notifications":                        "the browser's notification feed",
+	"GET /api/notifications/poll":                   "the browser's notification feed",
+	"POST /api/notifications/read":                  "the browser's notification feed",
 }
 
 // TestEveryAccountRouteIsClaimedOrExempt is the account-side twin of the
@@ -186,7 +189,7 @@ func TestCommandPermissionMatchesItsEndpoints(t *testing.T) {
 // runtime; this is where that is caught instead.
 func userRoutesFromSource(t *testing.T) map[string]bool {
 	t.Helper()
-	packages := []string{"auth", "apikey", "chat", "quota", "usage", "card", "backup", "project", "feedback", "oauth"}
+	packages := []string{"auth", "apikey", "chat", "quota", "usage", "card", "backup", "project", "feedback", "oauth", "notify"}
 	pattern := regexp.MustCompile(`mux\.Handle(?:Func)?\("((?:GET|POST|PATCH|PUT|DELETE) /api/[^"]*)"`)
 
 	out := map[string]bool{}

@@ -61,6 +61,8 @@ const EMPTY_BODIES: Array<[RegExp, unknown]> = [
   }],
   [/\/api\/health/, { status: 'ok', version: 'vtest', uptime_sec: 1 }],
   [/\/api\/announcements/, { announcements: [], unread: 0, popup: null }],
+  [/\/api\/notifications\/poll/, { notifications: [], unread: 0 }],
+  [/\/api\/notifications/, { notifications: [], unread: 0, seen_at: 0 }],
   [/\/api\/conversations/, { conversations: [] }],
   [/\/api\/keys/, { keys: [], enabled: false, max: 0 }],
   [/\/api\/admin\/providers/, { providers: [] }],
@@ -542,14 +544,44 @@ describe('what moves, and what does not', () => {
     expect(host.querySelector('#usersList')).not.toBeNull();
 
     // The server says the visit ran out: the page gives way to the door.
+    open = false;
     window.dispatchEvent(new Event('oa-backoffice-locked'));
-    await nextTick();
+    for (let i = 0; i < 3; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await nextTick();
+    }
     expect(host.querySelector('.oa-2fa-unlock')).not.toBeNull();
 
     // Leaving the backoffice says so, which is what ends a visit in this mode.
     app?.unmount();
     app = null;
     expect(calls).toContain('POST /api/profile/two-factor/backoffice/leave');
+  });
+
+  // The door switched on after this page loaded: the shell's copy of the
+  // account says nothing about it, so the first refusal has to be enough.
+  it('shows the door when it was switched on after the page loaded', async () => {
+    const before: Account = { ...ACCOUNT, role: 'super_admin', two_factor_at: 1 };
+    adopt(before);
+    const server = fetch;
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/api/auth/me')) {
+        return Promise.resolve(new Response(JSON.stringify({
+          user: { ...before, two_factor_backoffice_verify: 'visit', two_factor_backoffice_locked: true }, preferences: {},
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      }
+      return server(input, init);
+    }));
+    await mountAt('/admin/users');
+    expect(host.querySelector('#usersList')).not.toBeNull();
+
+    window.dispatchEvent(new Event('oa-backoffice-locked'));
+    for (let i = 0; i < 3; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await nextTick();
+    }
+    expect(host.querySelector('.oa-2fa-stage .oa-2fa-unlock')).not.toBeNull();
+    expect(host.querySelector('#usersList')).toBeNull();
   });
 
   it('sends an account the policy is holding to enrol, and nowhere else', async () => {
@@ -564,7 +596,7 @@ describe('what moves, and what does not', () => {
   it('draws the setup in place of a backoffice page the policy has closed', async () => {
     adopt({ ...ACCOUNT, role: 'super_admin', two_factor_backoffice: true });
     await mountAt('/admin/users');
-    expect(host.querySelector('.oa-admin-title')?.textContent).toBe(t('twoFactorGateTitle'));
+    expect(host.querySelector('.oa-2fa-gate .oa-2fa-title')?.textContent).toBe(t('twoFactorGateTitle'));
     expect(host.querySelector('.oa-2fa-gate .oa-2fa-wizard')).not.toBeNull();
     // The page itself never mounted, so it asked the server for nothing.
     expect(host.querySelector('#usersList')).toBeNull();

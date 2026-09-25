@@ -8,6 +8,7 @@ import (
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/adapter"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/model"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/notify"
 )
 
 // Policy is what an operator has asked for. Read fresh on every pass, so a
@@ -48,6 +49,9 @@ type Checker struct {
 	// How long one probe may take. A model that has not answered in this long
 	// has failed as far as a reader is concerned.
 	Timeout time.Duration
+	// Set by the wiring; nil means "push nothing", which is what every
+	// instance predating this feature and every test below gets.
+	Notify *notify.Store
 }
 
 // ProviderResolver is the one thing the checker needs from the provider store:
@@ -182,13 +186,36 @@ func (c *Checker) apply(ctx context.Context, record model.Model, status Status, 
 		return
 	}
 
-	if _, err := c.Models.Update(ctx, record.ID, model.Update{
-		Enabled: &off, AutoDisabled: &on,
-	}); err != nil {
+	// Conditional on the row still being enabled, not an unconditional write
+	// of the snapshot's decision: two instances sharing a database can both
+	// read this same model as enabled and both decide to disable it here, and
+	// only one of those two writes should actually flip it — the other must
+	// see there is nothing left to do, or it pushes the notice below a
+	// second time for a disable nobody but the first instance actually did.
+	flipped, err := c.Models.DisableIfEnabled(ctx, record.ID)
+	if err != nil {
 		slog.ErrorContext(ctx, "health: disable", "model", record.ID, "error", err)
+		return
+	}
+	if !flipped {
 		return
 	}
 	slog.WarnContext(ctx, "model disabled",
 		"model", record.ID, "name", record.DisplayName,
 		"reason", reason, "detail", why, "code", status.LastCode)
+
+	// Detached with its own short timeout: this runs inside a sweep on a
+	// shared context, and a slow notify write must not shorten the pass for
+	// the models still left to check after this one.
+	if c.Notify != nil {
+		pushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := c.Notify.Push(pushCtx, nil, notify.Notification{
+			Audience: notify.AudienceAdmins, Permission: "availability",
+			Kind: "model_disabled", Params: map[string]any{"model": record.DisplayName},
+			Link: "/admin/availability",
+		}); err != nil {
+			slog.ErrorContext(ctx, "health: notify model disabled", "error", err, "model", record.ID)
+		}
+	}
 }

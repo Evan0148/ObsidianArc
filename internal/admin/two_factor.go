@@ -92,6 +92,8 @@ func (h *Handlers) resetTwoFactor(w http.ResponseWriter, r *http.Request) error 
 		}
 	}
 	slog.WarnContext(r.Context(), "administrator reset two-step sign-in", "actor", actor.ID, "target", userID)
+	h.tellAccount(r.Context(), actor, target.ID, "two_factor_changed", "/settings?tab=security",
+		map[string]any{"kind": "reset"})
 	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"user": target})
 }
 

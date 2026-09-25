@@ -49,6 +49,13 @@ const category = ref<Category>(
   CATEGORIES.some((entry) => entry.id === requested) ? requested as Category : 'appearance',
 );
 const query = ref('');
+watch(() => route?.query['tab'], (tab) => {
+  // A second link to a different tab, clicked while the panel is already
+  // open, does not remount it — the query changes under a component that is
+  // already running, so `requested` above only ever saw the first one.
+  const known = CATEGORIES.find((entry) => entry.id === tab);
+  if (known) select(known.id);
+});
 const searching = computed(() => !!query.value.trim());
 const visibleGroups = computed(() => {
   const visible = (group: SettingsGroup, owner: Category) => searching.value
@@ -59,7 +66,7 @@ const visibleGroups = computed(() => {
     wallpaper: visible('wallpaper', 'appearance'),
     chat: visible('chat', 'chat'),
     account: (['profile', 'connections', 'authorizations', 'password', 'data'] as const).some((group) => visible(group, 'account')),
-    security: visible('twofactor', 'security'),
+    security: (['twofactor', 'devices'] as const).some((group) => visible(group, 'security')),
   };
 });
 watch(query, () => {

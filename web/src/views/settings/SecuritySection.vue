@@ -13,14 +13,17 @@
 import { computed, onMounted, ref } from 'vue';
 import type { Account } from '@/api/auth';
 import { ApiError } from '@/api/client';
+import { fetchSessions, revokeOtherSessions, revokeSession, type DeviceSession } from '@/api/sessions';
 import {
   disableTwoFactor, fetchTwoFactor, regenerateRecovery, type TwoFactorStatus,
 } from '@/api/twofactor';
 import { copyToClipboard } from '@/chat/markdown';
 import OaBadge from '@/components/OaBadge.vue';
+import OaConfirmButton from '@/components/OaConfirmButton.vue';
 import { t } from '@/composables/useI18n';
-import { IconCheck, IconCopy, IconShield } from '@/icons';
-import { absoluteTime } from '@/lib/format';
+import { IconAuto, IconCheck, IconCopy, IconShield } from '@/icons';
+import { absoluteTime, relativeTime } from '@/lib/format';
+import { describeUserAgent } from '@/lib/ua';
 import { adopt, currentPreferences } from '@/stores/session';
 import { matchesSettings } from './search';
 import TwoFactorWizard from './TwoFactorWizard.vue';
@@ -105,6 +108,59 @@ function copyFresh(): void {
     copied.value = true;
     window.setTimeout(() => { copied.value = false; }, 1500);
   });
+}
+
+// --- signed-in devices --------------------------------------------------------
+//
+// A card of its own below the two-step one: they are both "how somebody
+// signs in", but neither controls the other, and a caller here is choosing
+// between "add a lock" and "check who is already inside" — two different
+// questions that happen to share a page.
+
+const devices = ref<DeviceSession[] | null>(null);
+const devicesFlash = ref('');
+const devicesNotice = ref('');
+const revokingID = ref('');
+const revokingOthers = ref(false);
+
+async function loadDevices(): Promise<void> {
+  try {
+    const { sessions } = await fetchSessions();
+    devices.value = sessions;
+  } catch (failure) {
+    devicesFlash.value = failure instanceof ApiError ? failure.message : String(failure);
+  }
+}
+
+onMounted(loadDevices);
+
+async function signOutDevice(id: string): Promise<void> {
+  revokingID.value = id;
+  devicesFlash.value = '';
+  devicesNotice.value = '';
+  try {
+    await revokeSession(id);
+    devices.value = (devices.value ?? []).filter((entry) => entry.id !== id);
+  } catch (failure) {
+    devicesFlash.value = failure instanceof ApiError ? failure.message : String(failure);
+  } finally {
+    revokingID.value = '';
+  }
+}
+
+async function signOutOthers(): Promise<void> {
+  revokingOthers.value = true;
+  devicesFlash.value = '';
+  devicesNotice.value = '';
+  try {
+    await revokeOtherSessions();
+    devices.value = (devices.value ?? []).filter((entry) => entry.current);
+    devicesNotice.value = t('deviceSignOutOthersDone');
+  } catch (failure) {
+    devicesFlash.value = failure instanceof ApiError ? failure.message : String(failure);
+  } finally {
+    revokingOthers.value = false;
+  }
 }
 </script>
 
@@ -231,5 +287,63 @@ function copyFresh(): void {
       <p v-if="flash" class="oa-2fa-flash" role="alert">{{ flash }}</p>
     </section>
     <p v-else-if="flash" class="oa-drawer-flash visible" role="alert">{{ flash }}</p>
+  </div>
+
+  <div v-show="matchesSettings(props.query, 'devices')" class="oa-settings-panel">
+    <h2 class="oa-admin-section-title">{{ t('secDevices') }}</h2>
+
+    <section class="oa-2fa-panel">
+      <header class="oa-2fa-head">
+        <span class="oa-2fa-head-mark"><IconAuto :size="18" /></span>
+        <div class="oa-2fa-head-text">
+          <div class="oa-2fa-head-title"><span>{{ t('secDevices') }}</span></div>
+          <p class="oa-2fa-head-meta">{{ t('devicesIntro') }}</p>
+        </div>
+      </header>
+
+      <p v-if="devices === null && !devicesFlash" class="oa-2fa-note">{{ t('loading') }}</p>
+
+      <template v-else-if="devices">
+        <div v-for="device in devices" :key="device.id" class="oa-2fa-row">
+          <div class="oa-2fa-row-text">
+            <span class="oa-2fa-row-title">
+              {{ describeUserAgent(device.user_agent) }}
+              <OaBadge v-if="device.current" tone="default">{{ t('deviceThisDevice') }}</OaBadge>
+            </span>
+            <span class="oa-2fa-row-meta">
+              {{ device.ip }} · {{ t('deviceLastActive', { when: relativeTime(device.last_seen_at) }) }}
+            </span>
+          </div>
+          <OaConfirmButton
+            v-if="!device.current"
+            class="oa-btn"
+            :label="t('deviceSignOut')"
+            :armed-label="t('confirmWord')"
+            :armed-title="t('deviceSignOutConfirm')"
+            :resting-title="t('deviceSignOut')"
+            :disabled="revokingID === device.id"
+            @confirm="signOutDevice(device.id)"
+          />
+        </div>
+
+        <div v-if="devices.length > 1" class="oa-2fa-row">
+          <div class="oa-2fa-row-text">
+            <span class="oa-2fa-row-title">{{ t('deviceSignOutOthers') }}</span>
+          </div>
+          <OaConfirmButton
+            class="oa-btn"
+            :label="t('deviceSignOutOthers')"
+            :armed-label="t('confirmWord')"
+            :armed-title="t('deviceSignOutOthersConfirm')"
+            :resting-title="t('deviceSignOutOthers')"
+            :disabled="revokingOthers"
+            @confirm="signOutOthers"
+          />
+        </div>
+      </template>
+
+      <p v-if="devicesNotice" class="oa-2fa-flash ok" role="status">{{ devicesNotice }}</p>
+      <p v-if="devicesFlash" class="oa-2fa-flash" role="alert">{{ devicesFlash }}</p>
+    </section>
   </div>
 </template>

@@ -5218,3 +5218,175 @@
   align-items: flex-start;
   gap: 12px;
 }
+
+/* The door and the enrolment gate stand alone in the middle of the page,
+   not where a page's first card would start: there is no page behind them
+   yet, and a card in the corner of an empty column read as one that had
+   failed to load the rest. */
+.oa-2fa-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+}
+
+.oa-2fa-stage > .oa-2fa-gate {
+  width: 100%;
+}
+
+/* --- notification toasts ---------------------------------------------------- */
+
+/* The macOS Notification Centre look, in --ai-* tokens rather than a colour
+   of its own: the accent that runs through every other surface here is what
+   makes an unread-mail toast and an "administrator changed your role" toast
+   read as the same product. Fixed rather than teleported into the panel
+   host: a toast is not a column beside the chat, it floats over whatever is
+   on screen the way the real thing does. */
+.oa-toast-stack {
+  position: fixed;
+  top: 64px;
+  right: 20px;
+  z-index: 70;
+  /* The stack itself never intercepts a click; only a card does, once one
+     exists — this is what stops an empty stack from covering the header's
+     own buttons underneath it. */
+  pointer-events: none;
+}
+
+.oa-toast-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 340px;
+  max-width: calc(100vw - 40px);
+}
+
+.oa-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--ai-surface-card);
+  box-shadow: var(--ai-shadow-md);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  backdrop-filter: blur(20px) saturate(1.6);
+  cursor: pointer;
+  outline: none;
+}
+
+.oa-toast:focus-visible {
+  box-shadow: var(--ai-shadow-md), 0 0 0 2px var(--ai-focus-shadow);
+}
+
+.oa-toast-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--ai-text-secondary);
+}
+
+.oa-toast-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.oa-toast-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ai-text);
+}
+
+.oa-toast-text {
+  font-size: 12.5px;
+  color: var(--ai-text-secondary);
+  /* Two lines, then cut — a toast is a nudge to go look, not the place to
+     read the whole of it. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.oa-toast-time {
+  font-size: 11px;
+  color: var(--ai-text-secondary);
+  opacity: 0.75;
+}
+
+/* Revealed on hover — see AGENTS.md on this being deliberate everywhere a
+   close or delete control sits next to something read by default. */
+.oa-toast-close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ai-text-secondary);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.oa-toast:hover .oa-toast-close,
+.oa-toast:focus-within .oa-toast-close {
+  opacity: 1;
+}
+
+.oa-toast-close:hover {
+  background: var(--ai-state-hover);
+  color: var(--ai-text);
+}
+
+.oa-toast-enter-active,
+.oa-toast-leave-active,
+.oa-toast-move {
+  transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1), opacity 0.25s ease;
+}
+
+.oa-toast-enter-from,
+.oa-toast-leave-to {
+  transform: translateX(24px);
+  opacity: 0;
+}
+
+/* A leaving card is taken out of flow during its own exit, so the ones below
+   it slide up into place instead of jumping the instant it is removed. */
+.oa-toast-leave-active {
+  position: absolute;
+  width: 340px;
+  max-width: calc(100vw - 40px);
+}
+
+@media (max-width: 640px) {
+  .oa-toast-stack {
+    top: 56px;
+    right: 12px;
+    left: 12px;
+  }
+
+  .oa-toast-list {
+    width: auto;
+    max-width: none;
+  }
+
+  .oa-toast-leave-active {
+    width: auto;
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oa-toast-enter-active,
+  .oa-toast-leave-active,
+  .oa-toast-move {
+    transition: none;
+  }
+}

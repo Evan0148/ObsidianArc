@@ -155,19 +155,28 @@ function page(next: PageState): void {
 /**
  * Opens one report and its conversation.
  *
+ * Takes either the summary row already on screen — a click in the list,
+ * which can show the title right away while the thread loads — or a bare id,
+ * which is all a notification link ever knows. Either way the fetched thread
+ * carries the full record, so the panel ends up showing the same thing
+ * regardless of how it got opened.
+ *
  * Fetching the thread is also what clears the operator's side of the unread
  * pair — on the server, and in the row behind the panel, so the "waiting for
  * an answer" mark cannot survive the read that answered it.
  */
-async function open(row: Feedback): Promise<void> {
-  opened.value = row;
+async function open(target: Feedback | string): Promise<void> {
+  const feedbackID = typeof target === 'string' ? target : target.id;
+  if (typeof target !== 'string') opened.value = target;
   thread.value = null;
   answer.value = '';
   panelError.value = '';
   busy.value = true;
   try {
-    thread.value = await adminApi.feedbackThread(row.id);
-    row.operator_unread = false;
+    thread.value = await adminApi.feedbackThread(feedbackID);
+    opened.value = thread.value.feedback;
+    const row = rows.value.find((candidate) => candidate.id === feedbackID);
+    if (row) row.operator_unread = false;
     if (summary.value && summary.value.awaiting > 0) summary.value.awaiting -= 1;
   } catch (failure) {
     panelError.value = failure instanceof ApiError ? failure.message : String(failure);
@@ -175,6 +184,19 @@ async function open(row: Feedback): Promise<void> {
     busy.value = false;
   }
 }
+
+// Reached from a notification link (/admin/feedback/<id>): AdminPage keeps
+// this component mounted across that navigation — same slug, different
+// trailing segment — so opening the thread cannot rely on onMounted alone.
+// The watch below is what catches a second link clicked while this page is
+// already open; `immediate` is what covers the first visit.
+watch(
+  () => view.params[0],
+  (feedbackID) => {
+    if (feedbackID) void open(feedbackID);
+  },
+  { immediate: true },
+);
 
 async function reply(): Promise<void> {
   const current = thread.value;

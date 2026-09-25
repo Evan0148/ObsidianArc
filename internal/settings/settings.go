@@ -118,12 +118,22 @@ const (
 	// that mode counts.
 	TwoFactorBackofficeMode    = "security.two_factor_backoffice_mode"
 	TwoFactorBackofficeMinutes = "security.two_factor_backoffice_minutes"
-	ChatChallengeRequests      = "security.chat_challenge_requests"
-	ChatChallengeWindowSecs    = "security.chat_challenge_window_seconds"
-	ChatChallengeClearMins     = "security.chat_challenge_clear_minutes"
-	AdminsBypassQuota          = "quota.admins_bypass"
-	UsageDisplay               = "quota.usage_display"
-	QuotaMaxConcurrent         = "quota.max_concurrent"
+	// Whether a visit to the backoffice ends when the requests start coming
+	// from another network, or from another browser, than the one that
+	// typed the code.
+	TwoFactorBackofficeNetwork = "security.two_factor_backoffice_network"
+	TwoFactorBackofficeBrowser = "security.two_factor_backoffice_browser"
+	// Whether signing in from a device this account has never used before
+	// mails the owner a short notice. Off by default for the same reason
+	// every other mail-sending switch here is: it does nothing until an
+	// operator has both SMTP configured and turned it on.
+	NewDeviceEmail          = "security.new_device_email"
+	ChatChallengeRequests   = "security.chat_challenge_requests"
+	ChatChallengeWindowSecs = "security.chat_challenge_window_seconds"
+	ChatChallengeClearMins  = "security.chat_challenge_clear_minutes"
+	AdminsBypassQuota       = "quota.admins_bypass"
+	UsageDisplay            = "quota.usage_display"
+	QuotaMaxConcurrent      = "quota.max_concurrent"
 	// How many times one work-surface turn may call the model. Each round
 	// is a real provider request that a tool result made necessary, so this
 	// is the ceiling on what a single question can cost.
@@ -434,6 +444,14 @@ var Defaults = map[string]string{
 	// Long enough for one sitting's work, short enough that a tab left open
 	// over lunch locks itself.
 	TwoFactorBackofficeMinutes: "15",
+	// Off: phones change address all day, and an operator should choose to
+	// be asked again every time they do.
+	TwoFactorBackofficeNetwork: "false",
+	TwoFactorBackofficeBrowser: "false",
+	// Off until an operator turns it on, whatever mail is configured: a
+	// switch that mailed everyone the moment SMTP was set up would be a
+	// surprise, not a feature anyone asked for.
+	NewDeviceEmail: "false",
 	// Zero leaves the mid-chat challenge off. Once enabled, the other two
 	// defaults describe a short burst and a clearance long enough that a real
 	// reader is not challenged again during the same conversation.

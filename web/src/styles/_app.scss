@@ -862,6 +862,15 @@ body.oa-resizing * {
   min-width: 280px;
 }
 
+/* The bell's second section, for the notification feed appended below the
+   announcements it already showed. A rule rather than a gap: the two feeds
+   share one menu but are visibly two lists, each with its own "mark all". */
+.oa-menu-head-secondary {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ai-border);
+}
+
 .oa-menu-head-action {
   border: none;
   border-radius: 999px;
