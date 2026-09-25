@@ -54,6 +54,8 @@ type ProvisionInput struct {
 	Nickname string
 	IP       string
 	UA       string
+	// Empty unless the person was asked and answered — see Missing.Invite.
+	InviteCode string
 }
 
 // Missing is what an instance requires that a provider cannot answer.
@@ -62,11 +64,12 @@ type ProvisionInput struct {
 // being refused: a sign-in that needs a QQ number should end at a form asking
 // for one, not at an apology.
 type Missing struct {
-	QQ    bool
-	Email bool
+	QQ     bool
+	Email  bool
+	Invite bool
 }
 
-func (m Missing) Any() bool { return m.QQ || m.Email }
+func (m Missing) Any() bool { return m.QQ || m.Email || m.Invite }
 
 // MissingFor reports what has to be asked of somebody arriving with this
 // identity before an account can be opened for them.
@@ -83,8 +86,9 @@ func (s *Service) MissingFor(ctx context.Context, q database.Queryer, email stri
 		return Missing{}, nil
 	}
 	return Missing{
-		QQ:    s.settings.Get(settings.QQRequirement) == settings.QQRequired,
-		Email: strings.TrimSpace(email) == "" && s.settings.Bool(settings.RequireEmail),
+		QQ:     s.settings.Get(settings.QQRequirement) == settings.QQRequired,
+		Email:  strings.TrimSpace(email) == "" && s.settings.Bool(settings.RequireEmail),
+		Invite: s.settings.Bool(settings.InvitesRequired),
 	}, nil
 }
 
@@ -139,6 +143,17 @@ func (s *Service) Provision(ctx context.Context, tx *database.Tx, in ProvisionIn
 		}
 	}
 
+	// The same spend Register makes, on the same terms: inside this
+	// transaction, so a failure below — a taken address, the throttle —
+	// hands the use back by rolling back with everything else.
+	var grant *InviteGrant
+	if !first {
+		grant, err = s.consumeInvite(ctx, tx, in.InviteCode)
+		if err != nil {
+			return user.User{}, err
+		}
+	}
+
 	username, err := s.availableUsername(ctx, tx, in.Username)
 	if err != nil {
 		return user.User{}, err
@@ -163,6 +178,9 @@ func (s *Service) Provision(ctx context.Context, tx *database.Tx, in ProvisionIn
 	groupID, err := s.registrationGroup(ctx, tx)
 	if err != nil {
 		return user.User{}, err
+	}
+	if grant != nil && grant.GroupID != "" {
+		groupID = grant.GroupID
 	}
 	role := user.RoleUser
 	if first {
@@ -193,11 +211,19 @@ func (s *Service) Provision(ctx context.Context, tx *database.Tx, in ProvisionIn
 	if err != nil {
 		return user.User{}, err
 	}
+	if _, err := s.applyInvite(ctx, tx, grant, created.ID); err != nil {
+		return user.User{}, err
+	}
 
 	// Inside the lock, for the reason Register gives: recording after commit
 	// leaves a gap in which the next queued sign-up passes a throttle this
 	// one should already have moved.
 	s.signups.record()
+	// RewardInvite is deliberately not called here: this method runs inside
+	// tx, a transaction it was handed rather than one it owns, and the use
+	// applyInvite just recorded through it is not visible outside tx until
+	// the caller commits. oauth.Service calls RewardInvite itself, once its
+	// own s.db.Tx has returned.
 	return created, nil
 }
 

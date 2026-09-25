@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp, h, nextTick, shallowRef, type App, type Component } from 'vue';
+import * as authApi from '../src/api/auth';
+import type { Account } from '../src/api/auth';
 import * as consentApi from '../src/api/consent';
 import * as oauthApi from '../src/api/oauth';
 import { signInURL } from '../src/api/oauth';
@@ -79,6 +81,21 @@ function offer(providers: { id: string; name: string }[]): void {
   site.value = { ...siteInfo.value, oauth: providers };
 }
 
+function fieldInput(label: string): HTMLInputElement {
+  const field = [...host.querySelectorAll('.oa-field')]
+    .find((node) => node.querySelector('.oa-field-label')?.textContent === label);
+  if (!field) throw new Error(`Field not found: ${label}`);
+  return field.querySelector('input')!;
+}
+
+const NEW_ACCOUNT: Account = {
+  id: 'u2', username: 'newperson', email: '', qq: '', nickname: '', avatar: '', bio: '',
+  role: 'user', group_id: '', group_expires_at: 0, group_name: '',
+  status: 'active', created_at: 0, updated_at: 0, last_login_at: 0,
+  email_verified: true, allow_stats: true, allow_delete_conversations: true,
+  api_restricted: false, api_restricted_until: 0, api_restriction_source: '',
+};
+
 describe('signing in with an account from elsewhere', () => {
   it('draws a button for each provider the operator switched on', async () => {
     offer([{ id: 'github', name: 'GitHub' }, { id: 'google', name: 'Google' }]);
@@ -146,6 +163,121 @@ describe('signing in with an account from elsewhere', () => {
     expect(signInURL('github')).toBe('/api/auth/oauth/start/github');
     expect(signInURL('github', { next: '' })).toBe('/api/auth/oauth/start/github');
     expect(signInURL('github', { link: true })).toBe('/api/auth/oauth/start/github?link=1');
+  });
+});
+
+// registration.enabled + invites.required, as the sign-up form reads them
+// back through the derived `invite_mode` the server sends on /api/site.
+describe('registering with an invite code', () => {
+  beforeEach(() => {
+    route.path = '/register';
+  });
+
+  it('keeps the field collapsed behind a link in open mode, until asked for', async () => {
+    site.value = { ...siteInfo.value, invite_mode: 'open' };
+    await mount(AuthView, { mode: 'register' });
+
+    expect(() => fieldInput(t('inviteCodeOptionalLabel'))).toThrow();
+    button(host, t('haveInviteCode')).click();
+    await settle();
+    expect(fieldInput(t('inviteCodeOptionalLabel'))).not.toBeNull();
+  });
+
+  it('shows the field open and required outright in invite-only mode, with no toggle', async () => {
+    site.value = { ...siteInfo.value, invite_mode: 'invite' };
+    await mount(AuthView, { mode: 'register' });
+
+    expect(fieldInput(t('inviteCodeLabel'))).not.toBeNull();
+    expect(() => button(host, t('haveInviteCode'))).toThrow();
+  });
+
+  it('refuses to submit without one in invite-only mode, before asking the server', async () => {
+    site.value = { ...siteInfo.value, invite_mode: 'invite' };
+    const register = vi.spyOn(authApi, 'register');
+    await mount(AuthView, { mode: 'register' });
+
+    type(fieldInput(t('username')), 'newperson');
+    type(fieldInput(t('password')), 'a-strong-password');
+    button(host, t('createAccount')).click();
+    await settle();
+
+    expect(register).not.toHaveBeenCalled();
+    expect(host.querySelector('.oa-auth-error')!.textContent).toBe(t('inviteRequiredHere'));
+  });
+
+  it('prefills the field from a ?invite= link and opens it, even in open mode', async () => {
+    site.value = { ...siteInfo.value, invite_mode: 'open' };
+    route.query = { invite: 'PARTNERX' };
+    await mount(AuthView, { mode: 'register' });
+
+    expect(fieldInput(t('inviteCodeOptionalLabel')).value).toBe('PARTNERX');
+  });
+
+  it('sends the typed code to the server, trimmed', async () => {
+    site.value = { ...siteInfo.value, invite_mode: 'invite' };
+    const register = vi.spyOn(authApi, 'register').mockResolvedValue({ user: NEW_ACCOUNT });
+    await mount(AuthView, { mode: 'register' });
+
+    type(fieldInput(t('username')), 'newperson');
+    type(fieldInput(t('password')), 'a-strong-password');
+    type(fieldInput(t('inviteCodeLabel')), '  abcd-2345  ');
+    button(host, t('createAccount')).click();
+    await settle();
+
+    expect(register).toHaveBeenCalledWith(expect.objectContaining({ inviteCode: 'abcd-2345' }));
+  });
+
+  it('words the server\'s refusal of an unknown or spent code', async () => {
+    site.value = { ...siteInfo.value, invite_mode: 'invite' };
+    const { ApiError } = await import('../src/api/client');
+    vi.spyOn(authApi, 'register').mockRejectedValue(new ApiError(400, 'invite_invalid', 'nope', {}));
+    await mount(AuthView, { mode: 'register' });
+
+    type(fieldInput(t('username')), 'newperson');
+    type(fieldInput(t('password')), 'a-strong-password');
+    type(fieldInput(t('inviteCodeLabel')), 'DEADCODE');
+    button(host, t('createAccount')).click();
+    await settle();
+
+    expect(host.querySelector('.oa-auth-error')!.textContent).toBe(t('inviteInvalid'));
+  });
+});
+
+// The same rule applies to the other door an account gets created through:
+// a provider sign-in the server has no way to finish without asking first.
+describe('finishing a sign-up with an invite code', () => {
+  const pending = {
+    provider: 'github', provider_name: 'GitHub', login: 'octocat', email: '',
+    needs: { qq: false, email: false }, email_domains: [] as string[], verify_email: false,
+  };
+
+  beforeEach(() => {
+    route.path = '/oauth/complete';
+    vi.spyOn(oauthApi, 'fetchPendingSignup').mockResolvedValue(pending);
+  });
+
+  it('requires a code in invite-only mode, before asking the server', async () => {
+    site.value = { ...siteInfo.value, invite_mode: 'invite' };
+    const complete = vi.spyOn(oauthApi, 'completeSignup');
+    await mount(CompleteSignupView);
+
+    button(host, t('signupCompleteSubmit')).click();
+    await settle();
+
+    expect(complete).not.toHaveBeenCalled();
+    expect(host.querySelector('.oa-auth-error')!.textContent).toBe(t('inviteRequiredHere'));
+  });
+
+  it('sends the code once one is entered', async () => {
+    site.value = { ...siteInfo.value, invite_mode: 'invite' };
+    const complete = vi.spyOn(oauthApi, 'completeSignup').mockResolvedValue({ redirect: '/' });
+    await mount(CompleteSignupView);
+
+    type(fieldInput(t('inviteCodeLabel')), 'PARTNERX');
+    button(host, t('signupCompleteSubmit')).click();
+    await settle();
+
+    expect(complete).toHaveBeenCalledWith({ qq: '', email: '', inviteCode: 'PARTNERX' });
   });
 });
 
@@ -432,7 +564,7 @@ describe('finishing a sign-up the provider could not', () => {
     button(host, t('signupCompleteSubmit')).click();
     await settle();
 
-    expect(complete).toHaveBeenCalledWith({ qq: '87654321', email: '' });
+    expect(complete).toHaveBeenCalledWith({ qq: '87654321', email: '', inviteCode: '' });
     // A whole navigation, not a route change: the session cookie has just been
     // set and the application reads the account once, at boot.
     expect(window.location.href).toBe('/oauth/consent?request=abc');

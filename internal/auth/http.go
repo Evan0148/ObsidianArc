@@ -242,6 +242,17 @@ func (h *Handlers) site(w http.ResponseWriter, r *http.Request) error {
 		// that long reads as a form that has hung.
 		"signup_review": populated && h.settings.Bool(settings.SignupReview) &&
 			h.settings.Get(settings.SignupReviewModel) != "",
+		// Never invite for the first account, the same exemption every other
+		// mode here carries: there is nobody yet to have issued a code, and
+		// the account that opens with none is the one that turns an empty
+		// instance into an administered one.
+		"invite_mode": settings.InviteMode(!populated || h.settings.Bool(settings.RegistrationEnabled),
+			populated && h.settings.Bool(settings.InvitesRequired)),
+		// Whether the sign-up form should mention that a joined account gets
+		// its own code to hand to friends — a fact about the instance, not
+		// about this visitor, so it is served here rather than waiting for
+		// a session to ask internal/invite's own endpoint about.
+		"user_invites": h.settings.Bool(settings.InvitesUserEnabled),
 		// What a visitor with no account gets. Served here rather than
 		// from a second endpoint because the front door has to decide what
 		// to draw before it can draw anything.
@@ -373,6 +384,10 @@ type registerRequest struct {
 	QQ        string `json:"qq"`
 	Password  string `json:"password"`
 	Nickname  string `json:"nickname"`
+	// Empty unless this instance's registration mode asks for one, or the
+	// visitor arrived through a partner link and typed or carried one along
+	// anyway. See Service.Register.
+	InviteCode string `json:"invite_code"`
 }
 
 func (h *Handlers) register(w http.ResponseWriter, r *http.Request) error {
@@ -384,14 +399,15 @@ func (h *Handlers) register(w http.ResponseWriter, r *http.Request) error {
 	ip := httpx.ClientIP(r, h.trust)
 	ua := r.UserAgent()
 	account, token, err := h.service.Register(r.Context(), RegisterInput{
-		Turnstile: body.Turnstile,
-		Username:  body.Username,
-		Email:     body.Email,
-		QQ:        body.QQ,
-		Password:  body.Password,
-		Nickname:  body.Nickname,
-		IP:        ip,
-		UA:        ua,
+		Turnstile:  body.Turnstile,
+		Username:   body.Username,
+		Email:      body.Email,
+		QQ:         body.QQ,
+		Password:   body.Password,
+		Nickname:   body.Nickname,
+		IP:         ip,
+		UA:         ua,
+		InviteCode: body.InviteCode,
 	})
 	if err != nil {
 		return h.registrationError(err)
@@ -752,6 +768,10 @@ func (h *Handlers) registrationError(err error) error {
 	switch {
 	case errors.Is(err, ErrRegistrationClosed):
 		return httpx.Forbidden("Registration is closed on this server.")
+	case errors.Is(err, ErrInviteRequired):
+		return httpx.BadRequestCode("invite_required", "An invite code is required to register here.")
+	case errors.Is(err, ErrInviteInvalid):
+		return httpx.BadRequestCode("invite_invalid", "That invite code is not valid.")
 	case errors.Is(err, turnstile.ErrFailed):
 		return httpx.ForbiddenCode("challenge_failed",
 			"The verification could not be completed. Try again.")

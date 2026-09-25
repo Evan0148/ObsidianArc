@@ -10,6 +10,7 @@ export const ADMIN_PERMISSIONS: Array<{ value: string; label: StringKey }> = [
   { value: 'usage', label: 'navUsage' },
   { value: 'resources', label: 'navResources' },
   { value: 'codes', label: 'navCodes' },
+  { value: 'invites', label: 'permInvites' },
   { value: 'logs', label: 'navLogs' },
   { value: 'security', label: 'navSecurity' },
   { value: 'settings', label: 'navSettings' },

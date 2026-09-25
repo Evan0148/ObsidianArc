@@ -133,7 +133,7 @@ func TestACardIsSpentOnce(t *testing.T) {
 	ctx := context.Background()
 	person := f.reader(t, "spender")
 
-	granted, err := f.store.Grant(ctx, person.ID, 1, 30)
+	granted, err := f.store.Grant(ctx, nil, person.ID, 1, 30)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestAnExpiredCardIsNeitherOfferedNorSpent(t *testing.T) {
 	ctx := context.Background()
 	person := f.reader(t, "late")
 
-	granted, err := f.store.Grant(ctx, person.ID, 1, 30)
+	granted, err := f.store.Grant(ctx, nil, person.ID, 1, 30)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +329,7 @@ func TestACardCannotBeSpentByAnotherAccount(t *testing.T) {
 	owner := f.reader(t, "owner")
 	stranger := f.reader(t, "stranger")
 
-	granted, err := f.store.Grant(ctx, owner.ID, 1, 30)
+	granted, err := f.store.Grant(ctx, nil, owner.ID, 1, 30)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +417,7 @@ func TestHeldSeparatesSpentFromExpiredFromLeft(t *testing.T) {
 	ctx := context.Background()
 	person := f.reader(t, "holder")
 
-	granted, err := f.store.Grant(ctx, person.ID, 4, 30)
+	granted, err := f.store.Grant(ctx, nil, person.ID, 4, 30)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -490,7 +490,7 @@ func TestReschedulingMovesUnusedCardsIncludingLapsedOnes(t *testing.T) {
 	ctx := context.Background()
 	person := f.reader(t, "extended")
 
-	granted, err := f.store.Grant(ctx, person.ID, 3, 30)
+	granted, err := f.store.Grant(ctx, nil, person.ID, 3, 30)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -539,11 +539,11 @@ func TestReschedulingNamedCardsStaysInsideOneAccount(t *testing.T) {
 	mine := f.reader(t, "owner")
 	theirs := f.reader(t, "stranger")
 
-	ours, err := f.store.Grant(ctx, mine.ID, 2, 30)
+	ours, err := f.store.Grant(ctx, nil, mine.ID, 2, 30)
 	if err != nil {
 		t.Fatal(err)
 	}
-	others, err := f.store.Grant(ctx, theirs.ID, 1, 30)
+	others, err := f.store.Grant(ctx, nil, theirs.ID, 1, 30)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -575,7 +575,7 @@ func TestReschedulingRefusesADateOutsideTheWindow(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	person := f.reader(t, "misdated")
-	if _, err := f.store.Grant(ctx, person.ID, 1, 30); err != nil {
+	if _, err := f.store.Grant(ctx, nil, person.ID, 1, 30); err != nil {
 		t.Fatal(err)
 	}
 
@@ -612,7 +612,7 @@ func TestRevokingTakesBackOnlyUnspentCards(t *testing.T) {
 	ctx := context.Background()
 	person := f.reader(t, "withdrawn")
 
-	granted, err := f.store.Grant(ctx, person.ID, 3, 30)
+	granted, err := f.store.Grant(ctx, nil, person.ID, 3, 30)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -653,7 +653,7 @@ func TestRevokingCannotReachAnotherAccount(t *testing.T) {
 	mine := f.reader(t, "holder-a")
 	theirs := f.reader(t, "holder-b")
 
-	others, err := f.store.Grant(ctx, theirs.ID, 1, 30)
+	others, err := f.store.Grant(ctx, nil, theirs.ID, 1, 30)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -215,10 +215,13 @@ func (s *Store) SpendNext(ctx context.Context, q database.Queryer, userID string
 	return nil
 }
 
-// Grant hands cards to one account without a code in between.
-func (s *Store) Grant(ctx context.Context, userID string, count, days int) ([]Card, error) {
+// Grant hands cards to one account without a code in between. q is nil to
+// grant on its own, or the caller's transaction when the grant has to stand
+// or fall with something else — an invite reward's claim, which must not
+// commit as paid when the cards it pays were never written.
+func (s *Store) Grant(ctx context.Context, q database.Queryer, userID string, count, days int) ([]Card, error) {
 	now := time.Now()
-	return s.grant(ctx, userID, count, now.Add(time.Duration(clampDays(days))*24*time.Hour).UnixMilli(), now.UnixMilli())
+	return s.grant(ctx, q, userID, count, now.Add(time.Duration(clampDays(days))*24*time.Hour).UnixMilli(), now.UnixMilli())
 }
 
 // GrantUntil is the administrative spelling: the operator chose the expiry
@@ -228,7 +231,7 @@ func (s *Store) GrantUntil(ctx context.Context, userID string, count int, expire
 	if expiresAt <= now || expiresAt > now+int64(MaxDays)*24*3600*1000 {
 		return nil, ErrInvalidExpiry
 	}
-	return s.grant(ctx, userID, count, expiresAt, now)
+	return s.grant(ctx, nil, userID, count, expiresAt, now)
 }
 
 // Reschedule moves the expiry of the cards one account is still holding.
@@ -276,14 +279,14 @@ func (s *Store) Reschedule(ctx context.Context, userID string, cardIDs []string,
 	return int(moved), nil
 }
 
-func (s *Store) grant(ctx context.Context, userID string, count int, expires, now int64) ([]Card, error) {
+func (s *Store) grant(ctx context.Context, q database.Queryer, userID string, count int, expires, now int64) ([]Card, error) {
 	if count < 1 {
 		return nil, ErrInvalidCount
 	}
 	count = min(count, MaxCards)
 
 	out := make([]Card, 0, count)
-	err := s.db.Tx(ctx, func(tx *database.Tx) error {
+	insert := func(tx database.Queryer) error {
 		for range count {
 			record := Card{
 				ID: id.New(), Source: SourceGrant,
@@ -298,7 +301,13 @@ func (s *Store) grant(ctx context.Context, userID string, count int, expires, no
 			out = append(out, record)
 		}
 		return nil
-	})
+	}
+	var err error
+	if q != nil {
+		err = insert(q)
+	} else {
+		err = s.db.Tx(ctx, func(tx *database.Tx) error { return insert(tx) })
+	}
 	if err != nil {
 		return nil, err
 	}

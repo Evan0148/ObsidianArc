@@ -26,13 +26,25 @@ func hasPermission(account user.User, permissions string) bool {
 	return false
 }
 
+// settingPermission names the grants, comma-separated as hasPermission reads
+// them, that may read and write one setting. The shared settings route lets
+// in any of them; which keys each one then sees and saves is decided here,
+// key by key, so a grant reaches its own page's settings and nobody else's.
 func settingPermission(key string) string {
 	switch {
 	case strings.HasPrefix(key, "health."):
 		return "availability"
+	// The invites page's registration-mode select writes this switch as well
+	// as invites.required: "invite only" is registration on, with a code
+	// required. An operator trusted with invites and not with the rest of
+	// security can open and close sign-ups, and nothing else there.
+	case key == "registration.enabled":
+		return "security,invites"
 	case strings.HasPrefix(key, "registration."), strings.HasPrefix(key, "turnstile."),
 		strings.HasPrefix(key, "security."), strings.HasPrefix(key, "oauth."):
 		return "security"
+	case strings.HasPrefix(key, "invites."):
+		return "invites"
 	default:
 		return "settings"
 	}
@@ -49,7 +61,7 @@ func canPolicy(actor user.User, scope quota.Scope) bool {
 func (h *Handlers) visibleSettings(account user.User) map[string]string {
 	values := redacted(h.settings.All())
 	for key := range values {
-		if !account.CanAdmin(settingPermission(key)) {
+		if !hasPermission(account, settingPermission(key)) {
 			delete(values, key)
 		}
 	}
@@ -61,7 +73,9 @@ func (h *Handlers) visibleSettings(account user.User) map[string]string {
 func (h *Handlers) references(w http.ResponseWriter, r *http.Request) error {
 	actor := auth.MustUser(r.Context())
 	out := map[string]any{}
-	if hasPermission(actor, "users,models,usage,security,settings,groups") {
+	// Invites is here because a code can carry a group, and an operator
+	// trusted with invites alone must be able to pick one.
+	if hasPermission(actor, "users,models,usage,security,settings,groups,invites") {
 		groups, err := h.groups.List(r.Context(), nil)
 		if err != nil {
 			return httpx.Internal(err)

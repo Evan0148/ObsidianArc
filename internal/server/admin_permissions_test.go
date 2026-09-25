@@ -20,6 +20,7 @@ func TestAdministratorPageGrants(t *testing.T) {
 		"usage": "/usage", "resources": "/resources", "codes": "/codes",
 		"logs": "/logs", "security": "/security/events", "settings": "/settings",
 		"announcements": "/announcements", "feedback": "/feedback",
+		"invites": "/invites",
 	}
 	for _, grant := range user.AdminPermissions {
 		t.Run(grant, func(t *testing.T) {
@@ -30,7 +31,7 @@ func TestAdministratorPageGrants(t *testing.T) {
 			}
 			for page, path := range pages {
 				response = in.do(http.MethodGet, "/api/admin"+path, nil, operator)
-				allowed := page == grant || (page == "settings" && (grant == "security" || grant == "availability"))
+				allowed := page == grant || (page == "settings" && (grant == "security" || grant == "availability" || grant == "invites"))
 				if allowed {
 					if response.Code != http.StatusOK {
 						t.Errorf("%s: %d %s", page, response.Code, response.Body.String())
@@ -215,5 +216,35 @@ func TestAdminUserPagesReachEveryAccount(t *testing.T) {
 		if len(seen) != 65 {
 			t.Fatalf("%s only reached %d accounts", endpoint, len(seen))
 		}
+	}
+}
+
+// The invites page saves through the shared settings route. An operator
+// granted invites alone reaches the invite settings and the one registration
+// switch the page's mode select writes — and not a key belonging to any other
+// page, which the route letting them in must not be mistaken for.
+func TestAnInvitesGrantReachesItsOwnSettingsOnly(t *testing.T) {
+	in := newInstance(t)
+	founder := in.register("founder", "a-good-password")
+	operator := in.register("operator", "a-good-password")
+	if response := in.do(http.MethodPatch, "/api/admin/users/"+operator.userID,
+		map[string]any{"role": "admin", "admin_permissions": []string{"invites"}}, founder); response.Code != http.StatusOK {
+		t.Fatalf("grant: %d %s", response.Code, response.Body.String())
+	}
+
+	own := map[string]string{"registration.enabled": "true", "invites.required": "true", "invites.reward_cards": "2"}
+	if response := in.do(http.MethodPut, "/api/admin/settings", own, operator); response.Code != http.StatusOK {
+		t.Fatalf("own settings: %d %s", response.Code, response.Body.String())
+	}
+	for _, key := range []string{"site.name", "security.two_factor_policy", "registration.require_email"} {
+		response := in.do(http.MethodPut, "/api/admin/settings", map[string]string{key: "x"}, operator)
+		if response.Code != http.StatusForbidden {
+			t.Errorf("%s: %d %s", key, response.Code, response.Body.String())
+		}
+	}
+	listed := in.do(http.MethodGet, "/api/admin/settings", nil, operator)
+	if listed.Code != http.StatusOK || !strings.Contains(listed.Body.String(), `"invites.required":"true"`) ||
+		strings.Contains(listed.Body.String(), `"site.name"`) {
+		t.Fatalf("listed: %d %s", listed.Code, listed.Body.String())
 	}
 }

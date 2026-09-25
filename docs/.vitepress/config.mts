@@ -25,6 +25,7 @@ const sidebar = [
     { text: '服务商与模型', link: '/admin/providers-and-models' },
     { text: '用户与分组', link: '/admin/users-and-groups' },
     { text: '兑换码', link: '/admin/codes' },
+    { text: '邀请码', link: '/admin/invites' },
     { text: '可用性管理', link: '/admin/availability' },
     { text: '系统设置', link: '/admin/system-settings' },
     { text: '请求日志', link: '/admin/logs-and-auditing' },

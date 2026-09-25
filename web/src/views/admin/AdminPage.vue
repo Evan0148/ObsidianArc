@@ -17,7 +17,7 @@ import OaSearchField from '@/components/OaSearchField.vue';
 import { t } from '@/composables/useI18n';
 import {
   IconChart, IconChevron, IconCpu, IconFile, IconHome, IconKey, IconLayers, IconLock,
-  IconMenu, IconMessage, IconPulse, IconServer, IconSliders, IconSpark,
+  IconMenu, IconMessage, IconPulse, IconSend, IconServer, IconSliders, IconSpark,
   IconUsers,
 } from '@/icons';
 import AppShell from '@/layouts/AppShell.vue';
@@ -43,6 +43,7 @@ import AdminAvailability from './AdminAvailability.vue';
 import AdminUsage from './AdminUsage.vue';
 import AdminResources from './AdminResources.vue';
 import AdminCodes from './AdminCodes.vue';
+import AdminInvites from './AdminInvites.vue';
 import AdminLogs from './AdminLogs.vue';
 import AdminSecurity from './AdminSecurity.vue';
 import AdminSettings from './AdminSettings.vue';
@@ -62,6 +63,7 @@ const PAGES: AdminPageSpec[] = [
   { slug: 'usage', label: 'navUsage', icon: IconChart, component: markRaw(AdminUsage) },
   { slug: 'resources', label: 'navResources', icon: IconCpu, component: markRaw(AdminResources) },
   { slug: 'codes', label: 'navCodes', icon: IconKey, component: markRaw(AdminCodes) },
+  { slug: 'invites', label: 'navInvites', icon: IconSend, component: markRaw(AdminInvites) },
   { slug: 'logs', label: 'navLogs', icon: IconFile, component: markRaw(AdminLogs) },
   { slug: 'security', label: 'navSecurity', icon: IconLock, component: markRaw(AdminSecurity) },
   { slug: 'settings', label: 'navSettings', icon: IconSliders, component: markRaw(AdminSettings) },

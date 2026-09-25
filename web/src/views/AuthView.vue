@@ -43,6 +43,17 @@ const qqRequirement = computed(() =>
 const qqRequired = computed(() => !setup.value && qqRequirement.value === 'required');
 const qqEnabled = computed(() => !setup.value && qqRequirement.value !== 'off');
 
+// Registration mode, as the server derived it from registration.enabled and
+// invites.required. Absent (an older server) reads as 'open' — the behaviour
+// before the setting existed.
+const inviteMode = computed(() => (setup.value ? 'open' : site.value.invite_mode ?? 'open'));
+const inviteCode = ref('');
+// Open once a code is required, or once one arrived on the link — never
+// collapsed back on its own, so a link with ?invite= does not hide what it
+// just filled in.
+const inviteOpen = ref(false);
+const inviteVisible = computed(() => registering.value && (inviteMode.value === 'invite' || inviteOpen.value));
+
 const identityLabel = computed(() => (registering.value ? t('username') : t('usernameOrEmail')));
 
 // What to say under the address field: which domains are taken, that a link
@@ -200,6 +211,13 @@ onMounted(() => {
     // sign-in that is long over.
     void router.replace({ path: route.path, query: {} });
   }
+  // A partner or friend's link: the code the visitor arrived with is worth
+  // more than an empty field they would have to go find again.
+  const invite = route.query['invite'];
+  if (typeof invite === 'string' && invite) {
+    inviteCode.value = invite;
+    inviteOpen.value = true;
+  }
   void nextTick(() => (stage.value === 'code' ? codeField.value : identifierField.value)?.focus());
 });
 
@@ -227,6 +245,10 @@ async function onSubmit(): Promise<void> {
     error.value = t('qqInvalid');
     return;
   }
+  if (registering.value && inviteMode.value === 'invite' && !inviteCode.value.trim()) {
+    error.value = t('inviteRequiredHere');
+    return;
+  }
 
   busy.value = true;
   error.value = '';
@@ -245,6 +267,7 @@ async function onSubmit(): Promise<void> {
           email: email.value.trim(),
           qq: qqValue,
           turnstile: guard.value?.token() ?? '',
+          inviteCode: inviteCode.value.trim(),
         })
       : await login(identity, secret, guard.value?.token() ?? '');
 
@@ -377,6 +400,23 @@ async function onSubmit(): Promise<void> {
               autocomplete="off"
               maxlength="15"
               :required="qqRequired"
+            >
+          </OaField>
+
+          <!-- Required in invite-only mode; otherwise a collapsed link, so a
+               field almost nobody fills in does not sit open on every visit. -->
+          <p v-if="registering && inviteMode === 'open' && !inviteOpen" class="oa-auth-switch">
+            <button type="button" @click="inviteOpen = true">{{ t('haveInviteCode') }}</button>
+          </p>
+          <OaField v-if="inviteVisible" :label="inviteMode === 'invite' ? t('inviteCodeLabel') : t('inviteCodeOptionalLabel')">
+            <input
+              v-model="inviteCode"
+              type="text"
+              spellcheck="false"
+              :placeholder="t('inviteCodePlaceholder')"
+              autocomplete="off"
+              maxlength="32"
+              :required="inviteMode === 'invite'"
             >
           </OaField>
 

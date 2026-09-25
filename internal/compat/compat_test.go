@@ -1345,3 +1345,38 @@ func TestAChosenAPINameIsNeverQualified(t *testing.T) {
 		t.Errorf("the unnamed row got %q, want the qualified id", refs[unnamed.ID])
 	}
 }
+
+// A caller who asks for one document is still served from a stream. Without
+// one a provider sends no headers until the answer is finished, and a long
+// answer from a slow model outlasted the header timeout — a 502 at ninety
+// seconds for a request the chat, which always streams, answered fine.
+func TestADocumentIsAssembledFromAStreamUpstream(t *testing.T) {
+	f := newFixture(t)
+	f.upstream.stream(
+		`{"choices":[{"delta":{"content":"he"}}]}`,
+		`{"choices":[{"delta":{"content":"llo"}}],"usage":{"prompt_tokens":3,"completion_tokens":2}}`,
+		`[DONE]`,
+	)
+
+	w := f.do(t, http.MethodPost, "/v1/chat/completions", f.token, completionBody(f.model.ID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+	if streamed, _ := f.upstream.received()["stream"].(bool); !streamed {
+		t.Fatalf("the provider was asked without a stream: %v", f.upstream.received()["stream"])
+	}
+	if got := w.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("the caller asked for a document and got %q", got)
+	}
+	body := decodeJSON(t, w)
+	choices, _ := body["choices"].([]any)
+	first, _ := choices[0].(map[string]any)
+	message, _ := first["message"].(map[string]any)
+	if message["content"] != "hello" {
+		t.Fatalf("content = %v, want hello", message["content"])
+	}
+	usage, _ := body["usage"].(map[string]any)
+	if usage["completion_tokens"] != float64(2) {
+		t.Fatalf("usage = %v", usage)
+	}
+}

@@ -216,10 +216,19 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | --- | --- | --- |
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
-| Binary (SQLite + embedded SPA) | < 30 MB | 21.2 MB (17.5 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 135 kB | 185.93 kB to open the chat (155.61 JS + 30.32 CSS) |
+| Binary (SQLite + embedded SPA) | < 30 MB | 21.4 MB (17.7 MB `-tags nosqlite`, Linux amd64) |
+| Frontend, on the wire | < 135 kB | 188.95 kB to open the chat (158.62 JS + 30.33 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
+
+Remeasured for invite codes on 2026-09-25 (UTC): the first paint grew by
+3.02 kB (3.01 JS, 0.01 CSS) to the figure above — the invite field on the
+sign-up and complete-sign-up cards, which are the first paint for anybody
+signed out, and the invites section of the settings, which are columns over
+the chat rather than a chunk of their own. The backoffice grew by 3.81 kB to
+82.68 kB for its new tab, and the Chinese dictionary to 34.18 kB. The binary
+grew by 188 kB with SQLite (21,368,992 bytes) and 184 kB without
+(17,653,920), Go 1.27.1.
 
 Remeasured once more on 2026-09-25 (UTC), for the notification bell and its
 toasts, the signed-in devices list and the new-device notice: the first
@@ -356,10 +365,10 @@ What each reader actually downloads:
 
 | | gzipped |
 | --- | --- |
-| English, not an administrator | 185.93 kB |
-| Chinese, not an administrator | 218.67 kB |
-| …and a conversation containing a formula | 222.28 kB |
-| Chinese administrator, backoffice open | 297.54 kB |
+| English, not an administrator | 188.95 kB |
+| Chinese, not an administrator | 223.13 kB |
+| …and a conversation containing a formula | 226.74 kB |
+| Chinese administrator, backoffice open | 305.81 kB |
 | Anybody, once they open the terminal | +7.20 kB |
 
 Route-level splitting would shave the first paint further and is deliberately

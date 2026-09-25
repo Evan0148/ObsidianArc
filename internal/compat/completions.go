@@ -199,6 +199,13 @@ func (h *Handlers) buffered(
 		return nil
 	}
 
+	// Asked of the provider as a stream even though the caller wants one
+	// document. A provider answering without a stream sends no headers until
+	// the whole answer is written, and a long answer from a slow model
+	// outlasts UPSTREAM_HEADER_TIMEOUT — so an API client that did not ask
+	// for a stream got a 502 at ninety seconds for a request the chat, which
+	// always streams, answered fine. The sink above assembles either shape.
+	request.Stream = true
 	result, chatErr := h.registry.Chat(r.Context(), resolved.Provider, request, sink)
 	usage = usage.Merge(result.Usage)
 	if result.Text != "" && answer.Len() == 0 {

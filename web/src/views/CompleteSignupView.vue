@@ -9,7 +9,7 @@
 // opened by the button below. Walking away leaves no account behind.
 
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { completeSignup, fetchPendingSignup, type PendingSignup } from '@/api/oauth';
 import OaField from '@/components/OaField.vue';
 import OaThemeToggle from '@/components/OaThemeToggle.vue';
@@ -19,7 +19,15 @@ import { refusalText } from '@/lib/refusal';
 import { siteInfo } from '@/stores/session';
 
 const router = useRouter();
+const route = useRoute();
 const site = computed(() => siteInfo.value);
+
+// Same rule the sign-up form uses: a code is asked for here too, because this
+// screen is the other door an account gets created through.
+const inviteMode = computed(() => site.value.invite_mode ?? 'open');
+const inviteCode = ref('');
+const inviteOpen = ref(false);
+const inviteVisible = computed(() => inviteMode.value === 'invite' || inviteOpen.value);
 
 const pending = ref<PendingSignup | null>(null);
 const gone = ref('');
@@ -46,6 +54,11 @@ onMounted(() => {
   void fetchPendingSignup()
     .then((result) => { pending.value = result; })
     .catch(() => { gone.value = t('signupCompleteGone'); });
+  const invite = route.query['invite'];
+  if (typeof invite === 'string' && invite) {
+    inviteCode.value = invite;
+    inviteOpen.value = true;
+  }
 });
 
 async function submit(): Promise<void> {
@@ -66,11 +79,15 @@ async function submit(): Promise<void> {
     error.value = t('emailRequiredHere');
     return;
   }
+  if (inviteMode.value === 'invite' && !inviteCode.value.trim()) {
+    error.value = t('inviteRequiredHere');
+    return;
+  }
 
   busy.value = true;
   error.value = '';
   try {
-    const { redirect } = await completeSignup({ qq: number, email: address });
+    const { redirect } = await completeSignup({ qq: number, email: address, inviteCode: inviteCode.value.trim() });
     // A full navigation rather than a route change: the session cookie has
     // just been set, and everything on the other side of this reads the
     // account once at boot.
@@ -138,6 +155,21 @@ async function submit(): Promise<void> {
               :placeholder="domains.length ? `you@${domains[0]}` : 'you@example.com'"
               autocomplete="email"
               maxlength="254"
+            >
+          </OaField>
+
+          <p v-if="inviteMode === 'open' && !inviteOpen" class="oa-auth-switch">
+            <button type="button" @click="inviteOpen = true">{{ t('haveInviteCode') }}</button>
+          </p>
+          <OaField v-if="inviteVisible" :label="inviteMode === 'invite' ? t('inviteCodeLabel') : t('inviteCodeOptionalLabel')">
+            <input
+              v-model="inviteCode"
+              type="text"
+              spellcheck="false"
+              :placeholder="t('inviteCodePlaceholder')"
+              autocomplete="off"
+              maxlength="32"
+              :required="inviteMode === 'invite'"
             >
           </OaField>
 

@@ -25,7 +25,7 @@ func init() {
 		Flags:      []Flag{{Name: "--q", Hint: Text{EN: "substring filter on the key name", ZH: "对键名做子串筛选"}, Value: "TEXT"}},
 		Examples:   []string{"setting list", "setting list --q attachments"},
 		SeeAlso:    []string{"setting get", "setting set"},
-		Permission: "settings,security,availability",
+		Permission: "settings,security,availability,invites",
 		Endpoints:  []string{"GET /api/admin/settings"},
 		Run: func(_ context.Context, rt *Runtime) error {
 			data, _, err := rt.Call(http.MethodGet, "/api/admin/settings", nil)
@@ -57,7 +57,7 @@ func init() {
 		Args:       []Arg{{Name: "key", Hint: Text{EN: "the setting key", ZH: "设置键"}, Required: true}},
 		Examples:   []string{"setting get site.name", "setting get attachments.max_mb"},
 		SeeAlso:    []string{"setting list", "setting set"},
-		Permission: "settings,security,availability",
+		Permission: "settings,security,availability,invites",
 		Endpoints:  []string{"GET /api/admin/settings"},
 		Run: func(_ context.Context, rt *Runtime) error {
 			key, err := requireRef(rt, "setting key")
@@ -88,11 +88,13 @@ func init() {
 		Help: Text{
 			EN: "Every value is sent as a string, including booleans ('true') and numbers — the server " +
 				"decides the type per key. Which grant this needs depends on the key's prefix: health.* " +
-				"needs availability, registration.*/turnstile.*/security.*/oauth.* need security, " +
+				"needs availability, registration.*/turnstile.*/security.*/oauth.* need security " +
+				"(registration.enabled also takes invites), invites.* needs invites, " +
 				"everything else needs settings.",
 			ZH: "所有值都以字符串形式发送，包括布尔值（'true'）和数字——具体类型由服务器按键名判断。" +
 				"所需权限取决于键名前缀：health.* 需要 availability，" +
-				"registration.*/turnstile.*/security.*/oauth.* 需要 security，其余需要 settings。",
+				"registration.*/turnstile.*/security.*/oauth.* 需要 security（registration.enabled 也可以用 invites），" +
+				"invites.* 需要 invites，其余需要 settings。",
 		},
 		Args: []Arg{
 			{Name: "key", Hint: Text{EN: "the setting key", ZH: "设置键"}, Required: true},
@@ -100,7 +102,7 @@ func init() {
 		},
 		Examples:   []string{"setting set site.name 'Obsidian Arc'", "setting set attachments.max_mb 12"},
 		SeeAlso:    []string{"setting list", "setting import"},
-		Permission: "settings,security,availability",
+		Permission: "settings,security,availability,invites",
 		Endpoints:  []string{"PUT /api/admin/settings"},
 		Run: func(_ context.Context, rt *Runtime) error {
 			if rt.NArg() < 2 {

@@ -49,6 +49,28 @@ const (
 	SignupsPerIP       = "registration.per_ip"
 	SignupsIPWindowMin = "registration.per_ip_window_minutes"
 
+	// Invite codes. The backoffice shows these as one "registration mode"
+	// select (open / invite / closed), but they are two independent booleans
+	// underneath: invite-only is RegistrationEnabled true and InvitesRequired
+	// true, and closed is RegistrationEnabled false regardless of this one —
+	// see settings.InviteMode, which is the one place that composes them.
+	InvitesRequired = "invites.required"
+	// Whether an account gets a personal code of its own to hand to friends,
+	// separate from whether a code is required to register at all: an
+	// instance can require one at the door while never asking its own
+	// members to bring anyone.
+	InvitesUserEnabled = "invites.user_enabled"
+	// Successful invites one personal code may credit before it stops
+	// counting toward its owner's reward — the code itself keeps working
+	// past this, since registering through it still seats someone in its
+	// group; only the reward is capped. 0 = unlimited.
+	InvitesUserLimit = "invites.user_limit"
+	// Reset cards granted to the inviter per qualifying invitee, and how many
+	// days each is good for. 0 cards is the instance-wide off switch for the
+	// reward, independent of whether personal codes exist at all.
+	InvitesRewardCards    = "invites.reward_cards"
+	InvitesRewardCardDays = "invites.reward_card_days"
+
 	// Cloudflare Turnstile. The site key is public — it is in the page's
 	// markup — and the secret is write-only: it is redacted out of every
 	// response, the way a provider's API key is.
@@ -334,6 +356,27 @@ func ValidQQRequirement(value string) bool {
 	return false
 }
 
+// What the backoffice's one registration-mode select actually means, and
+// what GET /api/site tells a visitor before they type anything.
+const (
+	InviteModeOpen   = "open"
+	InviteModeInvite = "invite"
+	InviteModeClosed = "closed"
+)
+
+// InviteMode composes RegistrationEnabled and InvitesRequired into the one
+// value the form and the sign-up page both read, so neither has to reproduce
+// the rule that closed wins regardless of whether a code is also required.
+func InviteMode(registrationEnabled, invitesRequired bool) string {
+	if !registrationEnabled {
+		return InviteModeClosed
+	}
+	if invitesRequired {
+		return InviteModeInvite
+	}
+	return InviteModeOpen
+}
+
 // hexColorRE accepts exactly #rrggbb. Three-digit and named CSS colours are
 // legal everywhere else, but a manifest generator that has to guess which of
 // those an operator meant is a second source of truth for the same value —
@@ -394,8 +437,16 @@ var Defaults = map[string]string{
 	// limit that locks out a university or an office behind one address.
 	SignupsPerIP:       "0",
 	SignupsIPWindowMin: "60",
-	TurnstileSiteKey:   "",
-	TurnstileSecretKey: "",
+	// Off: an instance that has never configured an invite scheme should
+	// register exactly as it always did, not suddenly demand a code nobody
+	// has issued.
+	InvitesRequired:       "false",
+	InvitesUserEnabled:    "false",
+	InvitesUserLimit:      "10",
+	InvitesRewardCards:    "0",
+	InvitesRewardCardDays: "30",
+	TurnstileSiteKey:      "",
+	TurnstileSecretKey:    "",
 	// Off, and off even once the keys are filled in: an operator pasting keys
 	// is configuring, not yet switching on, and a challenge that appeared the
 	// moment a key was saved would lock out the half-finished setup it was

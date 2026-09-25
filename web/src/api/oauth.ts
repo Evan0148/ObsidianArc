@@ -78,10 +78,13 @@ export function fetchPendingSignup(): Promise<PendingSignup> {
 }
 
 /** Opens the account, and answers with where to go next. */
-export function completeSignup(details: { qq?: string; email?: string }): Promise<{ redirect: string }> {
+export function completeSignup(
+  details: { qq?: string; email?: string; inviteCode?: string },
+): Promise<{ redirect: string }> {
   return api.post<{ redirect: string }>('/api/auth/oauth/signup', {
     qq: details.qq ?? '',
     email: details.email ?? '',
+    invite_code: details.inviteCode ?? '',
   });
 }
 

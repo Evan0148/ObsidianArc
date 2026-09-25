@@ -5390,3 +5390,15 @@
     transition: none;
   }
 }
+
+/* --- invites (backoffice) */
+
+/* A pair of buttons beside a `.oa-card-row` entry — copy the code, copy the
+   partner link — kept to one rule because every other row action on this
+   screen already lives inside a panel with its own footer, and this is the
+   one place two actions sit on a row instead. */
+.oa-invite-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

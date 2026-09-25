@@ -5,7 +5,7 @@ package user
 var AdminPermissions = []string{
 	"dashboard", "groups", "users", "providers", "models", "availability",
 	"usage", "resources", "codes", "logs", "security", "settings",
-	"announcements", "feedback", "administrators",
+	"announcements", "feedback", "administrators", "invites",
 }
 
 func ValidPermission(permission string) bool {

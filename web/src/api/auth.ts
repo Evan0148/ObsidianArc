@@ -129,6 +129,13 @@ export interface SiteInfo {
   // The standing notice above the chat. Not an announcement: no read state,
   // no date, and it stays until an operator clears it.
   home_notice?: { text: string; dismissible: boolean };
+  /** Derived from registration.enabled + invites.required: whether signing up
+   *  needs no code, needs one, or is off altogether. Absent reads as 'open',
+   *  the behaviour a server without the setting always had. */
+  invite_mode?: 'open' | 'invite' | 'closed';
+  /** Whether an account gets a personal invite code (invites.user_enabled),
+   *  so the sign-up form knows an admin-issued code is not the only kind. */
+  user_invites?: boolean;
 }
 
 // The presentation state the server keeps for an account. Deliberately loose:
@@ -182,6 +189,7 @@ export interface RegisterInput {
   qq?: string;
   nickname?: string;
   turnstile?: string;
+  inviteCode?: string;
 }
 
 export function register(input: RegisterInput): Promise<{ user: Account }> {
@@ -192,6 +200,7 @@ export function register(input: RegisterInput): Promise<{ user: Account }> {
     qq: input.qq ?? '',
     nickname: input.nickname ?? '',
     turnstile: input.turnstile ?? '',
+    invite_code: input.inviteCode ?? '',
   });
 }
 

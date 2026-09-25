@@ -76,6 +76,61 @@ export interface CodeRedemption {
   redeemed_at: number;
 }
 
+export type InviteStatus = 'active' | 'used_up' | 'expired' | 'revoked';
+
+/** One code, admin-issued or a personal one an account carries. `owner_id`
+ *  empty is what tells the two apart — there is no separate "kind" field. */
+export interface InviteCode {
+  id: string;
+  code: string;
+  owner_id: string;
+  owner_username: string;
+  owner_nickname: string;
+  group_id: string;
+  group_name: string;
+  /** The fixed length when group_days_max is 0, otherwise the range's floor. */
+  group_days: number;
+  /** 0 means fixed — group_days is the whole answer. */
+  group_days_max: number;
+  /** 0 means unlimited. */
+  max_uses: number;
+  uses: number;
+  expires_at: number;
+  revoked_at: number;
+  note: string;
+  created_by: string;
+  created_at: number;
+  status: InviteStatus;
+}
+
+export interface InviteUse {
+  user_id: string;
+  username: string;
+  nickname: string;
+  /** What this particular signup was granted — a code's range differs per use. */
+  group_days: number;
+  created_at: number;
+  rewarded_at: number;
+  reward_cards: number;
+  /** 'same_ip' | 'limit' | 'disabled' | '' (rewarded, or nothing to reward). */
+  reward_skipped: string;
+}
+
+export interface InviteTopInviter {
+  user_id: string;
+  username: string;
+  nickname: string;
+  invites: number;
+  rewarded: number;
+}
+
+export interface InviteStats {
+  active: number;
+  uses_total: number;
+  uses_7d: number;
+  top_inviters: InviteTopInviter[];
+}
+
 export interface GroupModelGrant {
   model_id: string;
   access: 'use' | 'view';
@@ -637,6 +692,15 @@ export const adminApi = {
   codeRedemptions: (id: string) =>
     api.get<{ redemptions: CodeRedemption[] }>(`/api/admin/codes/${encodeURIComponent(id)}/redemptions`),
   deleteCode: (id: string) => api.delete<void>(`/api/admin/codes/${id}`),
+  invites: (query: string) =>
+    api.get<{ codes: InviteCode[]; total: number }>(`/api/admin/invites${query}`),
+  createInvites: (body: Record<string, unknown>) =>
+    api.post<{ codes: InviteCode[] }>('/api/admin/invites', body),
+  revokeInvite: (id: string) =>
+    api.delete<{ code: InviteCode }>(`/api/admin/invites/${encodeURIComponent(id)}`),
+  inviteUses: (id: string) =>
+    api.get<{ uses: InviteUse[] }>(`/api/admin/invites/${encodeURIComponent(id)}/uses`),
+  inviteStats: () => api.get<InviteStats>('/api/admin/invites/stats'),
   grantCards: (userID: string, body: { cards: number; expires_at: number }) =>
     api.post<void>(`/api/admin/users/${userID}/cards`, body),
   // Moves cards the account already holds. Omitting card_ids means every

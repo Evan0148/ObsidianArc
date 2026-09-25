@@ -189,7 +189,7 @@ func TestCommandPermissionMatchesItsEndpoints(t *testing.T) {
 // runtime; this is where that is caught instead.
 func userRoutesFromSource(t *testing.T) map[string]bool {
 	t.Helper()
-	packages := []string{"auth", "apikey", "chat", "quota", "usage", "card", "backup", "project", "feedback", "oauth", "notify"}
+	packages := []string{"auth", "apikey", "chat", "quota", "usage", "card", "backup", "project", "feedback", "oauth", "notify", "invite"}
 	pattern := regexp.MustCompile(`mux\.Handle(?:Func)?\("((?:GET|POST|PATCH|PUT|DELETE) /api/[^"]*)"`)
 
 	out := map[string]bool{}

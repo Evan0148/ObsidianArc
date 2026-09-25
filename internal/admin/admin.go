@@ -28,6 +28,7 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/httpx"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/id"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/idp"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/invite"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/model"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/notify"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/provider"
@@ -59,6 +60,7 @@ type Handlers struct {
 	health        *health.Store
 	feedback      *feedback.Store
 	apps          *idp.Store
+	invites       *invite.Store
 	// Runs the sign-up reviewer on a hypothetical account. Set by the wiring;
 	// nil where no reviewer exists.
 	TryReview func(ctx context.Context, in ReviewTrial) (string, string, error)
@@ -100,6 +102,7 @@ func NewHandlers(
 	healthStore *health.Store,
 	feedbackStore *feedback.Store,
 	apps *idp.Store,
+	invites *invite.Store,
 ) *Handlers {
 	return &Handlers{
 		db:            db,
@@ -121,6 +124,7 @@ func NewHandlers(
 		health:        healthStore,
 		feedback:      feedbackStore,
 		apps:          apps,
+		invites:       invites,
 	}
 }
 
@@ -189,8 +193,8 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /api/admin/groups/{id}/members", protected("groups", h.assignGroupMembers))
 	mux.Handle("DELETE /api/admin/groups/{id}", protected("groups", h.deleteGroup))
 
-	mux.Handle("GET /api/admin/settings", protected("settings,security,availability", h.listSettings))
-	mux.Handle("PUT /api/admin/settings", protected("settings,security,availability", h.updateSettings))
+	mux.Handle("GET /api/admin/settings", protected("settings,security,availability,invites", h.listSettings))
+	mux.Handle("PUT /api/admin/settings", protected("settings,security,availability,invites", h.updateSettings))
 	mux.Handle("POST /api/admin/settings/import", protected("settings", h.importSettings))
 	mux.Handle("POST /api/admin/attachments/purge", protected("settings", h.purgeAttachments))
 
@@ -239,6 +243,12 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.Handle("DELETE /api/admin/feedback/{id}", protected("feedback", h.deleteFeedback))
 	mux.Handle("POST /api/admin/feedback/{id}/replies", protected("feedback", h.replyToFeedback))
 	mux.Handle("DELETE /api/admin/feedback/{id}/replies/{reply}", protected("feedback", h.deleteFeedbackReply))
+
+	mux.Handle("GET /api/admin/invites", protected("invites", h.listInvites))
+	mux.Handle("POST /api/admin/invites", protected("invites", h.createInvites))
+	mux.Handle("DELETE /api/admin/invites/{id}", protected("invites", h.revokeInvite))
+	mux.Handle("GET /api/admin/invites/{id}/uses", protected("invites", h.inviteUses))
+	mux.Handle("GET /api/admin/invites/stats", protected("invites", h.inviteStats))
 
 	mux.Handle("GET /api/admin/references", protected("", h.references))
 	mux.Handle("GET /api/admin/member-options", protected("groups", h.listMemberOptions))

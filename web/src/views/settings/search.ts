@@ -39,6 +39,9 @@ const TERMS = {
   devices: [
     'secDevices', 'devicesIntro', 'deviceThisDevice', 'deviceSignOut', 'deviceSignOutOthers',
   ],
+  invites: [
+    'secInvites', 'inviteYourCode', 'inviteYourLink', 'inviteRegenerate', 'inviteesEmpty', 'haveInviteCode',
+  ],
 } satisfies Record<string, StringKey[]>;
 
 export type SettingsGroup = keyof typeof TERMS;

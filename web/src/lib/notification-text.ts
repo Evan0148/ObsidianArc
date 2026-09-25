@@ -9,7 +9,7 @@
 import { t, tn } from '@/composables/useI18n';
 import {
   IconBell, IconInfo, IconLayers, IconLock, IconMessage, IconPulse, IconRefresh, IconShield, IconUser,
-  type OaIcon,
+  IconUsers, type OaIcon,
 } from '@/icons';
 import type { Notification } from '@/api/notifications';
 import type { StringKey } from '@/i18n';
@@ -114,6 +114,16 @@ export function describeNotification(n: Notification): NotificationText {
           ? t('notifyBodyNewDeviceLoginFrom', { device: describeUserAgent(ua), ip: ip ? ` (${ip})` : '' })
           : t('notifyBodyNewDeviceLogin'),
         icon: IconShield,
+      };
+    }
+    case 'invite_joined': {
+      const username = text(params['username']);
+      return {
+        title: t('notifyTitleInviteJoined'),
+        body: tn(count(params['cards']), 'notifyBodyInviteJoinedOne', 'notifyBodyInviteJoinedOther', {
+          username, cards: count(params['cards']),
+        }),
+        icon: IconUsers,
       };
     }
     case 'two_factor_changed': {

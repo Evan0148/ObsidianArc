@@ -189,6 +189,13 @@ func (s *Service) Verify(ctx context.Context, token string) (string, error) {
 	if !confirmed {
 		return "", ErrVerificationInvalid
 	}
+	// The other moment invite.Store.Reward is asked about an account: one
+	// registered unverified through a personal code qualified for nothing
+	// at Register's own call, and this is the only other event this package
+	// tells that package about it again.
+	if s.RewardInvite != nil {
+		s.RewardInvite(ctx, userID, s.VerificationRequired())
+	}
 	return userID, nil
 }
 

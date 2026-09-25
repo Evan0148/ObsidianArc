@@ -24,16 +24,18 @@ import { IconCollapse, IconExpand } from '@/icons';
 import AccountSection from './settings/AccountSection.vue';
 import AppearanceSection from './settings/AppearanceSection.vue';
 import ChatSection from './settings/ChatSection.vue';
+import InvitesSection from './settings/InvitesSection.vue';
 import SecuritySection from './settings/SecuritySection.vue';
 import { matchesSettings, type SettingsGroup } from './settings/search';
 
-type Category = 'appearance' | 'chat' | 'account' | 'security';
+type Category = 'appearance' | 'chat' | 'account' | 'security' | 'invites';
 
 const CATEGORIES: Array<{ id: Category; label: StringKey }> = [
   { id: 'appearance', label: 'secAppearance' },
   { id: 'chat', label: 'secChat' },
   { id: 'account', label: 'account' },
   { id: 'security', label: 'secSecurity' },
+  { id: 'invites', label: 'secInvites' },
 ];
 
 const router = useRouter();
@@ -67,6 +69,7 @@ const visibleGroups = computed(() => {
     chat: visible('chat', 'chat'),
     account: (['profile', 'connections', 'authorizations', 'password', 'data'] as const).some((group) => visible(group, 'account')),
     security: (['twofactor', 'devices'] as const).some((group) => visible(group, 'security')),
+    invites: visible('invites', 'invites'),
   };
 });
 watch(query, () => {
@@ -159,6 +162,9 @@ function toggleFullscreen(): void {
           </div>
           <div v-show="visibleGroups.security" class="oa-settings-group">
             <SecuritySection :query="query" />
+          </div>
+          <div v-show="visibleGroups.invites" class="oa-settings-group">
+            <InvitesSection :query="query" />
           </div>
         </div>
       </OaScrollArea>

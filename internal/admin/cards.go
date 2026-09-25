@@ -106,7 +106,7 @@ func (h *Handlers) grantCards(w http.ResponseWriter, r *http.Request) error {
 		granted, err = h.cards.GrantUntil(r.Context(), userID, body.Cards, body.ExpiresAt)
 	} else {
 		// Kept for clients from before the date picker existed.
-		granted, err = h.cards.Grant(r.Context(), userID, body.Cards, body.CardDays)
+		granted, err = h.cards.Grant(r.Context(), nil, userID, body.Cards, body.CardDays)
 	}
 	if err != nil {
 		return card.TranslateError(err)

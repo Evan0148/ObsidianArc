@@ -16,6 +16,7 @@ var groupTitles = map[string]Text{
 	"session":     {EN: "Session", ZH: "会话"},
 	"accounts":    {EN: "Accounts", ZH: "账户"},
 	"groups":      {EN: "Groups", ZH: "分组"},
+	"invites":     {EN: "Invites", ZH: "邀请码"},
 	"catalogue":   {EN: "Providers & Models", ZH: "服务商与模型"},
 	"operations":  {EN: "Operations", ZH: "运维"},
 	"instance":    {EN: "Instance", ZH: "实例设置"},

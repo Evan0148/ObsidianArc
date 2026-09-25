@@ -158,6 +158,11 @@ var writableSettings = map[string]bool{
 	settings.SignupsPerHour:             true,
 	settings.SignupsPerIP:               true,
 	settings.SignupsIPWindowMin:         true,
+	settings.InvitesRequired:            true,
+	settings.InvitesUserEnabled:         true,
+	settings.InvitesUserLimit:           true,
+	settings.InvitesRewardCards:         true,
+	settings.InvitesRewardCardDays:      true,
 	settings.TurnstileSiteKey:           true,
 	settings.TurnstileSecretKey:         true,
 	settings.TurnstileOnLogin:           true,
@@ -233,6 +238,9 @@ var writableSettings = map[string]bool{
 // worst; the consumer floors it at 1, and nothing up there caps it.
 var numericBounds = map[string][2]int{
 	settings.SignupReviewRestrictHours:  {0, 24 * 365},
+	settings.InvitesUserLimit:           {0, 10000},
+	settings.InvitesRewardCards:         {0, 100},
+	settings.InvitesRewardCardDays:      {1, 3650},
 	settings.ChatChallengeRequests:      {0, 1000},
 	settings.ChatChallengeWindowSecs:    {5, 3600},
 	settings.ChatChallengeClearMins:     {1, 24 * 60},
@@ -248,7 +256,7 @@ func (h *Handlers) updateSettings(w http.ResponseWriter, r *http.Request) error 
 	}
 
 	for key, value := range body {
-		if !auth.MustUser(r.Context()).CanAdmin(settingPermission(key)) {
+		if !hasPermission(auth.MustUser(r.Context()), settingPermission(key)) {
 			return permissionDenied()
 		}
 		if !writableSettings[key] {
@@ -388,7 +396,7 @@ func (h *Handlers) importSettings(w http.ResponseWriter, r *http.Request) error 
 	skipped := []string{}
 
 	for key, value := range body {
-		if !auth.MustUser(r.Context()).CanAdmin(settingPermission(key)) {
+		if !hasPermission(auth.MustUser(r.Context()), settingPermission(key)) {
 			return permissionDenied()
 		}
 		if !writableSettings[key] || len(value) > 8*1024 {

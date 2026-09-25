@@ -262,7 +262,7 @@ func (h *Handlers) pendingSignup(w http.ResponseWriter, r *http.Request) error {
 		// this is finishing rather than asking a stranger for their QQ number.
 		"login": held.Login,
 		"email": held.Email,
-		"needs": map[string]any{"qq": missing.QQ, "email": missing.Email},
+		"needs": map[string]any{"qq": missing.QQ, "email": missing.Email, "invite": missing.Invite},
 		// The same two things the sign-up form says about an address, for the
 		// same reason: they are worth knowing before typing rather than after.
 		"email_domains": h.service.emailDomains(),
@@ -277,8 +277,9 @@ func (h *Handlers) completeSignup(w http.ResponseWriter, r *http.Request) error 
 	}
 
 	var body struct {
-		QQ    string `json:"qq"`
-		Email string `json:"email"`
+		QQ     string `json:"qq"`
+		Email  string `json:"email"`
+		Invite string `json:"invite_code"`
 	}
 	if err := httpx.DecodeJSON(w, r, &body, 8*1024); err != nil {
 		return err
@@ -290,7 +291,7 @@ func (h *Handlers) completeSignup(w http.ResponseWriter, r *http.Request) error 
 		Login:    held.Login,
 		Name:     held.Name,
 		Email:    held.Email,
-	}, Details{QQ: body.QQ, Email: body.Email}, h.address(r), r.UserAgent())
+	}, Details{QQ: body.QQ, Email: body.Email, Invite: body.Invite}, h.address(r), r.UserAgent())
 	if err != nil {
 		return completionError(err)
 	}
@@ -416,6 +417,10 @@ func completionError(err error) error {
 		return httpx.BadRequestCode("email_required", "An email address is required on this server.")
 	case errors.Is(err, auth.ErrRegistrationClosed):
 		return httpx.ForbiddenCode("registration_closed", "Registration is closed on this server.")
+	case errors.Is(err, auth.ErrInviteRequired):
+		return httpx.BadRequestCode("invite_required", "An invite code is required to register here.")
+	case errors.Is(err, auth.ErrInviteInvalid):
+		return httpx.BadRequestCode("invite_invalid", "That invite code is not valid.")
 	case errors.Is(err, ErrSignupClosed):
 		return httpx.ForbiddenCode("signup_closed",
 			"This server does not open accounts from a provider sign-in.")

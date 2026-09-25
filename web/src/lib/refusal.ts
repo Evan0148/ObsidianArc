@@ -47,6 +47,10 @@ export function refusalText(failure: unknown, domains: string[] = []): string {
       return t('emailRequiredHere');
     case 'email_domain':
       return t('emailDomainRejected', { domains: allowed(failure, domains).join(', ') });
+    case 'invite_required':
+      return t('inviteRequiredHere');
+    case 'invite_invalid':
+      return t('inviteInvalid');
     case 'signups_throttled':
       return t('signupsThrottled', { count: Number(failure.details['retry_after_seconds'] ?? 60) });
     case 'too_many_attempts':

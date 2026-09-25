@@ -35,6 +35,7 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/health"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/httpx"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/idp"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/invite"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/mail"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/model"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/notify"
@@ -75,6 +76,7 @@ type Server struct {
 	requests      *reqlog.Store
 	idp           *idp.Store
 	notify        *notify.Store
+	invites       *invite.Store
 	health        *health.Checker
 	// nil when no SSH address is configured, which is the default.
 	ssh *consolessh.Server
@@ -135,6 +137,8 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	securityLog := securityevents.NewStore(db)
 	keys := apikey.NewStore(db)
 	cards := card.NewStore(db)
+	invites := invite.NewStore(db, users, cards, settingsService)
+	invites.Notify = notifyStore
 	quotaService := quota.NewService(db, quota.NewStore(db), settingsService)
 	projects := project.NewStore(db)
 
@@ -574,6 +578,12 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	}
 	cardHandlers.Routes(mux)
 
+	// An account's own invite code and who has used it. Behind
+	// auth.RequireUser alone, like notify's and card's own account-facing
+	// routes — see internal/invite/http.go.
+	inviteHandlers := invite.NewHandlers(invites)
+	inviteHandlers.Routes(mux)
+
 	// Programmatic access. The key store is what an account manages from the
 	// interface; the compatibility surface is what the key is then presented
 	// to, and the two are separate because one is a browser screen and the
@@ -680,6 +690,27 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 			Link:   "/settings?tab=security",
 		}); err != nil {
 			slog.ErrorContext(ctx, "could not notify a new device", "error", err)
+		}
+	}
+	// Invite codes. Three hooks rather than a dependency internal/auth
+	// takes on internal/invite directly — see auth.InviteGrant's comment —
+	// translating between that package's own Grant and auth's local
+	// InviteGrant, which is otherwise identical.
+	authService.ConsumeInvite = func(ctx context.Context, tx *database.Tx, code string) (*auth.InviteGrant, error) {
+		grant, err := invites.Consume(ctx, tx, code, time.Now().UnixMilli())
+		if err != nil {
+			return nil, err
+		}
+		return &auth.InviteGrant{
+			CodeID: grant.CodeID, OwnerID: grant.OwnerID, GroupID: grant.GroupID, GroupDays: grant.GroupDays,
+		}, nil
+	}
+	authService.RecordInviteUse = func(ctx context.Context, tx *database.Tx, grant auth.InviteGrant, userID string) error {
+		return invites.RecordUse(ctx, tx, grant.CodeID, userID, grant.OwnerID, grant.GroupDays)
+	}
+	authService.RewardInvite = func(ctx context.Context, userID string, verificationRequired bool) {
+		if err := invites.Reward(ctx, userID, verificationRequired); err != nil {
+			slog.ErrorContext(ctx, "could not resolve an invite reward", "error", err, "user", userID)
 		}
 	}
 	authService.OnSignupReview = func(ctx context.Context, in auth.RegisterInput, account *user.User, review auth.SignupReview) {
@@ -838,7 +869,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	idpHandlers.Routes(mux)
 
 	trial.NewHandlers(settingsService, models, registry, proxyTrust, cfg.SecretKey).Routes(mux)
-	adminHandlers := admin.NewHandlers(db, users, groups, providers, models, settingsService, registry, authService, usageStore, quotaService, conversations, announcements, keys, requestLog, securityLog, cards, healthStore, feedbackStore, idpStore)
+	adminHandlers := admin.NewHandlers(db, users, groups, providers, models, settingsService, registry, authService, usageStore, quotaService, conversations, announcements, keys, requestLog, securityLog, cards, healthStore, feedbackStore, idpStore, invites)
 	adminHandlers.TryReview = adminTryReview
 	adminHandlers.Origin = publicOrigin
 	adminHandlers.ClientIP = func(r *http.Request) string { return httpx.ClientIP(r, proxyTrust) }
@@ -876,6 +907,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	quotaHandlers.Routes(consoleAPI)
 	usageHandlers.Routes(consoleAPI)
 	cardHandlers.Routes(consoleAPI)
+	inviteHandlers.Routes(consoleAPI)
 	backupHandlers.Routes(consoleAPI)
 	projectHandlers.Routes(consoleAPI)
 	feedbackHandlers.Routes(consoleAPI)
@@ -1082,6 +1114,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		requests:      requestLog,
 		idp:           idpStore,
 		notify:        notifyStore,
+		invites:       invites,
 		consoleAPI:    consoleAPI,
 		health: &health.Checker{
 			Store: healthStore, Models: models, Providers: providers, Registry: registry, Notify: notifyStore,
@@ -1236,6 +1269,13 @@ func (s *Server) sweep(ctx context.Context) {
 	if s.notify != nil {
 		if _, err := s.notify.Prune(sweepCtx, time.Now().Add(-30*24*time.Hour)); err != nil {
 			slog.ErrorContext(sweepCtx, "could not prune notifications", "error", err)
+		}
+	}
+	// Invite rewards waiting on something no request announces — a signup
+	// restriction running out, say.
+	if s.invites != nil {
+		if err := s.invites.RewardPending(sweepCtx, s.auth.VerificationRequired()); err != nil {
+			slog.ErrorContext(sweepCtx, "could not resolve pending invite rewards", "error", err)
 		}
 	}
 	s.sweepHealth(ctx)

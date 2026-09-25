@@ -55,6 +55,9 @@ func (e *MoreDetailsNeeded) Error() string {
 type Details struct {
 	QQ    string
 	Email string
+	// Empty unless MissingFor asked for one (an invite-only instance) and
+	// the completion form was shown it.
+	Invite string
 }
 
 // credentials names the three settings each provider is configured with.
@@ -246,6 +249,7 @@ func (s *Service) resolve(
 			Nickname:      strings.TrimSpace(identity.Name),
 			IP:            ip,
 			UA:            ua,
+			InviteCode:    strings.TrimSpace(details.Invite),
 		})
 		if err != nil {
 			return err
@@ -258,6 +262,14 @@ func (s *Service) resolve(
 	})
 	if err != nil {
 		return user.User{}, err
+	}
+	// Provision could not call this itself: it ran inside the transaction
+	// above, and the invite use it may have recorded was not visible outside
+	// that transaction until the commit this line is now past. A no-op for
+	// every path through resolve that did not just provision a fresh account
+	// through a personal code — see auth.Service.RewardInvite.
+	if s.auth.RewardInvite != nil {
+		s.auth.RewardInvite(ctx, account.ID, s.auth.VerificationRequired())
 	}
 
 	// An address somebody typed is unconfirmed, and this is the instance that

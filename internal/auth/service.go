@@ -30,7 +30,26 @@ var (
 	ErrEmailRequired        = errors.New("auth: an email address is required to register here")
 	ErrPasswordUnchanged    = errors.New("auth: the new password is the same as the current one")
 	ErrCurrentPasswordWrong = errors.New("auth: current password is incorrect")
+	// One code for both, deliberately: see consumeInvite.
+	ErrInviteRequired = errors.New("auth: an invite code is required to register here")
+	ErrInviteInvalid  = errors.New("auth: that invite code is not valid")
 )
+
+// InviteGrant is what consuming an invite code hands back to Register and
+// Provision: which code was spent, who gets credited for the invite (empty
+// for an admin-issued code), and the group membership it carries.
+//
+// A local type rather than internal/invite's own, because that package's
+// HTTP handlers import this one (auth.RequireUser, auth.MustUser) — a
+// two-way import between the two would not compile. server.go, which
+// imports both, translates between this shape and invite.Grant in the hooks
+// below.
+type InviteGrant struct {
+	CodeID    string
+	OwnerID   string
+	GroupID   string
+	GroupDays int64
+}
 
 type Service struct {
 	db       *database.DB
@@ -83,6 +102,23 @@ type Service struct {
 	// the security log, a notification — cannot turn a sign-in that already
 	// succeeded into one that fails. Nil records nothing.
 	OnNewDevice func(context.Context, NewDeviceEvent)
+
+	// Invite codes. Three hooks rather than one dependency on
+	// internal/invite — see InviteGrant's comment for why this package
+	// cannot import that one. Nil is only ever true in a test that has no
+	// reason to exercise invites; every real deployment wires all three from
+	// server.go, the same seam ReviewSignup and OnNewDevice use.
+	//
+	// ConsumeInvite spends one use inside the caller's transaction — see
+	// invite.Store.Consume. RecordInviteUse writes the row Consume's spend
+	// is remembered by, in the same transaction, once the new account's id
+	// is known. RewardInvite is told about an account that may now qualify
+	// for its inviter's reward — after Register commits, and again from
+	// Verify — and resolves and logs for itself; it has nothing to hand back
+	// because a reward is best-effort by design (see invite.Store.Reward).
+	ConsumeInvite   func(ctx context.Context, tx *database.Tx, code string) (*InviteGrant, error)
+	RecordInviteUse func(ctx context.Context, tx *database.Tx, grant InviteGrant, userID string) error
+	RewardInvite    func(ctx context.Context, userID string, verificationRequired bool)
 }
 
 func NewService(
@@ -130,6 +166,10 @@ type RegisterInput struct {
 	UA       string
 	// Turnstile's token, when the operator has switched the challenge on.
 	Turnstile string
+	// Empty unless this instance's registration mode asks for one — see
+	// consumeInvite. Optional even where it is not required: a code applied
+	// in open mode still seats the account in its group.
+	InviteCode string
 }
 
 type SignupDecision string
@@ -194,6 +234,13 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (user.User, st
 		}
 		if err := checkQQ(s.settings, in.QQ); err != nil {
 			return user.User{}, "", err
+		}
+		// Free, so it happens before the throttle counts anything: a request
+		// with no code on an invite-only instance was never going to
+		// succeed, and should not spend part of the per-minute allowance
+		// finding that out.
+		if strings.TrimSpace(in.InviteCode) == "" && s.settings.Bool(settings.InvitesRequired) {
+			return user.User{}, "", ErrInviteRequired
 		}
 		if allowed, retryAfter := s.signups.allow(
 			s.settings.Int(settings.SignupsPerMinute, 0),
@@ -301,6 +348,20 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (user.User, st
 			}
 		}
 
+		// Consumed here, inside the same transaction as the account it is
+		// spent for: a registration that fails for any other reason below —
+		// a taken username, a race lost on the signup IP count — rolls the
+		// spend back with it, and the code is exactly as good afterwards as
+		// it was before this request touched it. Skipped for the first
+		// account along with every other registration control, above.
+		var grant *InviteGrant
+		if !first {
+			grant, err = s.consumeInvite(ctx, tx, in.InviteCode)
+			if err != nil {
+				return err
+			}
+		}
+
 		usernameTaken, emailTaken, qqTaken, err := s.users.Exists(ctx, tx, in.Username, in.Email, in.QQ)
 		if err != nil {
 			return err
@@ -318,6 +379,13 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (user.User, st
 		groupID, err := s.registrationGroup(ctx, tx)
 		if err != nil {
 			return err
+		}
+		// An admin code's group replaces the instance default rather than
+		// combining with it — a partner's trial is a specific group chosen
+		// for that link, not a suggestion layered onto whatever registration
+		// would otherwise have picked.
+		if grant != nil && grant.GroupID != "" {
+			groupID = grant.GroupID
 		}
 
 		role := user.RoleUser
@@ -348,6 +416,11 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (user.User, st
 		if err != nil {
 			return err
 		}
+		groupExpiresAt, err := s.applyInvite(ctx, tx, grant, created.ID)
+		if err != nil {
+			return err
+		}
+		created.GroupExpiresAt = groupExpiresAt
 		if !created.EmailVerified {
 			verification, err = s.issueVerification(ctx, tx, created.ID, created.Email)
 			if err != nil {
@@ -367,6 +440,14 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (user.User, st
 
 	if verification != "" {
 		s.mailVerification(ctx, created.Email, verification)
+	}
+	// Best-effort and after commit, the same as everything else here: the
+	// account exists either way, and a reward this account itself earned
+	// nobody by inviting is not this request's problem to retry. A no-op
+	// for the overwhelming majority of registrations, which used no
+	// personal code at all — see invite.Store.Reward.
+	if s.RewardInvite != nil {
+		s.RewardInvite(ctx, created.ID, s.VerificationRequired())
 	}
 
 	token, _, err := s.sessions.Create(ctx, created.ID, s.cfg.TTL, in.IP, in.UA)
@@ -578,6 +659,60 @@ func (s *Service) registrationGroup(ctx context.Context, q database.Queryer) (st
 		return "", err
 	}
 	return fallback.ID, nil
+}
+
+// consumeInvite enforces the registration mode and, when a code was given,
+// spends it through the ConsumeInvite hook inside the caller's transaction.
+//
+// An empty code is not itself an error unless InvitesRequired says it must
+// not be: open mode's code is optional, and this is the one place that
+// distinction is made, so Register and Provision do not have to agree on it
+// twice. Every failure from the hook collapses to ErrInviteInvalid — see
+// invite.Store.Consume for why one answer covers all of them — and a nil
+// hook with a non-empty code is treated the same way, since a caller handed
+// a code this instance has no invite package wired in to check.
+func (s *Service) consumeInvite(ctx context.Context, tx *database.Tx, code string) (*InviteGrant, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		if s.settings.Bool(settings.InvitesRequired) {
+			return nil, ErrInviteRequired
+		}
+		return nil, nil
+	}
+	if s.ConsumeInvite == nil {
+		return nil, ErrInviteInvalid
+	}
+	grant, err := s.ConsumeInvite(ctx, tx, code)
+	if err != nil {
+		return nil, ErrInviteInvalid
+	}
+	return grant, nil
+}
+
+// applyInvite finishes what consumeInvite started, once the account it was
+// spent for exists: the group days an admin code carries become an expiry
+// on the fresh row (permanent membership — group_days 0 — needs no write,
+// since that is the column's own default), and the use is recorded through
+// RecordInviteUse. It returns the expiry written, if any, so the caller can
+// carry it onto the in-memory record it is about to hand back — group_id
+// was already applied by the caller, onto CreateInput, before Create ran.
+func (s *Service) applyInvite(ctx context.Context, tx *database.Tx, grant *InviteGrant, userID string) (int64, error) {
+	if grant == nil {
+		return 0, nil
+	}
+	var expiresAt int64
+	if grant.GroupID != "" && grant.GroupDays > 0 {
+		expiresAt = time.Now().Add(time.Duration(grant.GroupDays) * 24 * time.Hour).UnixMilli()
+		if _, err := tx.Exec(ctx, `UPDATE users SET group_expires_at = ? WHERE id = ?`, expiresAt, userID); err != nil {
+			return 0, fmt.Errorf("auth: apply invite group expiry: %w", err)
+		}
+	}
+	if s.RecordInviteUse != nil {
+		if err := s.RecordInviteUse(ctx, tx, *grant, userID); err != nil {
+			return 0, fmt.Errorf("auth: record invite use: %w", err)
+		}
+	}
+	return expiresAt, nil
 }
 
 type LoginInput struct {

@@ -439,6 +439,9 @@ func (h *Handlers) responsesBuffered(
 		return nil
 	}
 
+	// Streamed from the provider for the reason completions' buffered path
+	// gives: a long answer without a stream outlasts the header timeout.
+	request.Stream = true
 	result, chatErr := h.registry.Chat(r.Context(), resolved.Provider, request, sink)
 	usage = usage.Merge(result.Usage)
 	if result.Text != "" && answer.Len() == 0 {
