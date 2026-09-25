@@ -47,7 +47,6 @@ const total = computed(() => props.metric === 'users'
   : ranked.value.reduce((sum, row) => sum + metricOf(row, props.metric), 0));
 const topRows = computed(() => ranked.value.slice(0, props.limit));
 const extraRows = computed(() => ranked.value.slice(props.limit));
-const shown = computed(() => expanded.value ? ranked.value : topRows.value);
 
 function value(row: UsageBreakdown): string {
   const figure = metricOf(row, props.metric);
