@@ -217,9 +217,21 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
 | Binary (SQLite + embedded SPA) | < 30 MB | 21.4 MB (17.7 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 135 kB | 188.95 kB to open the chat (158.62 JS + 30.33 CSS) |
+| Frontend, on the wire | < 135 kB | 190.40 kB to open the chat (160.05 JS + 30.35 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
+
+Remeasured once more on 2026-09-25 (UTC), for the invite-claim flow the first
+pass over invite codes below had not yet reached: the existing-account claim
+box and its every-N progress line in the settings' invites section, the
+admin invites table's partner and claims columns, the new i18n keys both of
+those need in `en` and `zh`, and the signed-in-visitor redirect from
+`/register?invite=` to the settings claim box. The first paint grew by
+1.45 kB (1.43 JS, 0.02 CSS) to the figure above. The backoffice chunk grew
+by 1.29 kB to 83.97 kB for the partner/claims columns, and the Chinese
+dictionary to 34.80 kB. The binary grew by 61 kB with SQLite (21,430,432
+bytes) and 66 kB without (17,719,456) — the larger embedded frontend, Go
+1.27.1.
 
 Remeasured for invite codes on 2026-09-25 (UTC): the first paint grew by
 3.02 kB (3.01 JS, 0.01 CSS) to the figure above — the invite field on the
@@ -365,10 +377,10 @@ What each reader actually downloads:
 
 | | gzipped |
 | --- | --- |
-| English, not an administrator | 188.95 kB |
-| Chinese, not an administrator | 223.13 kB |
-| …and a conversation containing a formula | 226.74 kB |
-| Chinese administrator, backoffice open | 305.81 kB |
+| English, not an administrator | 190.40 kB |
+| Chinese, not an administrator | 225.20 kB |
+| …and a conversation containing a formula | 228.81 kB |
+| Chinese administrator, backoffice open | 309.17 kB |
 | Anybody, once they open the terminal | +7.20 kB |
 
 Route-level splitting would shave the first paint further and is deliberately

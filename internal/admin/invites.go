@@ -33,6 +33,10 @@ func translateInviteError(err error) error {
 		return httpx.BadRequest("Group days must be between 0 and %d, and group_days_max must be 0 or at least group_days.", invite.MaxGroupDays)
 	case errors.Is(err, invite.ErrGroupRequired):
 		return httpx.BadRequest("group_days_max requires a group to be set.")
+	case errors.Is(err, invite.ErrPartnerFields):
+		return httpx.BadRequestCode("invite_partner_fields",
+			"A partner code needs a count of 1, a custom code, a name (1-%d characters) and a group.",
+			invite.MaxPartnerNameChars)
 	default:
 		return httpx.Internal(err)
 	}
@@ -54,14 +58,21 @@ func (h *Handlers) listInvites(w http.ResponseWriter, r *http.Request) error {
 }
 
 type createInvitesRequest struct {
-	Count        int    `json:"count"`
-	Code         string `json:"code"`
-	MaxUses      int    `json:"max_uses"`
-	ExpiresAt    int64  `json:"expires_at"`
-	GroupID      string `json:"group_id"`
-	GroupDays    int    `json:"group_days"`
-	GroupDaysMax int    `json:"group_days_max"`
-	Note         string `json:"note"`
+	Count int    `json:"count"`
+	Code  string `json:"code"`
+	// "batch" (the default, omitted) or "partner" — see invite.CreateInput.
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+	// nil when the field is left out of the request entirely, so Create can
+	// tell "not mentioned" from "explicitly turned off" and fall back to the
+	// kind's own default (on for a partner) only in the former case.
+	AllowExisting *bool  `json:"allow_existing"`
+	MaxUses       int    `json:"max_uses"`
+	ExpiresAt     int64  `json:"expires_at"`
+	GroupID       string `json:"group_id"`
+	GroupDays     int    `json:"group_days"`
+	GroupDaysMax  int    `json:"group_days_max"`
+	Note          string `json:"note"`
 }
 
 func (h *Handlers) createInvites(w http.ResponseWriter, r *http.Request) error {
@@ -80,7 +91,8 @@ func (h *Handlers) createInvites(w http.ResponseWriter, r *http.Request) error {
 
 	actor := auth.MustUser(r.Context())
 	codes, err := h.invites.Create(r.Context(), invite.CreateInput{
-		Count: body.Count, Code: body.Code, MaxUses: body.MaxUses, ExpiresAt: body.ExpiresAt,
+		Count: body.Count, Code: body.Code, Kind: body.Kind, Name: body.Name, AllowExisting: body.AllowExisting,
+		MaxUses: body.MaxUses, ExpiresAt: body.ExpiresAt,
 		GroupID: body.GroupID, GroupDays: body.GroupDays, GroupDaysMax: body.GroupDaysMax,
 		Note: body.Note, CreatedBy: actor.ID,
 	})

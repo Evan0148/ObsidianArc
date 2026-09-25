@@ -406,18 +406,31 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     id: 'secInviteSettings',
     pageSlug: 'invites',
     titleKey: 'secInviteSettings',
-    searchKeys: ['registrationMode', 'userInvitesEnabled', 'userInviteLimit', 'inviteRewardCards', 'inviteRewardCardDays'],
+    searchKeys: [
+      'registrationMode', 'userInvitesEnabled', 'userInviteLimit',
+      'inviteRewardEvery', 'inviteRewardCards', 'inviteRewardCardDays',
+    ],
     keywords: [
-      '邀请码', '注册模式', '仅限邀请', '开放注册', '关闭注册', '个人邀请码', '邀请奖励', '重置卡奖励',
+      '邀请码', '注册模式', '仅限邀请', '开放注册', '关闭注册', '个人邀请码', '邀请奖励', '重置卡奖励', '每邀请多少人奖励',
       'invite code', 'invite only', 'registration mode', 'referral reward',
+    ],
+  },
+  {
+    id: 'secInvitePartners',
+    pageSlug: 'invites',
+    titleKey: 'secInvitePartners',
+    searchKeys: ['createPartnerCode', 'invitePartnerName', 'inviteAllowExisting', 'colRegistrations', 'colClaims'],
+    keywords: [
+      '合作方邀请码', '合作伙伴链接', '推广链接', '老用户领取', '合作方名称',
+      'partner code', 'partner link', 'affiliate link',
     ],
   },
   {
     id: 'secInviteStats',
     pageSlug: 'invites',
     titleKey: 'secInviteStats',
-    searchKeys: ['statActiveCodes', 'statInvitesTotal', 'statInvites7d', 'topInviters'],
-    keywords: ['邀请统计', '邀请排行', '邀请达人', 'invite stats', 'top inviters'],
+    searchKeys: ['statActiveCodes', 'statInvitesTotal', 'statInvites7d', 'topInviters', 'topPartnerCodes'],
+    keywords: ['邀请统计', '邀请排行', '邀请达人', '合作方排行', 'invite stats', 'top inviters', 'top partners'],
   },
   {
     id: 'secInviteCodes',
@@ -425,8 +438,8 @@ export const ADMIN_FEATURES: AdminFeatureItem[] = [
     titleKey: 'secInviteCodes',
     searchKeys: ['generateInvites', 'inviteCustomCode', 'inviteMaxUses', 'inviteGroup', 'searchInvites'],
     keywords: [
-      '邀请码列表', '生成邀请码', '合作伙伴链接', '批量生成邀请码', '撤销邀请码',
-      'partner link', 'affiliate link', 'generate invite codes', 'revoke invite',
+      '邀请码列表', '生成邀请码', '批量生成邀请码', '撤销邀请码',
+      'generate invite codes', 'revoke invite',
     ],
   },
 

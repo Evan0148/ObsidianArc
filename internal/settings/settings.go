@@ -70,6 +70,13 @@ const (
 	// reward, independent of whether personal codes exist at all.
 	InvitesRewardCards    = "invites.reward_cards"
 	InvitesRewardCardDays = "invites.reward_card_days"
+	// How many qualifying invites earn one payout of InvitesRewardCards: 1
+	// pays every time (the original behaviour), 3 pays the 3rd, 6th, 9th and
+	// so on. A cadence rather than a second card count, because "how many
+	// invites" and "how many cards" are different numbers an operator tunes
+	// separately — a partner program wants a big number rarely, a referral
+	// scheme wants a small one often.
+	InvitesRewardEvery = "invites.reward_every"
 
 	// Cloudflare Turnstile. The site key is public — it is in the page's
 	// markup — and the secret is write-only: it is redacted out of every
@@ -445,6 +452,7 @@ var Defaults = map[string]string{
 	InvitesUserLimit:      "10",
 	InvitesRewardCards:    "0",
 	InvitesRewardCardDays: "30",
+	InvitesRewardEvery:    "1",
 	TurnstileSiteKey:      "",
 	TurnstileSecretKey:    "",
 	// Off, and off even once the keys are filled in: an operator pasting keys

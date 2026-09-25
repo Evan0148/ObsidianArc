@@ -78,14 +78,25 @@ export interface CodeRedemption {
 
 export type InviteStatus = 'active' | 'used_up' | 'expired' | 'revoked';
 
-/** One code, admin-issued or a personal one an account carries. `owner_id`
- *  empty is what tells the two apart — there is no separate "kind" field. */
+/** What a code is for. Independent of `owner_id`, which only ever tells "an
+ *  account's own" (personal) from "nobody's" (batch and partner are both
+ *  `owner_id: ''`) — only `kind` tells those last two apart. */
+export type InviteKind = 'batch' | 'partner' | 'personal';
+
+/** One code — a batch entry, a partner's named link, or a personal one an
+ *  account carries. */
 export interface InviteCode {
   id: string;
   code: string;
   owner_id: string;
   owner_username: string;
   owner_nickname: string;
+  kind: InviteKind;
+  /** The partner's name. Set only for a partner code. */
+  name: string;
+  /** Whether an account that already exists may also claim this code,
+   *  on top of whoever registers through it. */
+  allow_existing: boolean;
   group_id: string;
   group_name: string;
   /** The fixed length when group_days_max is 0, otherwise the range's floor. */
@@ -101,6 +112,9 @@ export interface InviteCode {
   created_by: string;
   created_at: number;
   status: InviteStatus;
+  /** How many invite_claims rows name this code — an existing account
+   *  having claimed it, distinct from `uses`, which counts registrations. */
+  claims: number;
 }
 
 export interface InviteUse {
@@ -114,6 +128,9 @@ export interface InviteUse {
   reward_cards: number;
   /** 'same_ip' | 'limit' | 'disabled' | '' (rewarded, or nothing to reward). */
   reward_skipped: string;
+  /** 'register' for a new account seated by this code, 'claim' for an
+   *  existing account that redeemed it instead. */
+  via: 'register' | 'claim';
 }
 
 export interface InviteTopInviter {
@@ -124,11 +141,21 @@ export interface InviteTopInviter {
   rewarded: number;
 }
 
+/** One row of the partner leaderboard `InviteStats.partners` returns. */
+export interface InvitePartnerStat {
+  id: string;
+  code: string;
+  name: string;
+  registrations: number;
+  claims: number;
+}
+
 export interface InviteStats {
   active: number;
   uses_total: number;
   uses_7d: number;
   top_inviters: InviteTopInviter[];
+  partners: InvitePartnerStat[];
 }
 
 export interface GroupModelGrant {

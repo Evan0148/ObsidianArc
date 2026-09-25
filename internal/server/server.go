@@ -137,7 +137,7 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 	securityLog := securityevents.NewStore(db)
 	keys := apikey.NewStore(db)
 	cards := card.NewStore(db)
-	invites := invite.NewStore(db, users, cards, settingsService)
+	invites := invite.NewStore(db, users, cards, groups, settingsService)
 	invites.Notify = notifyStore
 	quotaService := quota.NewService(db, quota.NewStore(db), settingsService)
 	projects := project.NewStore(db)

@@ -14,6 +14,7 @@ import (
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/config"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/database"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/group"
+	"github.com/OnyxAxisOwO/ObsidianArc/internal/notify"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/settings"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/user"
 )
@@ -22,6 +23,7 @@ type fixture struct {
 	store  *Store
 	users  *user.Store
 	groups *group.Store
+	notify *notify.Store
 	db     *database.DB
 }
 
@@ -51,7 +53,10 @@ func newFixture(t *testing.T) *fixture {
 	}
 	users := user.NewStore(db)
 	cards := card.NewStore(db)
-	return &fixture{store: NewStore(db, users, cards, set), users: users, groups: groups, db: db}
+	notifyStore := notify.NewStore(db)
+	store := NewStore(db, users, cards, groups, set)
+	store.Notify = notifyStore
+	return &fixture{store: store, users: users, groups: groups, notify: notifyStore, db: db}
 }
 
 func (f *fixture) account(t *testing.T, username string) user.User {
@@ -67,7 +72,10 @@ func (f *fixture) account(t *testing.T, username string) user.User {
 
 // insertCode writes a row directly, bypassing Create's validation, so a test
 // can put the store in a state Create itself would refuse to reach (an
-// already-expired code, say).
+// already-expired code, say). Kind defaults the same way migration 0052's
+// backfill does — "personal" when OwnerID is set, "batch" otherwise — so
+// every existing caller that never mentions Kind keeps meaning what it
+// always meant.
 func (f *fixture) insertCode(t *testing.T, c Code) Code {
 	t.Helper()
 	if c.ID == "" {
@@ -76,10 +84,17 @@ func (f *fixture) insertCode(t *testing.T, c Code) Code {
 	if c.CreatedAt == 0 {
 		c.CreatedAt = time.Now().UnixMilli()
 	}
+	if c.Kind == "" {
+		if c.OwnerID != "" {
+			c.Kind = CodeKindPersonal
+		} else {
+			c.Kind = CodeKindBatch
+		}
+	}
 	_, err := f.db.Exec(context.Background(), `INSERT INTO invite_codes
-		(id, code, owner_id, group_id, group_days, group_days_max, max_uses, uses, expires_at, revoked_at, note, created_by, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.ID, Normalise(c.Code), c.OwnerID, c.GroupID, c.GroupDays, c.GroupDaysMax,
+		(id, code, owner_id, kind, name, allow_existing, group_id, group_days, group_days_max, max_uses, uses, expires_at, revoked_at, note, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, Normalise(c.Code), c.OwnerID, c.Kind, c.Name, c.AllowExisting, c.GroupID, c.GroupDays, c.GroupDaysMax,
 		c.MaxUses, c.Uses, c.ExpiresAt, c.RevokedAt, c.Note, c.CreatedBy, c.CreatedAt)
 	if err != nil {
 		t.Fatalf("insert code: %v", err)

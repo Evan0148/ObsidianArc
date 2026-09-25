@@ -82,7 +82,7 @@ function input(node: HTMLInputElement, value: string): void {
   node.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-const noStats: InviteStats = { active: 0, uses_total: 0, uses_7d: 0, top_inviters: [] };
+const noStats: InviteStats = { active: 0, uses_total: 0, uses_7d: 0, top_inviters: [], partners: [] };
 
 function stubBase(overrides: { settings?: Record<string, string> } = {}): void {
   vi.spyOn(adminApi, 'settings').mockResolvedValue({
@@ -91,6 +91,7 @@ function stubBase(overrides: { settings?: Record<string, string> } = {}): void {
       'invites.required': 'false',
       'invites.user_enabled': 'false',
       'invites.user_limit': '10',
+      'invites.reward_every': '1',
       'invites.reward_cards': '0',
       'invites.reward_card_days': '30',
       ...overrides.settings,
@@ -102,10 +103,17 @@ function stubBase(overrides: { settings?: Record<string, string> } = {}): void {
   vi.spyOn(authApi, 'fetchSite').mockResolvedValue(siteInfo.value);
 }
 
+/** Most tests care about the main list only; the partner card fetches on its
+ *  own, so it gets a quiet empty stub unless a test says otherwise. */
+function stubPartners(codes: InviteCode[] = []): void {
+  vi.spyOn(adminApi, 'invites').mockImplementation(async (query: string) =>
+    query.includes('kind=partner') ? { codes, total: codes.length } : { codes: [], total: 0 });
+}
+
 describe('registration mode and rewards', () => {
   it('derives the mode from the two settings it stands for, and writes them back together', async () => {
     stubBase({ settings: { 'registration.enabled': 'true', 'invites.required': 'true' } });
-    vi.spyOn(adminApi, 'invites').mockResolvedValue({ codes: [], total: 0 });
+    stubPartners();
     const save = vi.spyOn(adminApi, 'saveSettings').mockResolvedValue({ settings: {} });
     await mount(AdminInvites);
 
@@ -127,7 +135,7 @@ describe('registration mode and rewards', () => {
 
   it('keeps the per-account limit and reward fields out of the form until personal invites are switched on', async () => {
     stubBase();
-    vi.spyOn(adminApi, 'invites').mockResolvedValue({ codes: [], total: 0 });
+    stubPartners();
     const save = vi.spyOn(adminApi, 'saveSettings').mockResolvedValue({ settings: {} });
     await mount(AdminInvites);
 
@@ -137,6 +145,7 @@ describe('registration mode and rewards', () => {
     toggle.click();
     await settle();
     expect(host.textContent).toContain(t('userInviteLimit'));
+    expect(host.textContent).toContain(t('inviteRewardEvery'));
     expect(host.textContent).toContain(t('inviteRewardCards'));
 
     button(actions, t('save')).click();
@@ -144,7 +153,20 @@ describe('registration mode and rewards', () => {
     expect(save).toHaveBeenCalledWith(expect.objectContaining({
       'invites.user_enabled': 'true',
       'invites.user_limit': '10',
+      'invites.reward_every': '1',
     }));
+  });
+
+  it('reads the reward rule as one sentence, and explains a zero reward rather than stating it', async () => {
+    stubBase({ settings: { 'invites.user_enabled': 'true', 'invites.reward_every': '5', 'invites.reward_cards': '2' } });
+    stubPartners();
+    await mount(AdminInvites);
+
+    expect(host.textContent).toContain(t('inviteRewardRuleSummary', { every: 5, cards: 2, days: 30 }));
+
+    input(fieldFor(host, t('inviteRewardCards')).querySelector<HTMLInputElement>('input')!, '0');
+    await settle();
+    expect(host.textContent).toContain(t('inviteRewardRuleNone', { every: 5 }));
   });
 });
 
@@ -153,30 +175,31 @@ describe('the code list', () => {
     stubBase();
     const list = vi.spyOn(adminApi, 'invites').mockResolvedValue({ codes: [], total: 0 });
     await mount(AdminInvites);
-    expect(list).toHaveBeenLastCalledWith('?limit=20&offset=0');
+    expect(list).toHaveBeenCalledWith('?limit=20&offset=0');
 
     const [kind, status] = [...host.querySelectorAll<HTMLButtonElement>('.oa-filter-select')];
-    await choose(kind!, t('inviteKindUser'));
-    expect(list).toHaveBeenLastCalledWith('?limit=20&offset=0&kind=user');
+    await choose(kind!, t('inviteKindPartner'));
+    expect(list).toHaveBeenLastCalledWith('?limit=20&offset=0&kind=partner');
 
     await choose(status!, t('inviteStatusRevoked'));
-    expect(list).toHaveBeenLastCalledWith('?limit=20&offset=0&kind=user&status=revoked');
+    expect(list).toHaveBeenLastCalledWith('?limit=20&offset=0&kind=partner&status=revoked');
 
     input(host.querySelector<HTMLInputElement>('input[type="search"]')!, 'partner');
-    await vi.waitFor(() => expect(list).toHaveBeenLastCalledWith('?limit=20&offset=0&kind=user&status=revoked&q=partner'));
+    await vi.waitFor(() => expect(list).toHaveBeenLastCalledWith('?limit=20&offset=0&kind=partner&status=revoked&q=partner'));
   });
 });
 
 describe('generating codes', () => {
   it('only offers a name for a single code, and mints a batch otherwise', async () => {
     stubBase();
-    vi.spyOn(adminApi, 'invites').mockResolvedValue({ codes: [], total: 0 });
+    stubPartners();
     const create = vi.spyOn(adminApi, 'createInvites').mockImplementation(async (body) => ({
       codes: Array.from({ length: Number(body['count']) }, (_, index) => ({
         id: `new-${index}`, code: `CODE${index}0000`, owner_id: '', owner_username: '', owner_nickname: '',
+        kind: 'batch', name: '', allow_existing: false,
         group_id: '', group_name: '', group_days: 0, group_days_max: 0,
         max_uses: Number(body['max_uses']), uses: 0, expires_at: 0, revoked_at: 0,
-        note: String(body['note']), created_by: 'op', created_at: Date.now(), status: 'active',
+        note: String(body['note']), created_by: 'op', created_at: Date.now(), status: 'active', claims: 0,
       } satisfies InviteCode)),
     }));
     await mount(AdminInvites);
@@ -204,7 +227,7 @@ describe('generating codes', () => {
   // that mounting the result view has already taken off screen.
   it('leaves an untouched range as a fixed, permanent length', async () => {
     stubBase();
-    vi.spyOn(adminApi, 'invites').mockResolvedValue({ codes: [], total: 0 });
+    stubPartners();
     const create = vi.spyOn(adminApi, 'createInvites').mockResolvedValue({ codes: [] });
     await mount(AdminInvites);
 
@@ -221,7 +244,7 @@ describe('generating codes', () => {
 
   it('sends a real range once "up to" is set higher than "days"', async () => {
     stubBase();
-    vi.spyOn(adminApi, 'invites').mockResolvedValue({ codes: [], total: 0 });
+    stubPartners();
     const create = vi.spyOn(adminApi, 'createInvites').mockResolvedValue({ codes: [] });
     await mount(AdminInvites);
 
@@ -240,33 +263,151 @@ describe('generating codes', () => {
   });
 });
 
+describe('partner codes', () => {
+  it('requires a name, a code and a group before a partner code can be confirmed', async () => {
+    stubBase();
+    stubPartners();
+    vi.spyOn(adminApi, 'createInvites').mockResolvedValue({ codes: [] });
+    await mount(AdminInvites);
+
+    button(host, t('createPartnerCode')).click();
+    await settle();
+    expect(panels.textContent).toContain(t('invitePartnerName'));
+    expect(panels.textContent).not.toContain(t('inviteCount'));
+
+    // No name, no code, no group yet: nothing to confirm with.
+    expect(() => button(panels, t('createPartnerCode'))).toThrow();
+
+    input(fieldFor(panels, t('invitePartnerName')).querySelector<HTMLInputElement>('input')!, 'Acme');
+    input(fieldFor(panels, t('inviteCustomCode')).querySelector<HTMLInputElement>('input')!, 'ACMEPARTNER');
+    await settle();
+    expect(() => button(panels, t('createPartnerCode'))).toThrow();
+
+    await choose(fieldFor(panels, t('inviteGroup')).querySelector<HTMLButtonElement>('.oa-select')!, 'Premium');
+    button(panels, t('createPartnerCode')).click();
+    await settle();
+  });
+
+  it('sends the partner fields, defaults to unlimited uses and existing accounts allowed', async () => {
+    stubBase();
+    stubPartners();
+    const create = vi.spyOn(adminApi, 'createInvites').mockResolvedValue({
+      codes: [{
+        id: 'p1', code: 'ACMEPARTNER', owner_id: '', owner_username: '', owner_nickname: '',
+        kind: 'partner', name: 'Acme', allow_existing: true,
+        group_id: 'g1', group_name: 'Premium', group_days: 3, group_days_max: 7,
+        max_uses: 0, uses: 0, expires_at: 0, revoked_at: 0, note: '', created_by: 'op',
+        created_at: Date.now(), status: 'active', claims: 0,
+      } satisfies InviteCode],
+    });
+    await mount(AdminInvites);
+
+    button(host, t('createPartnerCode')).click();
+    await settle();
+    expect(fieldFor(panels, t('inviteMaxUses')).querySelector<HTMLInputElement>('input')!.value).toBe('0');
+    expect(switchFor(panels, t('inviteAllowExisting')).checked).toBe(true);
+
+    input(fieldFor(panels, t('invitePartnerName')).querySelector<HTMLInputElement>('input')!, 'Acme');
+    input(fieldFor(panels, t('inviteCustomCode')).querySelector<HTMLInputElement>('input')!, 'ACMEPARTNER');
+    await choose(fieldFor(panels, t('inviteGroup')).querySelector<HTMLButtonElement>('.oa-select')!, 'Premium');
+    button(panels, t('createPartnerCode')).click();
+    await settle();
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      count: 1, code: 'ACMEPARTNER', kind: 'partner', name: 'Acme', allow_existing: true, max_uses: 0,
+    }));
+    expect(panels.textContent).toContain('Acme');
+  });
+
+  it('lists partner codes in their own card, with registrations split from claims', async () => {
+    stubBase();
+    vi.spyOn(adminApi, 'invites').mockImplementation(async (query: string) => (query.includes('kind=partner')
+      ? {
+        codes: [{
+          id: 'p1', code: 'ACMEPARTNER', owner_id: '', owner_username: '', owner_nickname: '',
+          kind: 'partner', name: 'Acme', allow_existing: true,
+          group_id: 'g1', group_name: 'Premium', group_days: 3, group_days_max: 7,
+          max_uses: 0, uses: 9, expires_at: 0, revoked_at: 0, note: '', created_by: 'op',
+          created_at: Date.now(), status: 'active', claims: 4,
+        } satisfies InviteCode],
+        total: 1,
+      }
+      : { codes: [], total: 0 }));
+    await mount(AdminInvites);
+
+    expect(host.textContent).toContain('Acme');
+    // 9 uses minus 4 claims: 5 registrations, read off no field of its own.
+    const row = host.querySelector('#secInvitePartners tbody tr')!;
+    expect(row.textContent).toContain('5');
+    expect(row.textContent).toContain('4');
+  });
+
+  // A partner's code is a word somebody chose. Eight letters long, it used to
+  // be split like a generated one, and PARTNERX read as PART-NERX.
+  it('shows an eight-letter partner code as it was typed, not split in two', async () => {
+    stubBase();
+    const partner = {
+      id: 'p2', code: 'PARTNERX', owner_id: '', owner_username: '', owner_nickname: '',
+      kind: 'partner', name: 'Acme', allow_existing: true,
+      group_id: 'g1', group_name: 'Premium', group_days: 3, group_days_max: 7,
+      max_uses: 0, uses: 0, expires_at: 0, revoked_at: 0, note: '', created_by: 'op',
+      created_at: Date.now(), status: 'active', claims: 0,
+    } satisfies InviteCode;
+    vi.spyOn(adminApi, 'invites').mockResolvedValue({ codes: [partner], total: 1 });
+    await mount(AdminInvites);
+
+    expect(host.textContent).toContain('PARTNERX');
+    expect(host.textContent).not.toContain('PART-NERX');
+  });
+
+  it('shows the stats card its own partner leaderboard', async () => {
+    stubBase();
+    stubPartners();
+    vi.spyOn(adminApi, 'inviteStats').mockResolvedValue({
+      active: 1, uses_total: 9, uses_7d: 2, top_inviters: [],
+      partners: [{ id: 'p1', code: 'ACMEPARTNER', name: 'Acme', registrations: 5, claims: 4 }],
+    });
+    await mount(AdminInvites);
+
+    expect(host.textContent).toContain(t('topPartnerCodes'));
+    expect(host.textContent).toContain(t('invitePartnerSummary', { registrations: 5, claims: 4 }));
+  });
+});
+
 describe('an existing code', () => {
   const code: InviteCode = {
     id: 'inv1', code: 'ABCD1234', owner_id: '', owner_username: '', owner_nickname: '',
+    kind: 'batch', name: '', allow_existing: false,
     group_id: 'g1', group_name: 'Premium', group_days: 3, group_days_max: 7,
     max_uses: 10, uses: 2, expires_at: 0, revoked_at: 0, note: 'Partner X',
-    created_by: 'op', created_at: Date.now(), status: 'active',
+    created_by: 'op', created_at: Date.now(), status: 'active', claims: 0,
   };
   const uses: InviteUse[] = [
-    { user_id: 'u1', username: 'alice', nickname: 'Alice', group_days: 3, created_at: Date.now(), rewarded_at: Date.now(), reward_cards: 2, reward_skipped: '' },
-    { user_id: 'u2', username: 'bob', nickname: '', group_days: 7, created_at: Date.now(), rewarded_at: 0, reward_cards: 0, reward_skipped: 'same_ip' },
+    { user_id: 'u1', username: 'alice', nickname: 'Alice', group_days: 3, created_at: Date.now(), rewarded_at: Date.now(), reward_cards: 2, reward_skipped: '', via: 'register' },
+    { user_id: 'u2', username: 'bob', nickname: '', group_days: 7, created_at: Date.now(), rewarded_at: 0, reward_cards: 0, reward_skipped: 'same_ip', via: 'register' },
+    { user_id: 'u3', username: 'carol', nickname: '', group_days: 3, created_at: Date.now(), rewarded_at: 0, reward_cards: 0, reward_skipped: '', via: 'claim' },
   ];
 
   async function openRow(): Promise<void> {
     stubBase();
-    vi.spyOn(adminApi, 'invites').mockResolvedValue({ codes: [code], total: 1 });
+    vi.spyOn(adminApi, 'invites').mockImplementation(async (query: string) => (query.includes('kind=partner')
+      ? { codes: [], total: 0 }
+      : { codes: [code], total: 1 }));
     vi.spyOn(adminApi, 'inviteUses').mockResolvedValue({ uses });
     await mount(AdminInvites);
+    // The partner card's own table is empty in this stub, so the main list
+    // is the only one with a row to click.
     host.querySelector<HTMLTableRowElement>('tbody tr')!.click();
     await settle();
   }
 
-  it('shows the range it grants, and who has used it so far', async () => {
+  it('shows the range it grants, and who has used it so far, with claims told apart from registrations', async () => {
     await openRow();
     expect(panels.textContent).toContain('ABCD-1234');
     expect(panels.textContent).toContain(t('invitesDaysRange', { from: 3, to: 7 }));
     expect(panels.textContent).toContain(t('inviteRewardedBadge'));
     expect(panels.textContent).toContain(t('inviteSkippedSameIP'));
+    expect(panels.textContent).toContain(t('inviteViaClaim'));
   });
 
   it('revokes on the second press, and then offers nothing more to revoke', async () => {

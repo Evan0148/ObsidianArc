@@ -362,16 +362,17 @@ func TestProfileInvitesRoundTrip(t *testing.T) {
 	profile := in.do(http.MethodGet, "/api/profile/invites", nil, admin)
 	final := decode[struct {
 		Used     int `json:"used"`
+		Counted  int `json:"counted"`
 		Invitees []struct {
 			Username string `json:"username"`
-			Rewarded bool   `json:"rewarded"`
+			Counted  bool   `json:"counted"`
 		} `json:"invitees"`
 	}](t, profile)
-	if final.Used != 1 || len(final.Invitees) != 1 {
-		t.Fatalf("profile after a join: used=%d invitees=%d", final.Used, len(final.Invitees))
+	if final.Used != 1 || final.Counted != 1 || len(final.Invitees) != 1 {
+		t.Fatalf("profile after a join: used=%d counted=%d invitees=%d", final.Used, final.Counted, len(final.Invitees))
 	}
-	if !final.Invitees[0].Rewarded || final.Invitees[0].Username != "friend-of-admin" {
-		t.Fatalf("invitee row = %+v, want rewarded friend-of-admin", final.Invitees[0])
+	if !final.Invitees[0].Counted || final.Invitees[0].Username != "friend-of-admin" {
+		t.Fatalf("invitee row = %+v, want counted friend-of-admin", final.Invitees[0])
 	}
 
 	notifications := in.do(http.MethodGet, "/api/notifications", nil, admin)
@@ -386,5 +387,174 @@ func TestProfileInvitesRoundTrip(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("no invite_joined notification reached the inviter")
+	}
+}
+
+// TestAdminCreatePartnerCodeValidatesAndDefaults covers the HTTP shape of
+// part A's partner codes: the bundled 400 when any of the four required
+// fields is missing, and allow_existing defaulting to true when the
+// request never mentions it.
+func TestAdminCreatePartnerCodeValidatesAndDefaults(t *testing.T) {
+	in := newInstance(t)
+	admin := in.register("founder", "a-good-password")
+
+	groupRes := in.do(http.MethodPost, "/api/admin/groups", map[string]any{"name": "Partner Program"}, admin)
+	if groupRes.Code != http.StatusCreated {
+		t.Fatalf("create group: %d %s", groupRes.Code, groupRes.Body.String())
+	}
+	groupID := decode[struct {
+		Group struct{ ID string } `json:"group"`
+	}](t, groupRes).Group.ID
+
+	missingName := in.do(http.MethodPost, "/api/admin/invites",
+		map[string]any{"kind": "partner", "count": 1, "code": "ACMEPARTNER", "group_id": groupID}, admin)
+	if missingName.Code != http.StatusBadRequest || errCode(t, missingName) != "invite_partner_fields" {
+		t.Fatalf("partner with no name: %d %s", missingName.Code, missingName.Body.String())
+	}
+
+	created := in.do(http.MethodPost, "/api/admin/invites",
+		map[string]any{
+			"kind": "partner", "count": 1, "code": "acme-partner", "name": "Acme Corp",
+			"group_id": groupID, "group_days": 7,
+		}, admin)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create partner: %d %s", created.Code, created.Body.String())
+	}
+	partner := decode[struct {
+		Codes []struct {
+			ID            string `json:"id"`
+			Kind          string `json:"kind"`
+			Name          string `json:"name"`
+			AllowExisting bool   `json:"allow_existing"`
+		} `json:"codes"`
+	}](t, created).Codes[0]
+	if partner.Kind != "partner" || partner.Name != "Acme Corp" || !partner.AllowExisting {
+		t.Fatalf("partner code = %+v, want kind partner, name Acme Corp, allow_existing true", partner)
+	}
+}
+
+// TestAdminListInvitesKindFilters checks kind= over HTTP, including the
+// "admin"/"user" aliases the invites tab's original select still sends.
+func TestAdminListInvitesKindFilters(t *testing.T) {
+	in := newInstance(t)
+	admin := in.register("founder", "a-good-password")
+	in.setInviteSettings(t, map[string]string{settings.InvitesUserEnabled: "true"})
+
+	groupRes := in.do(http.MethodPost, "/api/admin/groups", map[string]any{"name": "Filter Group"}, admin)
+	groupID := decode[struct {
+		Group struct{ ID string } `json:"group"`
+	}](t, groupRes).Group.ID
+
+	if res := in.do(http.MethodPost, "/api/admin/invites", map[string]any{"count": 1}, admin); res.Code != http.StatusCreated {
+		t.Fatalf("create batch: %d %s", res.Code, res.Body.String())
+	}
+	if res := in.do(http.MethodPost, "/api/admin/invites",
+		map[string]any{"kind": "partner", "count": 1, "code": "FILTERPARTNER", "name": "Filter Partner", "group_id": groupID},
+		admin); res.Code != http.StatusCreated {
+		t.Fatalf("create partner: %d %s", res.Code, res.Body.String())
+	}
+	// Opening the profile invites panel mints the founder's own personal
+	// code, the same lazy get-or-create GET /api/profile/invites always
+	// does.
+	if res := in.do(http.MethodGet, "/api/profile/invites", nil, admin); res.Code != http.StatusOK {
+		t.Fatalf("open profile invites: %d %s", res.Code, res.Body.String())
+	}
+
+	for _, c := range []struct {
+		kind string
+		want int
+	}{
+		{"batch", 1}, {"partner", 1}, {"personal", 1}, {"admin", 2}, {"user", 1}, {"all", 3},
+	} {
+		res := in.do(http.MethodGet, "/api/admin/invites?kind="+c.kind, nil, admin)
+		if res.Code != http.StatusOK {
+			t.Fatalf("list kind=%s: %d %s", c.kind, res.Code, res.Body.String())
+		}
+		total := decode[struct {
+			Total int `json:"total"`
+		}](t, res).Total
+		if total != c.want {
+			t.Errorf("list kind=%s: total=%d, want %d", c.kind, total, c.want)
+		}
+	}
+}
+
+// TestClaimEndpoint covers POST /api/profile/invites/claim end to end: a
+// signed-in account joining a partner code's group, a repeat claim refused
+// as already-claimed, and a wrong code refused as invalid — the three
+// responses a browser actually has to tell apart.
+func TestClaimEndpoint(t *testing.T) {
+	in := newInstance(t)
+	admin := in.register("founder", "a-good-password")
+	in.setInviteSettings(t, map[string]string{settings.RegistrationEnabled: "true"})
+	member := in.register("claiming-member", "a-good-password")
+
+	groupRes := in.do(http.MethodPost, "/api/admin/groups", map[string]any{"name": "Claimable Trial"}, admin)
+	groupID := decode[struct {
+		Group struct{ ID string } `json:"group"`
+	}](t, groupRes).Group.ID
+
+	created := in.do(http.MethodPost, "/api/admin/invites",
+		map[string]any{
+			"kind": "partner", "count": 1, "code": "CLAIMHTTP", "name": "Claim HTTP Partner",
+			"group_id": groupID, "group_days": 9,
+		}, admin)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create partner: %d %s", created.Code, created.Body.String())
+	}
+
+	badCode := in.do(http.MethodPost, "/api/profile/invites/claim", map[string]string{"code": "NOSUCHCODE"}, member)
+	if badCode.Code != http.StatusBadRequest || errCode(t, badCode) != "invite_invalid" {
+		t.Fatalf("claim a bad code: %d %s", badCode.Code, badCode.Body.String())
+	}
+
+	claim := in.do(http.MethodPost, "/api/profile/invites/claim", map[string]string{"code": "claim-http"}, member)
+	if claim.Code != http.StatusOK {
+		t.Fatalf("claim: %d %s", claim.Code, claim.Body.String())
+	}
+	result := decode[struct {
+		GroupID   string `json:"group_id"`
+		GroupName string `json:"group_name"`
+		Days      int64  `json:"days"`
+		ExpiresAt int64  `json:"expires_at"`
+	}](t, claim)
+	if result.GroupID != groupID || result.GroupName != "Claimable Trial" || result.Days != 9 || result.ExpiresAt == 0 {
+		t.Fatalf("claim result = %+v", result)
+	}
+
+	again := in.do(http.MethodPost, "/api/profile/invites/claim", map[string]string{"code": "CLAIM-HTTP"}, member)
+	if again.Code != http.StatusConflict || errCode(t, again) != "invite_claimed" {
+		t.Fatalf("claim again: %d %s", again.Code, again.Body.String())
+	}
+
+	uses := in.do(http.MethodGet, "/api/admin/invites/"+decode[struct {
+		Codes []struct{ ID string } `json:"codes"`
+	}](t, created).Codes[0].ID+"/uses", nil, admin)
+	if uses.Code != http.StatusOK {
+		t.Fatalf("uses: %d %s", uses.Code, uses.Body.String())
+	}
+	rows := decode[struct {
+		Uses []struct {
+			UserID string `json:"user_id"`
+			Via    string `json:"via"`
+		} `json:"uses"`
+	}](t, uses).Uses
+	if len(rows) != 1 || rows[0].UserID != member.userID || rows[0].Via != "claim" {
+		t.Fatalf("uses rows = %+v, want one claim row for %s", rows, member.userID)
+	}
+
+	stats := in.do(http.MethodGet, "/api/admin/invites/stats", nil, admin)
+	if stats.Code != http.StatusOK {
+		t.Fatalf("stats: %d %s", stats.Code, stats.Body.String())
+	}
+	partners := decode[struct {
+		Partners []struct {
+			Code          string `json:"code"`
+			Claims        int    `json:"claims"`
+			Registrations int    `json:"registrations"`
+		} `json:"partners"`
+	}](t, stats).Partners
+	if len(partners) != 1 || partners[0].Claims != 1 || partners[0].Registrations != 0 {
+		t.Fatalf("partner stats = %+v, want one partner with 1 claim and 0 registrations", partners)
 	}
 }

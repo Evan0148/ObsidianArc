@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/database"
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/id"
@@ -19,8 +20,10 @@ import (
 
 const selectColumns = `
 	ic.id, ic.code, ic.owner_id, COALESCE(u.username, ''), COALESCE(u.nickname, ''),
+	ic.kind, ic.name, ic.allow_existing,
 	ic.group_id, COALESCE(g.name, ''), ic.group_days, ic.group_days_max,
-	ic.max_uses, ic.uses, ic.expires_at, ic.revoked_at, ic.note, ic.created_by, ic.created_at`
+	ic.max_uses, ic.uses, ic.expires_at, ic.revoked_at, ic.note, ic.created_by, ic.created_at,
+	(SELECT COUNT(*) FROM invite_claims WHERE code_id = ic.id)`
 
 const fromClause = `
 	FROM invite_codes ic
@@ -30,8 +33,9 @@ const fromClause = `
 func scanCode(row interface{ Scan(...any) error }, now int64) (Code, error) {
 	var c Code
 	if err := row.Scan(&c.ID, &c.Code, &c.OwnerID, &c.OwnerUsername, &c.OwnerNickname,
+		&c.Kind, &c.Name, &c.AllowExisting,
 		&c.GroupID, &c.GroupName, &c.GroupDays, &c.GroupDaysMax, &c.MaxUses, &c.Uses,
-		&c.ExpiresAt, &c.RevokedAt, &c.Note, &c.CreatedBy, &c.CreatedAt); err != nil {
+		&c.ExpiresAt, &c.RevokedAt, &c.Note, &c.CreatedBy, &c.CreatedAt, &c.Claims); err != nil {
 		return Code{}, err
 	}
 	c.Status = status(c.RevokedAt, c.ExpiresAt, c.MaxUses, c.Uses, now)
@@ -52,19 +56,33 @@ func (s *Store) ByID(ctx context.Context, codeID string) (Code, error) {
 	return record, nil
 }
 
-// CreateInput is a batch (Count > 1, no Code) or a single named partner code
-// (Count == 1, Code set). The two share every other field because a named
-// code is not a different kind of row, only a batch of one with chosen text.
+// MaxPartnerNameChars bounds the partner's name — long enough for a company
+// name, short enough that the invites table's own column stays readable.
+const MaxPartnerNameChars = 60
+
+// CreateInput is a batch (Count > 1, no Code), a single named batch code
+// (Count == 1, Code set, Kind left as CodeKindBatch), or a partner code
+// (Kind == CodeKindPartner, which requires Count == 1, Code, Name and
+// GroupID — see Create). All three share every other field because none of
+// this is a different shape of row, only a batch of one with chosen text and
+// — for a partner — a name and permission to be claimed by an existing
+// account.
 type CreateInput struct {
-	Count        int
-	Code         string
-	MaxUses      int
-	ExpiresAt    int64
-	GroupID      string
-	GroupDays    int
-	GroupDaysMax int
-	Note         string
-	CreatedBy    string
+	Count int
+	Code  string
+	Kind  string
+	Name  string
+	// nil means "use the kind's own default" — true for a partner, false
+	// otherwise — so an admin form that never mentions this field for an
+	// ordinary batch does not have to know what the default even is.
+	AllowExisting *bool
+	MaxUses       int
+	ExpiresAt     int64
+	GroupID       string
+	GroupDays     int
+	GroupDaysMax  int
+	Note          string
+	CreatedBy     string
 }
 
 // Create mints Count codes (or validates and stores the one named Code) and
@@ -79,6 +97,15 @@ func (s *Store) Create(ctx context.Context, in CreateInput) ([]Code, error) {
 	if count > MaxBatch {
 		return nil, ErrInvalidCount
 	}
+	kind := in.Kind
+	if kind == "" {
+		kind = CodeKindBatch
+	}
+	if kind != CodeKindBatch && kind != CodeKindPartner {
+		// CodeKindPersonal is minted only by createPersonal, never through
+		// this administrative path.
+		return nil, ErrPartnerFields
+	}
 	custom := Normalise(in.Code)
 	if custom != "" {
 		if count > 1 {
@@ -87,6 +114,18 @@ func (s *Store) Create(ctx context.Context, in CreateInput) ([]Code, error) {
 		if !ValidCustom(custom) {
 			return nil, ErrCodeFormat
 		}
+	}
+	name := strings.TrimSpace(in.Name)
+	if kind == CodeKindPartner {
+		// A partner code's four required fields, checked together and
+		// reported as one error — see ErrPartnerFields.
+		if count != 1 || custom == "" || name == "" || utf8.RuneCountInString(name) > MaxPartnerNameChars || in.GroupID == "" {
+			return nil, ErrPartnerFields
+		}
+	}
+	allowExisting := kind == CodeKindPartner
+	if in.AllowExisting != nil {
+		allowExisting = *in.AllowExisting
 	}
 	if in.MaxUses < 0 || in.MaxUses > MaxMaxUses {
 		return nil, ErrInvalidMaxUses
@@ -118,15 +157,17 @@ func (s *Store) Create(ctx context.Context, in CreateInput) ([]Code, error) {
 			code = generated
 		}
 		record := Code{
-			ID: id.New(), Code: code, GroupID: in.GroupID, GroupDays: in.GroupDays,
+			ID: id.New(), Code: code, Kind: kind, Name: text.TrimAndTruncate(name, MaxPartnerNameChars),
+			AllowExisting: allowExisting, GroupID: in.GroupID, GroupDays: in.GroupDays,
 			GroupDaysMax: in.GroupDaysMax, MaxUses: in.MaxUses, ExpiresAt: in.ExpiresAt,
 			Note: text.TrimAndTruncate(in.Note, MaxNoteChars), CreatedBy: in.CreatedBy, CreatedAt: now,
 			Status: status(0, in.ExpiresAt, in.MaxUses, 0, now),
 		}
 		_, err := s.db.Exec(ctx, `INSERT INTO invite_codes
-			(id, code, owner_id, group_id, group_days, group_days_max, max_uses, uses, expires_at, revoked_at, note, created_by, created_at)
-			VALUES (?, ?, '', ?, ?, ?, ?, 0, ?, 0, ?, ?, ?)`,
-			record.ID, record.Code, record.GroupID, record.GroupDays, record.GroupDaysMax,
+			(id, code, owner_id, kind, name, allow_existing, group_id, group_days, group_days_max, max_uses, uses, expires_at, revoked_at, note, created_by, created_at)
+			VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?, ?)`,
+			record.ID, record.Code, record.Kind, record.Name, record.AllowExisting,
+			record.GroupID, record.GroupDays, record.GroupDaysMax,
 			record.MaxUses, record.ExpiresAt, record.Note, record.CreatedBy, record.CreatedAt)
 		if err != nil {
 			if isUnique(err) {
@@ -152,7 +193,12 @@ func (s *Store) Revoke(ctx context.Context, codeID string) (Code, error) {
 }
 
 const (
-	KindAll   = "all"
+	KindAll = "all"
+	// KindAdmin and KindUser are the two aliases the invites tab's original
+	// select offered, kept so a bookmarked URL or an older client still
+	// filters the way it always did: "admin" is every code an administrator
+	// mints (batch and partner both — owner_id = '' either way), "user" is
+	// every account's own personal code.
 	KindAdmin = "admin"
 	KindUser  = "user"
 
@@ -185,6 +231,9 @@ func (s *Store) List(ctx context.Context, filter ListFilter) ([]Code, int, error
 		where = append(where, "ic.owner_id = ''")
 	case KindUser:
 		where = append(where, "ic.owner_id <> ''")
+	case CodeKindBatch, CodeKindPartner, CodeKindPersonal:
+		where = append(where, "ic.kind = ?")
+		args = append(args, filter.Kind)
 	}
 	switch filter.Status {
 	case FilterActive:
@@ -252,11 +301,24 @@ type TopInviter struct {
 	Rewarded int    `json:"rewarded"`
 }
 
+// PartnerStat is one row of the partner leaderboard Stats returns: how much
+// traffic one partner code has actually produced, registrations and claims
+// both, since a partner's link is handed to strangers and existing accounts
+// alike.
+type PartnerStat struct {
+	ID            string `json:"id"`
+	Code          string `json:"code"`
+	Name          string `json:"name"`
+	Registrations int    `json:"registrations"`
+	Claims        int    `json:"claims"`
+}
+
 type Stats struct {
-	Active      int          `json:"active"`
-	UsesTotal   int          `json:"uses_total"`
-	Uses7d      int          `json:"uses_7d"`
-	TopInviters []TopInviter `json:"top_inviters"`
+	Active      int           `json:"active"`
+	UsesTotal   int           `json:"uses_total"`
+	Uses7d      int           `json:"uses_7d"`
+	TopInviters []TopInviter  `json:"top_inviters"`
+	Partners    []PartnerStat `json:"partners"`
 }
 
 // Stats is the invites tab's own small dashboard — deliberately as short as
@@ -307,5 +369,38 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 		return Stats{}, fmt.Errorf("invite: top inviters: %w", err)
 	}
 	out.TopInviters = top
+
+	// Wrapped in a derived table rather than ordering by the raw expression
+	// directly: Postgres only lets ORDER BY reference an output column by
+	// name or repeat a full expression built from the FROM list's own
+	// columns, not an arbitrary sum of two other SELECT-list aliases. Once
+	// registrations and claims are a subquery's own output columns, ordering
+	// by their sum is unremarkable on both engines.
+	partnerRows, err := s.db.Query(ctx, `
+		SELECT id, code, name, registrations, claims FROM (
+			SELECT ic.id AS id, ic.code AS code, ic.name AS name,
+			       (SELECT COUNT(*) FROM invite_uses iu WHERE iu.code_id = ic.id) AS registrations,
+			       (SELECT COUNT(*) FROM invite_claims icl WHERE icl.code_id = ic.id) AS claims
+			FROM invite_codes ic
+			WHERE ic.kind = ?
+		) partner_totals
+		ORDER BY registrations + claims DESC, id DESC
+		LIMIT 20`, CodeKindPartner)
+	if err != nil {
+		return Stats{}, fmt.Errorf("invite: partner stats: %w", err)
+	}
+	defer partnerRows.Close()
+	partners := []PartnerStat{}
+	for partnerRows.Next() {
+		var p PartnerStat
+		if err := partnerRows.Scan(&p.ID, &p.Code, &p.Name, &p.Registrations, &p.Claims); err != nil {
+			return Stats{}, fmt.Errorf("invite: scan partner stat: %w", err)
+		}
+		partners = append(partners, p)
+	}
+	if err := partnerRows.Err(); err != nil {
+		return Stats{}, fmt.Errorf("invite: partner stats: %w", err)
+	}
+	out.Partners = partners
 	return out, nil
 }

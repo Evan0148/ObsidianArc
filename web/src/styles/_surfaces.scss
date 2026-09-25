@@ -5402,3 +5402,13 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+
+/* The settings/partners/stats grid above the code list reuses
+   .oa-workbench-grid (see _workbench.scss) for its own equal gaps between
+   cards — this page just was not using it, which is what left them touching.
+   .oa-filters carries a bottom margin for what follows it, never a top one
+   for what came before, so the seam between the grid and the code list below
+   still needs its own rule; 26px matches .oa-admin-section's own rhythm. */
+.oa-workbench + #secInviteCodes {
+  margin-top: 26px;
+}

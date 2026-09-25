@@ -36,33 +36,47 @@ func TestInviteCommands(t *testing.T) {
 			// than an id) and the "search" flag share this same shape.
 			return Response{Status: 200, Body: []byte(`{"codes":[
 				{"id":"` + codeID + `","code":"PARTNERX","owner_id":"","owner_username":"","owner_nickname":"",
-				 "group_id":"","group_name":"","group_days":0,"group_days_max":0,"max_uses":0,"uses":3,
+				 "kind":"partner","name":"Acme Corp","allow_existing":true,
+				 "group_id":"","group_name":"","group_days":0,"group_days_max":0,"max_uses":0,"uses":3,"claims":2,
 				 "expires_at":0,"revoked_at":0,"note":"aff","created_by":"root","created_at":1700000000000,"status":"active"}
 			],"total":1}`)}, nil
 		case method == "GET" && path == "/api/admin/invites?kind=admin&limit=50&status=active":
 			return Response{Status: 200, Body: []byte(`{"codes":[
 				{"id":"` + codeID + `","code":"AB12CD34","owner_id":"","owner_username":"","owner_nickname":"",
-				 "group_id":"","group_name":"","group_days":0,"group_days_max":0,"max_uses":10,"uses":2,
+				 "kind":"batch","name":"","allow_existing":false,
+				 "group_id":"","group_name":"","group_days":0,"group_days_max":0,"max_uses":10,"uses":2,"claims":0,
 				 "expires_at":0,"revoked_at":0,"note":"","created_by":"root","created_at":1700000000000,"status":"active"}
+			],"total":1}`)}, nil
+		case method == "GET" && path == "/api/admin/invites?kind=partner&limit=50":
+			return Response{Status: 200, Body: []byte(`{"codes":[
+				{"id":"` + codeID + `","code":"PARTNERX","owner_id":"","owner_username":"","owner_nickname":"",
+				 "kind":"partner","name":"Acme Corp","allow_existing":true,
+				 "group_id":"` + groupID + `","group_name":"Trial","group_days":3,"group_days_max":7,"max_uses":0,"uses":3,"claims":2,
+				 "expires_at":0,"revoked_at":0,"note":"aff","created_by":"root","created_at":1700000000000,"status":"active"}
 			],"total":1}`)}, nil
 		case method == "POST" && path == "/api/admin/invites":
 			return Response{Status: 201, Body: []byte(`{"codes":[
 				{"id":"` + codeID + `","code":"AB12CD34","owner_id":"","owner_username":"","owner_nickname":"",
-				 "group_id":"` + groupID + `","group_name":"Trial","group_days":3,"group_days_max":7,"max_uses":0,"uses":0,
+				 "kind":"batch","name":"","allow_existing":false,
+				 "group_id":"` + groupID + `","group_name":"Trial","group_days":3,"group_days_max":7,"max_uses":0,"uses":0,"claims":0,
 				 "expires_at":0,"revoked_at":0,"note":"partner","created_by":"root","created_at":1700000000000,"status":"active"}
 			]}`)}, nil
 		case method == "DELETE" && path == "/api/admin/invites/"+codeID:
 			return Response{Status: 200, Body: []byte(`{"code":{"id":"` + codeID + `","code":"PARTNERX","owner_id":"","owner_username":"",
-				"owner_nickname":"","group_id":"","group_name":"","group_days":0,"group_days_max":0,"max_uses":0,"uses":3,
+				"owner_nickname":"","kind":"partner","name":"Acme Corp","allow_existing":true,
+				"group_id":"","group_name":"","group_days":0,"group_days_max":0,"max_uses":0,"uses":3,"claims":2,
 				"expires_at":0,"revoked_at":1700005000000,"note":"aff","created_by":"root","created_at":1700000000000,"status":"revoked"}}`)}, nil
 		case method == "GET" && path == "/api/admin/invites/"+codeID+"/uses":
 			return Response{Status: 200, Body: []byte(`{"uses":[
-				{"user_id":"01U1","username":"alice","nickname":"Alice","group_days":5,"created_at":1700001000000,"rewarded_at":1700002000000,"reward_cards":2,"reward_skipped":""},
-				{"user_id":"01U2","username":"bob","nickname":"","group_days":0,"created_at":1700003000000,"rewarded_at":1700003500000,"reward_cards":0,"reward_skipped":"same_ip"}
+				{"user_id":"01U1","username":"alice","nickname":"Alice","via":"register","group_days":5,"created_at":1700001000000,"rewarded_at":1700002000000,"reward_cards":2,"reward_skipped":""},
+				{"user_id":"01U2","username":"bob","nickname":"","via":"register","group_days":0,"created_at":1700003000000,"rewarded_at":1700003500000,"reward_cards":0,"reward_skipped":"same_ip"},
+				{"user_id":"01U3","username":"carl","nickname":"Carl","via":"claim","group_days":5,"created_at":1700004000000,"rewarded_at":0,"reward_cards":0,"reward_skipped":""}
 			]}`)}, nil
 		case method == "GET" && path == "/api/admin/invites/stats":
 			return Response{Status: 200, Body: []byte(`{"active":4,"uses_total":9,"uses_7d":3,"top_inviters":[
 				{"user_id":"01U1","username":"alice","nickname":"Alice","invites":5,"rewarded":4}
+			],"partners":[
+				{"id":"` + codeID + `","code":"PARTNERX","name":"Acme Corp","registrations":3,"claims":2}
 			]}`)}, nil
 		case method == "GET" && path == "/api/admin/references":
 			return Response{Status: 200, Body: []byte(`{"groups":[{"id":"` + groupID + `","name":"Trial"}]}`)}, nil
@@ -88,8 +102,30 @@ func TestInviteCommands(t *testing.T) {
 		if !strings.Contains(out, "AB12-CD34") {
 			t.Errorf("expected the generated code hyphenated as AB12-CD34:\n%s", out)
 		}
+		if !strings.Contains(out, "batch") {
+			t.Errorf("expected the kind column:\n%s", out)
+		}
 		if !strings.Contains(out, "1 total") {
 			t.Errorf("expected a total line:\n%s", out)
+		}
+	})
+
+	t.Run("list --kind partner passes kind through and shows the partner's name", func(t *testing.T) {
+		result, out := run("invite list --kind partner")
+		if !result.OK {
+			t.Fatalf("invite list failed: %s", out)
+		}
+		if lastCall.Path != "/api/admin/invites?kind=partner&limit=50" {
+			t.Errorf("expected kind=partner on the query, got: %v", lastCall)
+		}
+		// PARTNERX is 8 characters, the same length a generated code is, so
+		// it is displayed hyphenated (PART-NERX) exactly the way an
+		// operator-chosen code that happens to fall on that length always
+		// is — see displayInviteCode.
+		for _, want := range []string{"PART-NERX", "partner", "Acme Corp"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("expected %q in the partner row:\n%s", want, out)
+			}
 		}
 	})
 
@@ -120,6 +156,34 @@ func TestInviteCommands(t *testing.T) {
 		}
 		if !strings.Contains(out, "AB12-CD34") {
 			t.Errorf("expected the minted code in the output:\n%s", out)
+		}
+	})
+
+	t.Run("create --partner sends a partner kind and name, and defaults allow_existing to the server", func(t *testing.T) {
+		result, out := run("invite create --partner 'Acme Corp' --code PARTNERX --uses 0 --group Trial --group-days 3-7")
+		if !result.OK {
+			t.Fatalf("invite create --partner failed: %s", out)
+		}
+		payload, _ := json.Marshal(lastCall.Body)
+		body := string(payload)
+		for _, want := range []string{`"kind":"partner"`, `"name":"Acme Corp"`, `"code":"PARTNERX"`} {
+			if !strings.Contains(body, want) {
+				t.Errorf("body %s missing %s", body, want)
+			}
+		}
+		// Not mentioned at all, so the server picks the partner default
+		// (true) — see invite.Create. A client-side default here would be
+		// a second place that decision could drift from the API's own.
+		if strings.Contains(body, `"allow_existing"`) {
+			t.Errorf("expected allow_existing left for the server to default, got: %s", body)
+		}
+	})
+
+	t.Run("create --no-existing explicitly turns allow_existing off", func(t *testing.T) {
+		run("invite create --partner 'Acme Corp' --code PARTNERX --uses 0 --group Trial --group-days 3-7 --no-existing")
+		payload, _ := json.Marshal(lastCall.Body)
+		if !strings.Contains(string(payload), `"allow_existing":false`) {
+			t.Errorf("expected --no-existing to send allow_existing:false, got: %s", payload)
 		}
 	})
 
@@ -167,7 +231,7 @@ func TestInviteCommands(t *testing.T) {
 		}
 	})
 
-	t.Run("uses shows the reward outcome per invitee", func(t *testing.T) {
+	t.Run("uses shows the reward outcome and the via source per invitee", func(t *testing.T) {
 		result, out := run("invite uses PARTNERX")
 		if !result.OK {
 			t.Fatalf("invite uses failed: %s", out)
@@ -178,14 +242,24 @@ func TestInviteCommands(t *testing.T) {
 		if !strings.Contains(out, "same_ip") {
 			t.Errorf("expected bob's skip reason shown:\n%s", out)
 		}
+		if !strings.Contains(out, "carl") {
+			t.Errorf("expected carl's claim row listed:\n%s", out)
+		}
+		registerCount := strings.Count(out, "register")
+		if registerCount < 2 {
+			t.Errorf("expected via=register for both alice and bob:\n%s", out)
+		}
+		if !strings.Contains(out, "claim") {
+			t.Errorf("expected via=claim for carl's row:\n%s", out)
+		}
 	})
 
-	t.Run("stats prints the summary and the leaderboard", func(t *testing.T) {
+	t.Run("stats prints the summary, the inviter leaderboard and the partner leaderboard", func(t *testing.T) {
 		result, out := run("invite stats")
 		if !result.OK {
 			t.Fatalf("invite stats failed: %s", out)
 		}
-		for _, want := range []string{"active", "4", "uses_total", "9", "alice"} {
+		for _, want := range []string{"active", "4", "uses_total", "9", "alice", "top partners", "PART-NERX", "Acme Corp"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("expected %q in output:\n%s", want, out)
 			}

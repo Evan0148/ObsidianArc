@@ -130,10 +130,18 @@ func badGroupDays(rt *Runtime) error {
 // inviteCodeRow renders one Code the same way in `invite list` and
 // `invite create`'s own confirmation, so an operator sees the identical
 // columns whichever command showed them the row.
+//
+// name is a partner's own label, never set for a batch or personal code —
+// see invite.Code.Name — so it sits beside owner rather than replacing it:
+// a partner code has neither an owner nor a name blank at once.
 func inviteCodeRow(c map[string]any) []string {
 	owner := "-"
 	if asStr(c["owner_id"]) != "" {
 		owner = asStr(c["owner_username"])
+	}
+	name := "-"
+	if n := asStr(c["name"]); n != "" {
+		name = n
 	}
 	group := "-"
 	if asStr(c["group_id"]) != "" {
@@ -144,34 +152,41 @@ func inviteCodeRow(c map[string]any) []string {
 		maxUses = fmt.Sprint(n)
 	}
 	return []string{
-		asStr(c["id"]), displayInviteCode(asStr(c["code"])), asStr(c["status"]),
-		owner, group, fmt.Sprint(asNum(c["uses"])), maxUses,
+		asStr(c["id"]), displayInviteCode(asStr(c["code"])), asStr(c["kind"]), name, asStr(c["status"]),
+		owner, group, fmt.Sprint(asNum(c["uses"])), fmt.Sprint(asNum(c["claims"])), maxUses,
 		formatMS(c["expires_at"]), formatMS(c["created_at"]),
 	}
 }
 
-var inviteListHeaders = []string{"id", "code", "status", "owner", "group", "uses", "max_uses", "expires", "created"}
+var inviteListHeaders = []string{
+	"id", "code", "kind", "name", "status", "owner", "group", "uses", "claims", "max_uses", "expires", "created",
+}
 
 func init() {
 	registerCommand(Command{
 		Name:    "invite list",
 		Group:   "invites",
 		Summary: Text{EN: "List invite codes", ZH: "列出邀请码"},
-		Usage:   "invite list [--kind admin|user] [--status active|used_up|expired|revoked] [--search TEXT] [--limit N] [--offset N]",
+		Usage:   "invite list [--kind batch|partner|personal|all] [--status active|used_up|expired|revoked] [--search TEXT] [--limit N] [--offset N]",
 		Help: Text{
-			EN: "--kind admin is codes an administrator minted (owner_id empty); --kind user is accounts' " +
-				"own personal codes. --search matches a code's text or its owner's username.",
-			ZH: "--kind admin 是管理员生成的邀请码（无所有者）；--kind user 是账户自己的个人邀请码。" +
-				"--search 会匹配邀请码文本或其所有者的用户名。",
+			EN: "--kind filters by what a code is for: batch (a plain administrator-minted code), " +
+				"partner (a named partner or sponsor code), personal (an account's own), or all. The " +
+				"older admin (batch+partner, i.e. every code with no owner) and user (personal) aliases " +
+				"still work, for a bookmarked script written before partner codes existed. --search " +
+				"matches a code's text or its owner's username.",
+			ZH: "--kind 按用途筛选：batch（管理员生成的普通码）、partner（合作方/赞助商命名码）、" +
+				"personal（账户自己的个人码），或 all。旧的 admin（batch+partner，即无所有者的码）和 " +
+				"user（personal）别名仍然可用，兼容合作方邀请码出现之前写的脚本。--search 会匹配邀请码" +
+				"文本或其所有者的用户名。",
 		},
 		Flags: []Flag{
-			{Name: "--kind", Hint: Text{EN: "admin or user, default both", ZH: "admin 或 user，默认两者都列出"}, Value: "KIND"},
+			{Name: "--kind", Hint: Text{EN: "batch, partner, personal or all, default all", ZH: "batch、partner、personal 或 all，默认全部"}, Value: "KIND"},
 			{Name: "--status", Hint: Text{EN: "active, used_up, expired or revoked, default all", ZH: "active、used_up、expired 或 revoked，默认全部"}, Value: "STATUS"},
 			{Name: "--search", Hint: Text{EN: "matches code text or owner username", ZH: "匹配邀请码文本或所有者用户名"}, Value: "TEXT"},
 			{Name: "--limit", Hint: Text{EN: "page size, default 50", ZH: "每页数量，默认 50"}, Value: "N", Default: "50"},
 			{Name: "--offset", Hint: Text{EN: "rows to skip", ZH: "跳过的行数"}, Value: "N", Default: "0"},
 		},
-		Examples:   []string{"invite list --kind admin", "invite list --status active --search PARTNER"},
+		Examples:   []string{"invite list --kind partner", "invite list --status active --search PARTNER"},
 		SeeAlso:    []string{"invite create", "invite revoke", "invite stats"},
 		Permission: "invites",
 		Endpoints:  []string{"GET /api/admin/invites"},
@@ -220,7 +235,7 @@ func init() {
 			ZH: "生成一个或多个邀请码，或生成一个自定义合作码",
 		},
 		Usage: "invite create [--count N] [--code CUSTOM] [--uses N] [--days N | --expires YYYY-MM-DD] " +
-			"[--group REF] [--group-days N | N-M] [--note TEXT]",
+			"[--group REF] [--group-days N | N-M] [--note TEXT] [--partner NAME [--no-existing]]",
 		Help: Text{
 			EN: "Without --code, --count generated codes are minted (default 1). --code names one " +
 				"code instead — for a partner or sponsor link — and requires --count to be 1 or " +
@@ -231,14 +246,24 @@ func init() {
 				"is how many days the membership lasts, or a range N-M to draw a different random " +
 				"length for each registration (a partner's '3-7 day trial'); 0 alone means permanent. " +
 				"Give at most one of --days (from now) or --expires (a calendar date) for when the code " +
-				"itself stops being redeemable; neither means it never expires.",
+				"itself stops being redeemable; neither means it never expires.\n\n" +
+				"--partner turns this into a named partner code rather than a plain batch one: it " +
+				"requires --code, --group and a count of 1 (the default when --count is left out), and " +
+				"it also makes the code claimable by an account that already exists — see me invite " +
+				"claim — since a partner link is usually handed to people who already have an account " +
+				"here as often as to new signups. --no-existing turns that back off for this one code, " +
+				"for a partner link that should only ever seat brand new accounts.",
 			ZH: "不给 --code 时，生成 --count 个随机邀请码（默认 1 个）。--code 改为生成一个指定文本的邀请码" +
 				"——用于合作方或赞助商链接——此时 --count 必须是 1 或不给；长度 4-32，只能是字母和数字，" +
 				"折叠规则与手动输入邀请码相同（大小写和连字符不影响匹配）。--uses 是该码能被使用几次后失效，" +
 				"0 表示不限次数，合作链接通常这样设置。--group 会让用该码注册的账户加入该分组；--group-days " +
 				"是成员身份的天数，也可以给一个区间 N-M，让每次注册各自抽取不同的随机天数（例如合作方的" +
 				"「3-7 天试用」）；单独的 0 表示永久。--days（从现在起）和 --expires（具体日期）最多给一个，" +
-				"控制邀请码本身何时失效；两者都不给表示永不失效。",
+				"控制邀请码本身何时失效；两者都不给表示永不失效。\n\n" +
+				"--partner 把这个码变成一个命名的合作方码，而不是普通批量码：需要 --code、--group，且数量" +
+				"必须是 1（不给 --count 时默认就是 1）；它还会让这个码可以被**已有账户**领取（见 me invite " +
+				"claim）——合作方链接通常既发给新用户，也发给已经在用的老用户。--no-existing 为这一个码单独" +
+				"关掉这一点，用于只想给全新账户用的合作方链接。",
 		},
 		Flags: []Flag{
 			{Name: "--count", Hint: Text{EN: "how many to generate, 1-500, default 1", ZH: "生成数量，1-500，默认 1"}, Value: "N", Default: "1"},
@@ -249,10 +274,13 @@ func init() {
 			{Name: "--group", Hint: Text{EN: "group name or id new accounts join", ZH: "新账户将加入的分组名称或 id"}, Value: "REF"},
 			{Name: "--group-days", Hint: Text{EN: "membership length in days, or N-M for a random range; requires --group", ZH: "成员身份天数，或 N-M 随机区间；需要 --group"}, Value: "N|N-M"},
 			{Name: "--note", Hint: Text{EN: "an operator label, ≤200 characters", ZH: "备注，≤200 字符"}, Value: "TEXT"},
+			{Name: "--partner", Hint: Text{EN: "the partner's name, 1-60 characters; makes this a partner code", ZH: "合作方名称，1-60 字符；使其成为合作方码"}, Value: "NAME"},
+			{Name: "--no-existing", Hint: Text{EN: "with --partner, refuse existing accounts (partners allow them by default)", ZH: "配合 --partner 使用，禁止老用户领取（合作方默认允许）"}},
 		},
 		Examples: []string{
 			"invite create --count 20 --uses 1 --note 'launch batch'",
 			"invite create --code PARTNERX --uses 0 --group Trial --group-days 3-7 --note 'aff partner'",
+			"invite create --partner 'Acme Corp' --code PARTNERX --uses 0 --group Trial --group-days 3-7",
 		},
 		SeeAlso:    []string{"invite list", "invite revoke"},
 		Permission: "invites",
@@ -301,6 +329,16 @@ func init() {
 				}
 				body["group_days"] = days
 				body["group_days_max"] = daysMax
+			}
+			if rt.Present("partner") {
+				// "partner" rather than invite.CodeKindPartner: this file
+				// imports nothing from internal/invite at all, on purpose —
+				// see inviteCodeLen above.
+				body["kind"] = "partner"
+				body["name"] = rt.String("partner")
+			}
+			if rt.Present("no-existing") {
+				body["allow_existing"] = false
 			}
 
 			data, _, err := rt.Call(http.MethodPost, "/api/admin/invites", map[string]any(body))
@@ -391,12 +429,15 @@ func init() {
 						rewarded = fmt.Sprintf("+%v cards", asNum(u["reward_cards"]))
 					}
 				}
+				// via tells a fresh registration (invite_uses, which can earn
+				// its inviter a reward) apart from an existing account's
+				// claim (invite_claims, which never does) — see invite.Use.
 				rows = append(rows, []string{
-					asStr(u["user_id"]), asStr(u["username"]), asStr(u["nickname"]),
+					asStr(u["user_id"]), asStr(u["username"]), asStr(u["nickname"]), asStr(u["via"]),
 					fmt.Sprint(asNum(u["group_days"])), formatMS(u["created_at"]), rewarded,
 				})
 			}
-			return rt.Table([]string{"user_id", "username", "nickname", "group_days", "joined", "reward"}, rows)
+			return rt.Table([]string{"user_id", "username", "nickname", "via", "group_days", "joined", "reward"}, rows)
 		},
 	})
 
@@ -436,6 +477,17 @@ func init() {
 				})
 			}
 			RenderTable(rt.Out, rt.Session.Width, rt.Session.Colour, []string{"user_id", "username", "nickname", "invites", "rewarded"}, rows)
+
+			fmt.Fprintln(rt.Out, "\ntop partners:")
+			var partnerRows [][]string
+			for _, raw := range asSlice(m["partners"]) {
+				p := asMap(raw)
+				partnerRows = append(partnerRows, []string{
+					asStr(p["id"]), displayInviteCode(asStr(p["code"])), asStr(p["name"]),
+					fmt.Sprint(asNum(p["registrations"])), fmt.Sprint(asNum(p["claims"])),
+				})
+			}
+			RenderTable(rt.Out, rt.Session.Width, rt.Session.Colour, []string{"id", "code", "name", "registrations", "claims"}, partnerRows)
 			return nil
 		},
 	})

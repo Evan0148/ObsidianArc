@@ -146,6 +146,18 @@ router.beforeEach((to) => {
     return { path: '/login', replace: true };
   }
 
+  // A partner or friend's link, opened by somebody who already has an
+  // account: there is no sign-up for it to fill in, but the code itself is
+  // still worth something, as a claim. Checked ahead of the plain
+  // already-signed-in bounce below, which would otherwise send this same
+  // visitor to the chat with the code dropped on the floor.
+  if (signedIn && to.path === '/register') {
+    const invite = to.query['invite'];
+    if (typeof invite === 'string' && invite) {
+      return { path: '/settings', query: { tab: 'invites', claim: invite }, replace: true };
+    }
+  }
+
   // Someone signed in who is already where they were being sent — unless the
   // sign-in page was carrying somewhere to go, which is a request somebody
   // made rather than a page they wandered onto.

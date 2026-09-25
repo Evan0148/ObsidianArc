@@ -30,13 +30,13 @@ group edit Default --terminal false
 
 ## 它能做什么
 
-终端覆盖全部 83 个后台管理接口，以及账户页面能调用的 69 个用户端接口中凡是「设置」或「更改」的那部分，共 151 条命令。按功能分组：
+终端覆盖全部 83 个后台管理接口，以及账户页面能调用的 70 个用户端接口中凡是「设置」或「更改」的那部分，共 151 条命令。按功能分组：
 
 | 分组 | 命令 | 适用对象 |
 | --- | --- | --- |
 | 账户 (Accounts) | `user list` `show` `create` `edit` `delete` `passwd` `reset-2fa` `keys` `key-revoke` `chats` `transcript` `cards` | 管理员 (`users`) |
 | 用户组 (Groups) | `group list` `show` `create` `edit` `delete` `members` `assign` | 管理员 (`groups`) |
-| 邀请码 (Invites) | `invite list` `create` `revoke` `uses` `stats` | 管理员 (`invites`) |
+| 邀请码 (Invites) | `invite list` `create`（含 `--partner`）`revoke` `uses` `stats` | 管理员 (`invites`) |
 | 服务商与模型 (Catalogue) | `provider list` `show` `create` `edit` `delete` `detect` · `model list` `show` `create` `edit` `delete` `order` `import` | 管理员 (`providers`/`models`) |
 | 运维 (Operations) | `dash` `res` · `health status` `probe` `reset` · `usage summary` `breakdown` `rpm` `records` `reset` · `quota list` `set` `delete` · `code list` `create` `redemptions` `delete` · `log list` `facets` `prune` | 管理员 (`dashboard`/`resources`/`availability`/`usage`/`codes`/`logs`) |
 | 实例 (Instance) | `setting list` `get` `set` `import` · `notice list` `create` `edit` `delete` · `security events` `review` `two-factor` · `attachment purge` · `meta` `refs` `member-options` | 管理员 (`settings`/`announcements`/`security`) |
@@ -48,7 +48,7 @@ group edit Default --terminal false
 | 生图 (Images) | `image list` `delete` | 所有用户 |
 | 额度与卡密 (Credit) | `credit show` `history` `cards` `use` `redeem` | 所有用户 |
 | API 密钥 (Keys) | `key list` `create` `edit` `delete` | 所有用户 |
-| 偏好与资料 (Profile) | `pref list` `set` `wallpaper-clear` · `me show` `edit` `passwd` `verify` `invite` `invite regenerate` · `2fa status` `setup` `enable` `disable` `recovery` `backoffice` · `oauth list` `unlink` | 所有用户 |
+| 偏好与资料 (Profile) | `pref list` `set` `wallpaper-clear` · `me show` `edit` `passwd` `verify` `invite` `invite regenerate` `invite claim` · `2fa status` `setup` `enable` `disable` `recovery` `backoffice` · `oauth list` `unlink` | 所有用户 |
 | 备份与恢复 (Backup) | `backup export` `backup import` | 所有用户 |
 
 完整列表以 `help` 为准——它只列出**你当前有权执行**的命令，不会把未授权的命令呈现出来。每个命令均可通过 `<命令> --help` 或 `help <命令>` 查看中英双语的详细参数、用法和示例。
@@ -58,6 +58,7 @@ group edit Default --terminal false
 - `usage breakdown user --model <模型>`：某个模型有哪些人在用；`usage breakdown model --user <用户>`：某个人在用哪些模型；`usage breakdown model --metric users`：按使用人数排出最受欢迎的模型。
 - `chat edit <对话> <序号> --content "…"`：改写对话里的某条消息，序号就是 `chat show` 打印的 `seq`。只改记录，不会重新发给模型。
 - `feedback mine` / `feedback thread <id>`：看自己的反馈和回复，读过之后账户菜单上的小红点就会消失。
+- `invite create --partner NAME --code CODE --group REF --group-days N-M`：生成一个合作方专属码，默认老用户也能领取；`me invite claim <码>` 是任何账户领取这类码（或显式开放了「老用户也能领取」的批量码）的入口，见[邀请码](./invites)。
 
 ### 没有做成命令的
 

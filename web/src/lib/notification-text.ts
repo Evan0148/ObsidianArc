@@ -117,14 +117,22 @@ export function describeNotification(n: Notification): NotificationText {
       };
     }
     case 'invite_joined': {
+      // Three shapes for one kind, picked by what this particular invite did:
+      // it hit a milestone (cards > 0), it moved the count toward one
+      // (remaining > 0, rewards are on), or rewards are off entirely
+      // (remaining arrives as 0 for that reason too — cards already ruled out
+      // the milestone case by then).
       const username = text(params['username']);
-      return {
-        title: t('notifyTitleInviteJoined'),
-        body: tn(count(params['cards']), 'notifyBodyInviteJoinedOne', 'notifyBodyInviteJoinedOther', {
-          username, cards: count(params['cards']),
-        }),
-        icon: IconUsers,
-      };
+      const cards = count(params['cards']);
+      const remaining = count(params['remaining']);
+      const body = cards > 0
+        ? tn(cards, 'notifyBodyInviteJoinedOne', 'notifyBodyInviteJoinedOther', {
+            every: count(params['every']), cards,
+          })
+        : remaining > 0
+          ? t('notifyBodyInviteJoinedProgress', { username, remaining })
+          : t('notifyBodyInviteJoinedPlain', { username });
+      return { title: t('notifyTitleInviteJoined'), body, icon: IconUsers };
     }
     case 'two_factor_changed': {
       const kind = text(params['kind']);
