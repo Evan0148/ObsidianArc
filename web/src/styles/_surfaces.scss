@@ -5681,6 +5681,126 @@
   transition: color 0.15s ease, background 0.15s ease;
 }
 
+/* --- Login background controls in admin settings ------------------------ */
+.oa-login-bg-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .oa-login-bg-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.oa-login-bg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--ai-surface-container);
+  border: 1px solid var(--ai-border);
+}
+
+.oa-login-bg-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.oa-login-bg-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--ai-text);
+}
+
+.oa-login-bg-mode-icon {
+  color: var(--ai-text-secondary);
+  flex-shrink: 0;
+}
+
+.oa-login-bg-preview {
+  position: relative;
+  width: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--ai-field-bg);
+  border: 1px dashed var(--ai-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.oa-login-bg-preview.landscape {
+  aspect-ratio: 16 / 10;
+}
+
+.oa-login-bg-preview.portrait {
+  aspect-ratio: 3 / 4;
+}
+
+.oa-login-bg-preview:hover,
+.oa-login-bg-preview.dragover {
+  border-color: var(--ai-primary);
+  background: var(--ai-field-bg-hover);
+}
+
+.oa-login-bg-preview:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ai-focus-shadow);
+}
+
+.oa-login-bg-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+
+.oa-login-bg-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px 12px;
+  text-align: center;
+  color: var(--ai-text-secondary);
+  pointer-events: none;
+}
+
+.oa-login-bg-empty-icon {
+  opacity: 0.6;
+}
+
+.oa-login-bg-drop-hint {
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.oa-login-bg-formats-hint {
+  font-size: 10px;
+  opacity: 0.75;
+  line-height: 1.2;
+}
+
+.oa-login-bg-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+}
+
 /* --- Page slide transition overrides for workspace pages ---------------- */
 /* Constrain horizontal sliding transitions between Chat (/), Terminal (/terminal),
    and Admin (/admin) to the inner workspace container (.oa-chat-root),

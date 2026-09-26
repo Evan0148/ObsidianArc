@@ -581,12 +581,13 @@ var Defaults = map[string]string{
 type Service struct {
 	db *database.DB
 
-	mu     sync.RWMutex
-	values map[string]string
+	mu               sync.RWMutex
+	values           map[string]string
+	loginBackgrounds map[string]int64
 }
 
 func New(db *database.DB) *Service {
-	return &Service{db: db, values: map[string]string{}}
+	return &Service{db: db, values: map[string]string{}, loginBackgrounds: map[string]int64{}}
 }
 
 // Load reads the table into memory. Called once at boot; after that the cache
@@ -610,8 +611,22 @@ func (s *Service) Load(ctx context.Context) error {
 		return fmt.Errorf("settings: load: %w", err)
 	}
 
+	bgRows, err := s.db.Query(ctx, `SELECT variant, updated_at FROM login_backgrounds`)
+	bgs := map[string]int64{}
+	if err == nil {
+		defer bgRows.Close()
+		for bgRows.Next() {
+			var v string
+			var at int64
+			if err := bgRows.Scan(&v, &at); err == nil {
+				bgs[v] = at
+			}
+		}
+	}
+
 	s.mu.Lock()
 	s.values = values
+	s.loginBackgrounds = bgs
 	s.mu.Unlock()
 	return nil
 }

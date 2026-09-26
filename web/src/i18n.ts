@@ -1068,6 +1068,25 @@ const en = {
   requestOverrideFieldHint: 'Arbitrary JSON object, e.g. {"reasoning_effort": "low"} or {"temperature": 0.7}. Merged into provider request body.',
   invalidRequestOverrideJSON: 'Request override must be a valid JSON object.',
 
+  // --- login background
+  secLoginBg: 'Sign-in background',
+  loginBgHint: 'Customize the background images for the sign-in screen. Supports landscape and portrait orientations as well as light and dark mode variants.',
+  loginBgLandscape: 'Landscape (Desktop / Tablet)',
+  loginBgPortrait: 'Portrait (Mobile)',
+  loginBgLandscapeLight: 'Landscape · Light mode',
+  loginBgLandscapeDark: 'Landscape · Dark mode',
+  loginBgPortraitLight: 'Portrait · Light mode',
+  loginBgPortraitDark: 'Portrait · Dark mode',
+  loginBgUpload: 'Upload image',
+  loginBgReplace: 'Replace image',
+  loginBgClear: 'Clear image',
+  loginBgClearConfirm: 'Remove this background image?',
+  loginBgDropHint: 'Click or drag image here to upload',
+  loginBgFormats: 'PNG, JPEG, WebP, or AVIF (max 6MB)',
+  loginBgUploaded: 'Background image uploaded.',
+  loginBgDeleted: 'Background image cleared.',
+  loginBgFallbackNote: 'If dark mode or portrait variant is not set, it falls back to the configured background image.',
+
   // --- landing page
   secLanding: 'Front door',
   landingMode: 'Visitors with no account see',

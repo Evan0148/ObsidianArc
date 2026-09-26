@@ -452,9 +452,9 @@ describe('what moves, and what does not', () => {
     expect(shown('.oa-admin-body section')).toHaveLength(0);
     expect(host.querySelector('.oa-admin-body .oa-search-empty')?.textContent).toBe(t('noSearchResults'));
     await search('.oa-admin-body .oa-search input', '');
-    // The site category's cards: identity, the PWA card, landing, about, the
-    // home notice and the feedback signature.
-    expect(shown('.oa-admin-body section')).toHaveLength(6);
+    // The site category's cards: identity, login background, the PWA card,
+    // landing, about, the home notice and the feedback signature.
+    expect(shown('.oa-admin-body section')).toHaveLength(7);
   });
 
   it('saves drafts across categories and keeps edits made during an in-flight save', async () => {

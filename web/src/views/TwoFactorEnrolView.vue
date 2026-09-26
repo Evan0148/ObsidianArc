@@ -15,10 +15,12 @@ import { IconSpark } from '@/icons';
 import { safeNext, serverOwned } from '@/lib/next';
 import { adopt, currentPreferences, currentUser, forget, siteInfo } from '@/stores/session';
 import TwoFactorWizard from './settings/TwoFactorWizard.vue';
+import { useLoginBackground } from '@/composables/useLoginBackground';
 
 const route = useRoute();
 const router = useRouter();
 const site = computed(() => siteInfo.value);
+const { loginBgUrl } = useLoginBackground();
 
 async function enrolled(user: Account): Promise<void> {
   adopt(user, currentPreferences.value);
@@ -41,7 +43,11 @@ function signOut(): void {
 </script>
 
 <template>
-  <div class="oa-auth">
+  <div
+    class="oa-auth"
+    :class="{ 'has-login-bg': !!loginBgUrl }"
+    :style="loginBgUrl ? { backgroundImage: `url(${loginBgUrl})` } : undefined"
+  >
     <div class="oa-auth-card oa-2fa-card">
       <div class="oa-auth-brand">
         <span class="oa-auth-mark"><IconSpark :size="15" /></span>

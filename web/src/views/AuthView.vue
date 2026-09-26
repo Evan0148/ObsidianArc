@@ -23,12 +23,14 @@ import { ApiError } from '@/api/client';
 import { refusalText } from '@/lib/refusal';
 import { IconGithub, IconGoogle, IconKey, IconSpark, type OaIcon } from '@/icons';
 import { adopt, forget, pendingSecondFactor, siteInfo } from '@/stores/session';
+import { useLoginBackground } from '@/composables/useLoginBackground';
 
 const props = defineProps<{ mode: 'login' | 'register' }>();
 
 const router = useRouter();
 const route = useRoute();
 const site = computed(() => siteInfo.value);
+const { loginBgUrl } = useLoginBackground();
 
 // An instance with no accounts is being set up: the person in front of it is
 // about to become the administrator, and saying so removes the "did I just
@@ -300,7 +302,11 @@ async function onSubmit(): Promise<void> {
 </script>
 
 <template>
-  <div class="oa-auth">
+  <div
+    class="oa-auth"
+    :class="{ 'has-login-bg': !!loginBgUrl }"
+    :style="loginBgUrl ? { backgroundImage: `url(${loginBgUrl})` } : undefined"
+  >
     <form class="oa-auth-card" novalidate @submit.prevent="stage === 'code' ? onCode() : onSubmit()">
       <div class="oa-auth-brand">
         <span class="oa-auth-mark"><IconSpark :size="15" /></span>

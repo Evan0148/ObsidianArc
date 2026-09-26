@@ -136,6 +136,8 @@ export interface SiteInfo {
   /** Whether an account gets a personal invite code (invites.user_enabled),
    *  so the sign-up form knows an admin-issued code is not the only kind. */
   user_invites?: boolean;
+  /** Background image URLs per variant (landscape_light, landscape_dark, portrait_light, portrait_dark). */
+  login_background?: Record<string, string>;
 }
 
 // The presentation state the server keeps for an account. Deliberately loose:

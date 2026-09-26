@@ -1045,6 +1045,25 @@ export const zh: Record<StringKey, string> = {
   requestOverrideFieldHint: '任意 JSON 对象，例如 {"reasoning_effort": "low"} 或 {"temperature": 0.7}。将合并至发往服务商的请求体中。',
   invalidRequestOverrideJSON: '请求覆写必须是合法的 JSON 对象。',
 
+  // --- login background
+  secLoginBg: '登录背景图',
+  loginBgHint: '设置登录页面的背景图，支持横屏/竖屏及浅色/深色模式变种。未上传深色或竖屏变种时会自动回退。',
+  loginBgLandscape: '横屏（电脑 / 平板）',
+  loginBgPortrait: '竖屏（手机）',
+  loginBgLandscapeLight: '横屏 · 浅色模式',
+  loginBgLandscapeDark: '横屏 · 深色模式',
+  loginBgPortraitLight: '竖屏 · 浅色模式',
+  loginBgPortraitDark: '竖屏 · 深色模式',
+  loginBgUpload: '上传图片',
+  loginBgReplace: '替换图片',
+  loginBgClear: '清除图片',
+  loginBgClearConfirm: '确定清除此背景图？',
+  loginBgDropHint: '点击或拖拽图片到此处上传',
+  loginBgFormats: '支持 PNG、JPEG、WebP 或 AVIF（最大 6MB）',
+  loginBgUploaded: '背景图已上传。',
+  loginBgDeleted: '背景图已清除。',
+  loginBgFallbackNote: '若未上传深色或竖屏变种，将自动回退到已配置的背景图。',
+
   // --- landing page
   secLanding: '未登录首页',
   landingMode: '未登录访客看到',

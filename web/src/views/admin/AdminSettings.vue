@@ -14,7 +14,7 @@ import AdminControlCard from './AdminControlCard.vue';
 import AdminWorkbench from './AdminWorkbench.vue';
 import type { WorkbenchGroup } from './workbench';
 import { useSettingsDraft } from './settingsDraft';
-import { IconHome, IconSpark, IconFile, IconKey, IconInfo, IconBell, IconMessage, IconSliders, IconTrash, IconImage } from '@/icons';
+import { IconHome, IconSpark, IconFile, IconKey, IconInfo, IconBell, IconMessage, IconSliders, IconTrash, IconImage, IconSun, IconMoon } from '@/icons';
 import OaNumberField from '@/components/OaNumberField.vue';
 import OaSelectField from '@/components/OaSelectField.vue';
 import OaSwitchField from '@/components/OaSwitchField.vue';
@@ -32,6 +32,10 @@ view.setTitle(t('adminSettingsTitle'), t('controlSettingsSubtitle'));
 const SEARCH_GROUPS = {
   secIdentity: [
     'secIdentity', 'siteName', 'siteNameHint', 'signInNote', 'signInNoteHint', 'browserTitle', 'browserTitleHint',
+  ],
+  secLoginBg: [
+    'secLoginBg', 'loginBgHint', 'loginBgLandscape', 'loginBgPortrait', 'loginBgLandscapeLight',
+    'loginBgLandscapeDark', 'loginBgPortraitLight', 'loginBgPortraitDark', 'loginBgFallbackNote',
   ],
   secPWA: [
     'secPWA', 'controlPWAHint', 'pwaName', 'pwaNameHint', 'pwaShortName', 'pwaShortNameHint', 'pwaDescription',
@@ -79,6 +83,16 @@ const flashOK = ref(false);
 const saveLabel = ref('');
 const busy = ref(false);
 const purging = ref(false);
+const loginBackgrounds = ref<Record<string, string>>({});
+const uploadingVariant = ref('');
+const dragOverVariant = ref('');
+
+const BG_VARIANTS = [
+  { id: 'landscape_light', label: 'loginBgLandscapeLight', modeIcon: IconSun },
+  { id: 'landscape_dark', label: 'loginBgLandscapeDark', modeIcon: IconMoon },
+  { id: 'portrait_light', label: 'loginBgPortraitLight', modeIcon: IconSun },
+  { id: 'portrait_dark', label: 'loginBgPortraitDark', modeIcon: IconMoon },
+] as const;
 
 const form = ref({
   siteName: '',
@@ -252,6 +266,116 @@ function purge(): void {
     .finally(() => { purging.value = false; });
 }
 
+function detectFileType(file: File): string {
+  const type = file.type.toLowerCase();
+  if (type === 'image/jpeg' || type === 'image/jpg') return 'image/jpeg';
+  if (type === 'image/png') return 'image/png';
+  if (type === 'image/webp') return 'image/webp';
+  if (type === 'image/avif') return 'image/avif';
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
+  if (name.endsWith('.png')) return 'image/png';
+  if (name.endsWith('.webp')) return 'image/webp';
+  if (name.endsWith('.avif')) return 'image/avif';
+  return '';
+}
+
+async function uploadFile(variant: string, file: File): Promise<void> {
+  const mime = detectFileType(file);
+  if (!mime) {
+    flashOK.value = false;
+    flash.value = t('loginBgFormats');
+    return;
+  }
+  if (file.size > 6 * 1024 * 1024) {
+    flashOK.value = false;
+    flash.value = t('loginBgFormats');
+    return;
+  }
+
+  uploadingVariant.value = variant;
+  flash.value = '';
+  try {
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const res = String(reader.result ?? '');
+        const comma = res.indexOf(',');
+        resolve(comma !== -1 ? res.slice(comma + 1) : res);
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+
+    const res = await adminApi.uploadLoginBackground(variant, mime, base64);
+    loginBackgrounds.value = {
+      ...loginBackgrounds.value,
+      [variant]: res.url,
+    };
+    if (site.value) {
+      site.value = {
+        ...site.value,
+        login_background: {
+          ...(site.value.login_background ?? {}),
+          [variant]: res.url,
+        },
+      };
+    }
+    flashOK.value = true;
+    flash.value = t('loginBgUploaded');
+  } catch (failure) {
+    flashOK.value = false;
+    flash.value = failure instanceof ApiError ? failure.message : String(failure);
+  } finally {
+    uploadingVariant.value = '';
+    dragOverVariant.value = '';
+  }
+}
+
+function chooseAndUpload(variant: string): void {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/png,image/jpeg,image/webp,image/avif,.jpg,.jpeg,.png,.webp,.avif';
+  input.onchange = () => {
+    const file = input.files?.[0];
+    if (file) {
+      void uploadFile(variant, file);
+    }
+  };
+  input.click();
+}
+
+async function onDrop(variant: string, event: DragEvent): Promise<void> {
+  dragOverVariant.value = '';
+  const file = event.dataTransfer?.files?.[0];
+  if (file) {
+    await uploadFile(variant, file);
+  }
+}
+
+async function clearLoginBg(variant: string): Promise<void> {
+  uploadingVariant.value = variant;
+  flash.value = '';
+  try {
+    await adminApi.deleteLoginBackground(variant);
+    const updated = { ...loginBackgrounds.value };
+    delete updated[variant];
+    loginBackgrounds.value = updated;
+    if (site.value) {
+      const siteBgs = { ...(site.value.login_background ?? {}) };
+      delete siteBgs[variant];
+      site.value = { ...site.value, login_background: siteBgs };
+    }
+    flashOK.value = true;
+    flash.value = t('loginBgDeleted');
+  } catch (failure) {
+    flashOK.value = false;
+    flash.value = failure instanceof ApiError ? failure.message : String(failure);
+  } finally {
+    uploadingVariant.value = '';
+  }
+}
+
 async function load(): Promise<void> {
   error.value = '';
   try {
@@ -261,6 +385,7 @@ async function load(): Promise<void> {
     const values = data.settings;
     models.value = modelsResult.models;
     held.value = data.attachments ?? { held: 0, bytes: 0 };
+    loginBackgrounds.value = data.login_background ?? {};
 
     form.value = {
       siteName: values['site.name'] ?? '',
@@ -304,13 +429,13 @@ async function load(): Promise<void> {
 }
 
 const categories: WorkbenchGroup[] = [
-  { id: 'site', label: 'controlSite', hint: 'controlSiteHint', icon: IconHome, sections: ['secIdentity', 'secPWA', 'secLanding', 'secAbout', 'secHomeNotice', 'secFeedback'] },
+  { id: 'site', label: 'controlSite', hint: 'controlSiteHint', icon: IconHome, sections: ['secIdentity', 'secLoginBg', 'secPWA', 'secLanding', 'secAbout', 'secHomeNotice', 'secFeedback'] },
   { id: 'chat', label: 'controlChat', hint: 'controlChatHint', icon: IconSpark, sections: ['secChat', 'secLimits'] },
   { id: 'files', label: 'controlFiles', hint: 'controlFilesHint', icon: IconFile, sections: ['secAttachments', 'secCleanup'] },
   { id: 'integrations', label: 'controlIntegrations', hint: 'controlIntegrationsHint', icon: IconKey, sections: ['apiKeys', 'backupSettings'] },
 ];
 
-const columns: [string[], string[]] = [['secIdentity', 'secPWA', 'secAbout', 'secChat', 'secAttachments', 'apiKeys'], ['secLanding', 'secHomeNotice', 'secFeedback', 'secLimits', 'secCleanup', 'backupSettings']];
+const columns: [string[], string[]] = [['secIdentity', 'secLoginBg', 'secPWA', 'secAbout', 'secChat', 'secAttachments', 'apiKeys'], ['secLanding', 'secHomeNotice', 'secFeedback', 'secLimits', 'secCleanup', 'backupSettings']];
 
 onMounted(load);
 </script>
@@ -332,6 +457,74 @@ onMounted(load);
         <OaTextField v-model="form.siteName" :label="t('siteName')" :hint="t('siteNameHint')" :max-length="60" />
         <OaTextField v-model="form.browserTitle" :label="t('browserTitle')" :hint="t('browserTitleHint')" :max-length="60" />
         <OaTextArea v-model="form.description" :label="t('signInNote')" :rows="2" :hint="t('signInNoteHint')" />
+      </AdminControlCard>
+      <AdminControlCard id="secLoginBg" v-show="visible('secLoginBg')" :title="t('secLoginBg')" :icon="IconImage" :hint="t('loginBgHint')">
+        <p class="oa-field-hint">{{ t('loginBgFallbackNote') }}</p>
+        <div class="oa-login-bg-grid">
+          <div
+            v-for="v in BG_VARIANTS"
+            :key="v.id"
+            class="oa-login-bg-card"
+            :class="{ 'has-image': !!loginBackgrounds[v.id] }"
+          >
+            <div class="oa-login-bg-card-head">
+              <span class="oa-login-bg-card-title">
+                <component :is="v.modeIcon" :size="13" class="oa-login-bg-mode-icon" />
+                {{ t(v.label) }}
+              </span>
+            </div>
+            <div
+              class="oa-login-bg-preview"
+              :class="{
+                empty: !loginBackgrounds[v.id],
+                portrait: v.id.startsWith('portrait'),
+                landscape: v.id.startsWith('landscape'),
+                dragover: dragOverVariant === v.id,
+              }"
+              tabindex="0"
+              role="button"
+              :aria-label="t(v.label)"
+              @dragover.prevent="dragOverVariant = v.id"
+              @dragleave="dragOverVariant = ''"
+              @drop.prevent="onDrop(v.id, $event)"
+              @click="chooseAndUpload(v.id)"
+              @keydown.enter.prevent="chooseAndUpload(v.id)"
+              @keydown.space.prevent="chooseAndUpload(v.id)"
+            >
+              <img
+                v-if="loginBackgrounds[v.id]"
+                :src="loginBackgrounds[v.id]"
+                :alt="t(v.label)"
+                class="oa-login-bg-img"
+              />
+              <div v-else class="oa-login-bg-empty">
+                <IconImage :size="22" class="oa-login-bg-empty-icon" />
+                <span class="oa-login-bg-drop-hint">{{ t('loginBgDropHint') }}</span>
+                <span class="oa-login-bg-formats-hint">{{ t('loginBgFormats') }}</span>
+              </div>
+            </div>
+            <div class="oa-login-bg-actions">
+              <button
+                type="button"
+                class="oa-btn small"
+                :disabled="uploadingVariant === v.id"
+                @click="chooseAndUpload(v.id)"
+              >
+                {{ loginBackgrounds[v.id] ? t('loginBgReplace') : t('loginBgUpload') }}
+              </button>
+              <OaConfirmButton
+                v-if="loginBackgrounds[v.id]"
+                class="oa-btn small oa-btn-danger"
+                :label="t('loginBgClear')"
+                :armed-label="t('loginBgClearConfirm')"
+                :armed-title="t('loginBgClear')"
+                :resting-title="t('loginBgClear')"
+                :disabled="uploadingVariant === v.id"
+                @confirm="clearLoginBg(v.id)"
+              />
+            </div>
+          </div>
+        </div>
       </AdminControlCard>
       <AdminControlCard id="secPWA" v-show="visible('secPWA')" :title="t('secPWA')" :icon="IconImage" :hint="t('controlPWAHint')">
         <OaTextField v-model="form.pwaName" :label="t('pwaName')" :hint="t('pwaNameHint')" :max-length="60" />

@@ -17,10 +17,12 @@ import { t } from '@/composables/useI18n';
 import { IconGithub, IconGoogle, IconKey, IconSpark, type OaIcon } from '@/icons';
 import { refusalText } from '@/lib/refusal';
 import { siteInfo } from '@/stores/session';
+import { useLoginBackground } from '@/composables/useLoginBackground';
 
 const router = useRouter();
 const route = useRoute();
 const site = computed(() => siteInfo.value);
+const { loginBgUrl } = useLoginBackground();
 
 // Same rule the sign-up form uses: a code is asked for here too, because this
 // screen is the other door an account gets created through.
@@ -100,7 +102,11 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <div class="oa-auth">
+  <div
+    class="oa-auth"
+    :class="{ 'has-login-bg': !!loginBgUrl }"
+    :style="loginBgUrl ? { backgroundImage: `url(${loginBgUrl})` } : undefined"
+  >
     <form class="oa-auth-card" novalidate @submit.prevent="submit">
       <div class="oa-auth-brand">
         <span class="oa-auth-mark"><IconSpark :size="15" /></span>

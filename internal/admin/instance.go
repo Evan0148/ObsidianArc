@@ -1,6 +1,9 @@
 package admin
 
 import (
+	"encoding/base64"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -134,6 +137,14 @@ func (h *Handlers) listSettings(w http.ResponseWriter, r *http.Request) error {
 			return httpx.Internal(err)
 		}
 		out["attachments"] = map[string]any{"held": held, "bytes": bytes}
+		if h.settings != nil {
+			loginBgs := h.settings.LoginBackgrounds()
+			bgs := make(map[string]string, len(loginBgs))
+			for v, at := range loginBgs {
+				bgs[v] = fmt.Sprintf("/api/site/login-background/%s?v=%d", v, at)
+			}
+			out["login_background"] = bgs
+		}
 	}
 	return httpx.WriteJSON(w, http.StatusOK, out)
 }
@@ -531,6 +542,64 @@ func (h *Handlers) purgeAttachments(w http.ResponseWriter, r *http.Request) erro
 		"purged":      dropped,
 		"attachments": map[string]any{"held": held, "bytes": bytes},
 	})
+}
+
+func (h *Handlers) putLoginBackground(w http.ResponseWriter, r *http.Request) error {
+	variant := settings.NormalizeVariant(r.PathValue("variant"))
+	if !settings.ValidLoginBackgroundVariants[variant] {
+		return httpx.BadRequest("Unknown login background variant.")
+	}
+
+	var body struct {
+		Mime string `json:"mime"`
+		Data string `json:"data"`
+	}
+	if err := httpx.DecodeJSON(w, r, &body, settings.MaxLoginBackgroundBytes*4/3+16*1024); err != nil {
+		return err
+	}
+
+	raw := body.Data
+	if comma := strings.Index(raw, ","); comma != -1 && strings.Contains(raw[:comma], "base64") {
+		raw = raw[comma+1:]
+	}
+	raw = strings.TrimSpace(raw)
+	raw = strings.ReplaceAll(raw, " ", "")
+	raw = strings.ReplaceAll(raw, "\n", "")
+	raw = strings.ReplaceAll(raw, "\r", "")
+	raw = strings.ReplaceAll(raw, "\t", "")
+	data, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		return httpx.BadRequest("Image data is not valid base64.")
+	}
+
+	at, err := h.settings.SetLoginBackground(r.Context(), variant, body.Mime, data)
+	if err != nil {
+		switch {
+		case errors.Is(err, settings.ErrLoginBackgroundUnsupported):
+			return httpx.BadRequest("Login backgrounds must be JPEG, PNG, WebP or AVIF.")
+		case errors.Is(err, settings.ErrLoginBackgroundTooLarge):
+			return httpx.BadRequest("That image is too large.")
+		default:
+			return httpx.Internal(err)
+		}
+	}
+
+	return httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"url":        fmt.Sprintf("/api/site/login-background/%s?v=%d", variant, at),
+		"updated_at": at,
+	})
+}
+
+func (h *Handlers) deleteLoginBackground(w http.ResponseWriter, r *http.Request) error {
+	variant := settings.NormalizeVariant(r.PathValue("variant"))
+	if !settings.ValidLoginBackgroundVariants[variant] {
+		return httpx.BadRequest("Unknown login background variant.")
+	}
+
+	if err := h.settings.DeleteLoginBackground(r.Context(), variant); err != nil {
+		return httpx.Internal(err)
+	}
+	return httpx.NoContent(w)
 }
 
 // Settings that are credentials. They are written through this endpoint and

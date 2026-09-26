@@ -12,9 +12,11 @@ import { ApiError } from '@/api/client';
 import { t } from '@/composables/useI18n';
 import { IconSpark } from '@/icons';
 import { siteInfo } from '@/stores/session';
+import { useLoginBackground } from '@/composables/useLoginBackground';
 
 const route = useRoute();
 const router = useRouter();
+const { loginBgUrl } = useLoginBackground();
 
 const title = ref(t('verifyPageChecking'));
 const body = ref('');
@@ -50,7 +52,11 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="oa-auth">
+  <div
+    class="oa-auth"
+    :class="{ 'has-login-bg': !!loginBgUrl }"
+    :style="loginBgUrl ? { backgroundImage: `url(${loginBgUrl})` } : undefined"
+  >
     <div class="oa-auth-card">
       <div class="oa-auth-brand">
         <span class="oa-auth-mark"><IconSpark :size="15" /></span>

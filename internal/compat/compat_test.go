@@ -147,7 +147,10 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() {
+		_, _ = db.Exec(context.Background(), "PRAGMA wal_checkpoint(TRUNCATE)")
+		_ = db.Close()
+	})
 	if _, err := db.Migrate(ctx); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

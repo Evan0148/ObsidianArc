@@ -12,6 +12,20 @@
   min-height: 100%;
   padding: 24px 16px;
   box-sizing: border-box;
+
+  &.has-login-bg {
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    transition: background-image 0.25s ease;
+
+    .oa-auth-card {
+      background: color-mix(in srgb, var(--ai-surface-container) 90%, transparent);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.22);
+    }
+  }
 }
 
 .oa-auth-card {

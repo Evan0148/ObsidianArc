@@ -65,6 +65,7 @@ func NewHandlers(
 // "what needs a session" is answerable by reading this function.
 func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/site", httpx.Wrap(h.site))
+	mux.HandleFunc("GET /api/site/login-background/{variant}", httpx.Wrap(h.getLoginBackground))
 	mux.HandleFunc("POST /api/auth/register", httpx.Wrap(h.register))
 	mux.HandleFunc("POST /api/auth/login", httpx.Wrap(h.login))
 	mux.HandleFunc("POST /api/auth/logout", httpx.Wrap(h.logout))
@@ -273,7 +274,49 @@ func (h *Handlers) site(w http.ResponseWriter, r *http.Request) error {
 			"text":        h.settings.Get(settings.HomeNotice),
 			"dismissible": h.settings.Bool(settings.HomeNoticeDismissible),
 		},
+		"login_background": h.loginBackgrounds(),
 	})
+}
+
+func (h *Handlers) loginBackgrounds() map[string]string {
+	if h.settings == nil {
+		return map[string]string{}
+	}
+	raw := h.settings.LoginBackgrounds()
+	out := make(map[string]string, len(raw))
+	for v, at := range raw {
+		out[v] = fmt.Sprintf("/api/site/login-background/%s?v=%d", v, at)
+	}
+	return out
+}
+
+func (h *Handlers) getLoginBackground(w http.ResponseWriter, r *http.Request) error {
+	if h.settings == nil {
+		return httpx.NotFound("Not available.")
+	}
+	variant := settings.NormalizeVariant(r.PathValue("variant"))
+	if !settings.ValidLoginBackgroundVariants[variant] {
+		return httpx.NotFound("No such variant.")
+	}
+
+	mime, data, at, err := h.settings.GetLoginBackground(r.Context(), variant)
+	if err != nil {
+		if errors.Is(err, settings.ErrNoLoginBackground) {
+			return httpx.NotFound("No login background set for this variant.")
+		}
+		return httpx.Internal(err)
+	}
+
+	header := w.Header()
+	header.Set("Content-Type", mime)
+	header.Set("Content-Length", strconv.Itoa(len(data)))
+	header.Set("Cache-Control", "public, max-age=31536000, immutable")
+	header.Set("Content-Disposition", "inline")
+	header.Set("ETag", fmt.Sprintf(`"%x-%x"`, at, len(data)))
+	header.Set("X-Content-Type-Options", "nosniff")
+
+	http.ServeContent(w, r, "", time.UnixMilli(at), bytes.NewReader(data))
+	return nil
 }
 
 func (h *Handlers) signInProviders() []SignInProvider {

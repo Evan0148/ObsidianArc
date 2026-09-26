@@ -2,9 +2,11 @@ package console
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -591,6 +593,92 @@ func init() {
 				rows = append(rows, []string{asStr(u["id"]), asStr(u["username"]), asStr(u["nickname"]), asStr(u["group_id"]), formatMS(u["group_expires_at"])})
 			}
 			return rt.Table([]string{"id", "username", "nickname", "group_id", "expires"}, rows)
+		},
+	})
+
+	registerCommand(Command{
+		Name:    "login-bg set",
+		Group:   "instance",
+		Summary: Text{EN: "Set a login background image", ZH: "设置登录背景图"},
+		Usage:   "login-bg set <variant> <file-or-base64>",
+		Help: Text{
+			EN: "Upload or set a login background image for landscape_light, landscape_dark, portrait_light, or portrait_dark.",
+			ZH: "为 landscape_light、landscape_dark、portrait_light 或 portrait_dark 设置或上传登录背景图。",
+		},
+		Args: []Arg{
+			{Name: "variant", Hint: Text{EN: "landscape_light, landscape_dark, portrait_light, or portrait_dark", ZH: "landscape_light、landscape_dark、portrait_light 或 portrait_dark"}, Required: true},
+			{Name: "image", Hint: Text{EN: "image file path or base64 data", ZH: "图片文件路径或 base64 数据"}, Required: true},
+		},
+		Examples:   []string{"login-bg set landscape_light /path/to/image.png", "login-bg set portrait_dark /path/to/image.jpg"},
+		Permission: "settings",
+		Endpoints:  []string{"PUT /api/admin/login-background/{variant}"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			if rt.NArg() < 2 {
+				if rt.Session.Lang == "zh" {
+					return rt.Errorf("需要变种名称和图片路径或数据")
+				}
+				return rt.Errorf("variant and image are required")
+			}
+			variant := rt.Arg(0)
+			rawImage := rt.Arg(1)
+
+			var mime, data string
+			if fileBytes, err := os.ReadFile(rawImage); err == nil {
+				mime = http.DetectContentType(fileBytes)
+				data = base64.StdEncoding.EncodeToString(fileBytes)
+			} else {
+				mime = "image/jpeg"
+				data = rawImage
+			}
+
+			respData, _, err := rt.Call(http.MethodPut, "/api/admin/login-background/"+variant, map[string]string{
+				"mime": mime,
+				"data": data,
+			})
+			if err != nil {
+				return err
+			}
+			urlStr := asStr(asMap(respData)["url"])
+			if rt.Session.Lang == "zh" {
+				rt.Printf("登录背景图已更新：%s\n", urlStr)
+			} else {
+				rt.Printf("Login background updated: %s\n", urlStr)
+			}
+			return nil
+		},
+	})
+
+	registerCommand(Command{
+		Name:    "login-bg clear",
+		Group:   "instance",
+		Summary: Text{EN: "Clear a login background image", ZH: "清除登录背景图"},
+		Usage:   "login-bg clear <variant>",
+		Help: Text{
+			EN: "Remove a login background image variant (landscape_light, landscape_dark, portrait_light, or portrait_dark).",
+			ZH: "清除指定的登录背景图变种（landscape_light、landscape_dark、portrait_light 或 portrait_dark）。",
+		},
+		Args: []Arg{
+			{Name: "variant", Hint: Text{EN: "landscape_light, landscape_dark, portrait_light, or portrait_dark", ZH: "landscape_light、landscape_dark、portrait_light 或 portrait_dark"}, Required: true},
+		},
+		Examples:    []string{"login-bg clear landscape_light", "login-bg clear portrait_dark"},
+		Permission:  "settings",
+		Destructive: true,
+		Endpoints:   []string{"DELETE /api/admin/login-background/{variant}"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			variant, err := requireRef(rt, "variant")
+			if err != nil {
+				return err
+			}
+			_, _, err = rt.Call(http.MethodDelete, "/api/admin/login-background/"+variant, nil)
+			if err != nil {
+				return err
+			}
+			if rt.Session.Lang == "zh" {
+				rt.Printf("已清除变种 %s 的登录背景图。\n", variant)
+			} else {
+				rt.Printf("Cleared login background for %s.\n", variant)
+			}
+			return nil
 		},
 	})
 }
