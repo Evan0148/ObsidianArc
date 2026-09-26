@@ -16,6 +16,7 @@ import OaLineChart from '@/components/OaLineChart.vue';
 import OaPanel from '@/components/OaPanel.vue';
 import { t } from '@/composables/useI18n';
 import { IconChevron, IconCollapse, IconExpand } from '@/icons';
+import { maskProvider } from '@/admin/safeMode';
 import { formatUptime } from '@/lib/format';
 
 interface ModelUptimeItem {
@@ -178,7 +179,7 @@ onMounted(load);
               <span class="oa-uptime-status-dot" :class="model.state" />
               <div class="oa-uptime-row-names">
                 <span class="oa-uptime-row-title">{{ model.display_name }}</span>
-                <span v-if="model.provider_name" class="oa-field-hint">{{ model.provider_name }}</span>
+                <span v-if="model.provider_name" class="oa-field-hint">{{ maskProvider(model.provider_name) }}</span>
               </div>
             </div>
             <div class="oa-uptime-row-meta">

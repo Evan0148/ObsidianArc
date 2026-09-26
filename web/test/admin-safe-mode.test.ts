@@ -7,6 +7,7 @@ import { provideAdminView } from '../src/views/admin/adminView';
 import { providePanelHost } from '../src/composables/usePanelHost';
 import { t } from '../src/composables/useI18n';
 import { compactNumber } from '../src/lib/format';
+import AdminAvailability from '../src/views/admin/AdminAvailability.vue';
 import AdminDashboard from '../src/views/admin/AdminDashboard.vue';
 import AdminDashboardTrend from '../src/views/admin/AdminDashboardTrend.vue';
 import AdminModels from '../src/views/admin/AdminModels.vue';
@@ -14,8 +15,10 @@ import AdminProviders from '../src/views/admin/AdminProviders.vue';
 import AdminResources from '../src/views/admin/AdminResources.vue';
 import AdminUsers from '../src/views/admin/AdminUsers.vue';
 import OaUsageWindow from '../src/components/OaUsageWindow.vue';
+import UptimePanel from '../src/views/UptimePanel.vue';
 import UsageBoard from '../src/views/admin/usage/UsageBoard.vue';
 import UsageMatrix from '../src/views/admin/usage/UsageMatrix.vue';
+import { api } from '../src/api/client';
 import { dashboardFixture, emptyTotals } from './fixtures/dashboard';
 import {
   activeMaskCount,
@@ -762,4 +765,162 @@ describe('editable fields blur under safe mode instead of being replaced', () =>
     expect(fieldFor(t('name')).classList.contains('oa-safe-blur')).toBe(false);
   });
 });
+
+describe('UptimePanel safe mode masking', () => {
+  let app: App | undefined;
+  let host: HTMLElement;
+  let panels: HTMLElement;
+
+  beforeEach(() => {
+    localStorage.clear();
+    safeModeEnabled.value = false;
+    setAllCategories(true);
+    host = document.createElement('div');
+    panels = document.createElement('div');
+    document.body.append(host, panels);
+  });
+
+  afterEach(() => {
+    app?.unmount();
+    app = undefined;
+    host.remove();
+    panels.remove();
+    localStorage.clear();
+    safeModeEnabled.value = false;
+    vi.restoreAllMocks();
+  });
+
+  it('masks the provider name in uptime model rows when safe mode is enabled', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/api/uptime') {
+        return {
+          uptime_sec: 7200,
+          models: [
+            {
+              id: 'model-claude',
+              display_name: 'Claude Sonnet 3.7',
+              provider_name: 'Anthropic Direct',
+              enabled: true,
+              state: 'up',
+              uptime: 0.99,
+              uptime_hour: 0.99,
+              history: [],
+            },
+          ],
+        } as any;
+      }
+      return null as any;
+    });
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }],
+    });
+
+    app = createApp({
+      setup() {
+        providePanelHost(shallowRef(panels));
+        return () => h(UptimePanel);
+      },
+    });
+    app.use(router);
+    app.mount(host);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await nextTick();
+
+    // Provider name is initially visible while safe mode is off
+    expect(panels.textContent).toContain('Anthropic Direct');
+
+    // Enabling safe mode masks the provider name with ******
+    toggleSafeMode(true);
+    await nextTick();
+    expect(panels.textContent).not.toContain('Anthropic Direct');
+    expect(panels.textContent).toContain('******');
+
+    // Disabling providers mask reveals it again
+    toggleCategory('providers', false);
+    await nextTick();
+    expect(panels.textContent).toContain('Anthropic Direct');
+  });
+});
+
+describe('AdminAvailability safe mode masking', () => {
+  let app: App | undefined;
+  let host: HTMLElement;
+
+  beforeEach(() => {
+    localStorage.clear();
+    safeModeEnabled.value = false;
+    setAllCategories(true);
+    host = document.createElement('div');
+    document.body.appendChild(host);
+  });
+
+  afterEach(() => {
+    app?.unmount();
+    app = undefined;
+    host.remove();
+    localStorage.clear();
+    safeModeEnabled.value = false;
+    vi.restoreAllMocks();
+  });
+
+  it('masks the provider name in health model cards when safe mode is enabled', async () => {
+    vi.spyOn(adminApi, 'settings').mockResolvedValue({ settings: {} });
+    vi.spyOn(adminApi, 'health').mockResolvedValue({
+      hours: 24,
+      models: [
+        {
+          model_id: 'm1',
+          name: 'GPT-5 Mini',
+          provider: 'OpenAI Upstream',
+          enabled: true,
+          auto_disabled: false,
+          status: {
+            state: 'up',
+            uptime: 1,
+            samples: 10,
+            user_samples: 10,
+            system_samples: 0,
+            failures_in_a_row: 0,
+            last_ok_at: Date.now(),
+            last_error_at: 0,
+            last_code: '',
+            last_message: '',
+            errors: [],
+          },
+        },
+      ],
+      policy: { probe: true, window_mins: 30, disable_after: 0 },
+    });
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }],
+    });
+
+    app = createApp({
+      setup() {
+        provideAdminView({ actionsHost: document.createElement('div'), setTitle() {}, reload() {}, params: [] });
+        return () => h(AdminAvailability);
+      },
+    });
+    app.use(router);
+    app.mount(host);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await nextTick();
+
+    expect(host.textContent).toContain('OpenAI Upstream');
+
+    toggleSafeMode(true);
+    await nextTick();
+    expect(host.textContent).not.toContain('OpenAI Upstream');
+    expect(host.textContent).toContain('******');
+
+    toggleCategory('providers', false);
+    await nextTick();
+    expect(host.textContent).toContain('OpenAI Upstream');
+  });
+});
+
 
