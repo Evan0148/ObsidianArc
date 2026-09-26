@@ -60,22 +60,28 @@ func TestAnAdministratorsChangesReachTheAccountsBell(t *testing.T) {
 		t.Fatalf("grant: %d %s", grant.Code, grant.Body.String())
 	}
 
+	// Administrator edits to an account (profile, role, permissions, API restrictions)
+	// do not notify the user.
 	rename := map[string]any{"nickname": "Someone"}
 	if response := in.do(http.MethodPatch, "/api/admin/users/"+member.userID, rename, founder); response.Code != http.StatusOK {
 		t.Fatalf("rename: %d %s", response.Code, response.Body.String())
 	}
-	// The backoffice saves the whole form every time. The same values again
-	// changed nothing, and a notice saying otherwise would be noise.
-	if response := in.do(http.MethodPatch, "/api/admin/users/"+member.userID, rename, founder); response.Code != http.StatusOK {
-		t.Fatalf("resave: %d %s", response.Code, response.Body.String())
+	multi := map[string]any{
+		"nickname":       "NewName",
+		"role":           "admin",
+		"api_restricted": true,
 	}
-	// An administrator's own edit is not news to them.
+	if response := in.do(http.MethodPatch, "/api/admin/users/"+member.userID, multi, founder); response.Code != http.StatusOK {
+		t.Fatalf("multi edit: %d %s", response.Code, response.Body.String())
+	}
+
+	// Self-edits by an administrator also produce no account_changed notifications.
 	if response := in.do(http.MethodPatch, "/api/admin/users/"+founder.userID,
 		map[string]any{"nickname": "Boss"}, founder); response.Code != http.StatusOK {
 		t.Fatalf("self edit: %d %s", response.Code, response.Body.String())
 	}
 	if got := find(in.notices(founder), "account_changed"); len(got) != 0 {
-		t.Fatalf("an administrator was told about their own edit: %+v", got)
+		t.Fatalf("an administrator received an account_changed notice: %+v", got)
 	}
 
 	list := in.notices(member)
