@@ -362,7 +362,7 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	var before, updated user.User
+	var updated user.User
 	err = h.db.Tx(r.Context(), func(tx *database.Tx) error {
 		// Profile edits also need this lock now: their target may be promoted
 		// while a delegated operator is waiting to change its login address.
@@ -379,7 +379,6 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		before = target
 
 		// Re-read the actor while holding the population lock: a concurrent
 		// revocation must win before another grant can be delegated.
@@ -536,9 +535,6 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) error {
 
 	slog.InfoContext(r.Context(), "administrator changed an account",
 		"actor", actor.ID, "target", userID, "role", body.Role, "status", body.Status)
-	if what := accountChanges(before, updated); len(what) > 0 {
-		h.tellAccount(r.Context(), actor, userID, "account_changed", "/settings", map[string]any{"what": what})
-	}
 
 	return httpx.WriteJSON(w, http.StatusOK, map[string]any{"user": updated})
 }
@@ -583,10 +579,6 @@ func (h *Handlers) resetPassword(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	slog.InfoContext(r.Context(), "administrator reset a password", "actor", actor.ID, "target", userID)
-	// Read at the next sign-in, since the reset ended every session: the
-	// person finds out why their password stopped working.
-	h.tellAccount(r.Context(), actor, userID, "account_changed", "/settings",
-		map[string]any{"what": []string{"password"}})
 	return httpx.NoContent(w)
 }
 

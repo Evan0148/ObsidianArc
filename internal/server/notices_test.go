@@ -83,29 +83,19 @@ func TestAnAdministratorsChangesReachTheAccountsBell(t *testing.T) {
 	if len(cards) != 1 || cards[0].Params["count"] != float64(2) || cards[0].Link != "/usage" {
 		t.Fatalf("cards_granted: %+v (all: %v)", cards, kinds(list))
 	}
-	changed := find(list, "account_changed")
-	if len(changed) != 1 {
-		t.Fatalf("account_changed %d times, want once: %v", len(changed), kinds(list))
-	}
-	if what, _ := changed[0].Params["what"].([]any); len(what) != 1 || what[0] != "profile" {
-		t.Fatalf("account_changed names %v, want [profile]", changed[0].Params["what"])
+	if got := find(list, "account_changed"); len(got) != 0 {
+		t.Fatalf("an account was told about an administrator's edit: %+v", got)
 	}
 
-	// A password reset ends every session, so it is read at the next sign-in.
+	// A password reset ends every session.
 	reset := in.do(http.MethodPost, "/api/admin/users/"+member.userID+"/password",
 		map[string]string{"new_password": "a-third-password"}, founder)
 	if reset.Code != http.StatusNoContent {
 		t.Fatalf("reset password: %d %s", reset.Code, reset.Body.String())
 	}
 	back := in.login("member", "a-third-password")
-	var password bool
-	for _, n := range find(in.notices(back), "account_changed") {
-		if what, _ := n.Params["what"].([]any); len(what) == 1 && what[0] == "password" {
-			password = true
-		}
-	}
-	if !password {
-		t.Fatalf("no notice of the password reset: %v", kinds(in.notices(back)))
+	if got := find(in.notices(back), "account_changed"); len(got) != 0 {
+		t.Fatalf("an account was told about a password reset: %+v", got)
 	}
 }
 

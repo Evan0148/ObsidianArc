@@ -3,7 +3,6 @@ package admin
 import (
 	"context"
 	"log/slog"
-	"slices"
 	"time"
 
 	"github.com/OnyxAxisOwO/ObsidianArc/internal/notify"
@@ -38,30 +37,4 @@ func (h *Handlers) tellAccount(ctx context.Context, actor user.User, accountID, 
 		Audience: notify.AudienceUser, UserID: accountID,
 		Kind: kind, Params: params, Link: link,
 	})
-}
-
-// accountChanges names what an administrator's edit changed, as keys the
-// browser words in the reader's language. Compared before and after rather
-// than read off the request, because the backoffice sends the whole form on
-// every save, and "your role changed" when it did not would teach people to
-// ignore the one that matters.
-func accountChanges(before, after user.User) []string {
-	var what []string
-	if before.Nickname != after.Nickname || before.Avatar != after.Avatar || before.Bio != after.Bio ||
-		before.Email != after.Email || before.QQ != after.QQ {
-		what = append(what, "profile")
-	}
-	if before.Role != after.Role || !slices.Equal(before.AdminPermissions, after.AdminPermissions) {
-		what = append(what, "role")
-	}
-	if before.GroupID != after.GroupID || before.GroupExpiresAt != after.GroupExpiresAt {
-		what = append(what, "group")
-	}
-	if before.Status != after.Status {
-		what = append(what, "status")
-	}
-	if before.APIRestricted != after.APIRestricted || before.APIRestrictedUntil != after.APIRestrictedUntil {
-		what = append(what, "api")
-	}
-	return what
 }
