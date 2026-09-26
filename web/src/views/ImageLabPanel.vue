@@ -382,19 +382,28 @@ function imageSource(img: ImageGenerationItem): string {
       </OaIconButton>
     </template>
 
-    <div class="oa-segmented" style="margin-bottom: 8px;">
+    <div class="oa-image-lab-tabs" role="tablist">
+      <span
+        class="oa-image-lab-pill"
+        :class="{ 'tab-history': activeTab === 'history' }"
+        aria-hidden="true"
+      />
       <button
         type="button"
-        class="oa-segmented-option"
+        class="oa-image-lab-tab"
         :class="{ active: activeTab === 'generate' }"
+        role="tab"
+        :aria-selected="activeTab === 'generate'"
         @click="activeTab = 'generate'"
       >
         {{ t('imageLabTabGenerate') }}
       </button>
       <button
         type="button"
-        class="oa-segmented-option"
+        class="oa-image-lab-tab"
         :class="{ active: activeTab === 'history' }"
+        role="tab"
+        :aria-selected="activeTab === 'history'"
         @click="activeTab = 'history'"
       >
         {{ t('imageLabTabGallery') }}

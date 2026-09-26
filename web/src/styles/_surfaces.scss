@@ -3313,6 +3313,78 @@
   margin: 12px 0;
 }
 
+/* Image lab tabs: segmented pill switch with sliding animated base */
+.oa-image-lab-tabs {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  margin-bottom: 4px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--ai-surface-container-low);
+  user-select: none;
+}
+
+.oa-image-lab-pill {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 8px) / 2);
+  border-radius: 999px;
+  background: var(--ai-surface-container-high);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 0.5px 1px rgba(0, 0, 0, 0.04);
+  transition: transform 0.34s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+  z-index: 0;
+
+  &.tab-history {
+    transform: translateX(calc(100% + 2px));
+  }
+}
+
+.oa-image-lab-tab {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  text-align: center;
+  white-space: nowrap;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ai-text-secondary);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+
+  &:hover {
+    color: var(--ai-text);
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+
+  &.active {
+    color: var(--ai-text);
+    font-weight: 600;
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--ai-focus-shadow);
+  }
+}
+
+.oa-image-lab-tabs:not(:has(.oa-image-lab-pill)) .oa-image-lab-tab.active {
+  background: var(--ai-surface-container-high);
+}
+
 /* Tighten top padding for image lab panel so form starts right under the title. */
 .oa-panel-body.oa-image-lab-body {
   padding-top: 6px;
@@ -4399,40 +4471,72 @@
  */
 
 .ai-sidebar-tabs {
+  position: relative;
   display: flex;
-  gap: 4px;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--ai-surface-container-low);
+  user-select: none;
+}
+
+.ai-sidebar-pill {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 8px) / 2);
+  border-radius: 999px;
+  background: var(--ai-surface-container-high);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 0.5px 1px rgba(0, 0, 0, 0.04);
+  transition: transform 0.34s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+  z-index: 0;
+
+  &.tab-projects {
+    transform: translateX(calc(100% + 2px));
+  }
 }
 
 .ai-sidebar-tab {
-  flex: 1;
-  padding: 7px 8px;
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  text-align: center;
+  padding: 6px 10px;
   border: none;
   border-radius: 999px;
-  background: var(--ai-field-bg);
+  background: transparent;
   color: var(--ai-text-secondary);
   font: inherit;
-  font-size: 11.5px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition:
+    color 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+
+  &:hover {
+    color: var(--ai-text);
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+
+  &.active {
+    color: var(--ai-text);
+    font-weight: 600;
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--ai-focus-shadow);
+  }
 }
 
-.ai-sidebar-tab:hover {
-  background: var(--ai-field-bg-hover);
-}
-
-/* Same fill language as .oa-theme-choice.active: a set of pill choices marks
- * the active one by filling solid, so a second "a few pills, one active"
- * control reads as the same kind of control rather than a new one.
- */
-.ai-sidebar-tab.active {
-  background: var(--ai-primary);
-  color: var(--ai-primary-text);
-}
-
-.ai-sidebar-tab:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--ai-focus-shadow);
+.ai-sidebar-tabs:not(:has(.ai-sidebar-pill)) .ai-sidebar-tab.active {
+  background: var(--ai-surface-container-high);
 }
 
 .ai-project-panel {
@@ -5776,6 +5880,11 @@
   .page-slide-right-leave-to .oa-workspace > .oa-chat-root {
     transform: none !important;
     opacity: 0 !important;
+  }
+
+  .ai-sidebar-pill,
+  .oa-image-lab-pill {
+    transition: none !important;
   }
 }
 

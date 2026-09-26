@@ -84,6 +84,11 @@ function onNewChat(): void {
            already says what the list below is, so the label and the switch
            are one control instead of two that could disagree. -->
       <div class="ai-sidebar-tabs" role="tablist">
+        <span
+          class="ai-sidebar-pill"
+          :class="{ 'tab-projects': activeTab === 'projects' }"
+          aria-hidden="true"
+        />
         <button
           type="button"
           class="ai-sidebar-tab"
