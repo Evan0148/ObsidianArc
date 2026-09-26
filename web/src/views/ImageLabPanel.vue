@@ -30,6 +30,7 @@ import {
   IconDownload,
   IconExpand,
   IconImage,
+  IconPlus,
   IconSpark,
   IconTrash,
 } from '@/icons';
@@ -85,27 +86,49 @@ function clearReferences(): void {
 }
 
 const draggingRef = ref(false);
+const preparing = ref(false);
+let dragDepth = 0;
 
 async function addReferenceFiles(list: FileList | File[] | null | undefined): Promise<void> {
-  const files = Array.from(list ?? []).filter((file) => file.type.startsWith('image/'));
-  if (!files.length) return;
+  const allFiles = Array.from(list ?? []);
+  if (!allFiles.length) return;
+
+  const imageFiles = allFiles.filter((file) => file.type.startsWith('image/'));
+  if (!imageFiles.length) {
+    error.value = t('imageNotAnImage');
+    return;
+  }
 
   const remaining = MAX_REFERENCE_IMAGES - references.value.length;
-  if (remaining <= 0) return;
+  if (remaining <= 0) {
+    error.value = t('referenceImageLimit', { count: MAX_REFERENCE_IMAGES });
+    return;
+  }
 
-  const toProcess = files.slice(0, remaining);
-  for (const file of toProcess) {
-    try {
-      const prepared = await prepareImage(file);
-      references.value.push({
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        data: prepared.data,
-        preview: prepared.previewURL,
-      });
-      error.value = '';
-    } catch (err) {
-      error.value = err instanceof ImageError ? err.message : t('imageFailed');
+  if (imageFiles.length > remaining) {
+    error.value = t('referenceImageLimit', { count: MAX_REFERENCE_IMAGES });
+  }
+
+  const toProcess = imageFiles.slice(0, remaining);
+  preparing.value = true;
+  try {
+    for (const file of toProcess) {
+      try {
+        const prepared = await prepareImage(file);
+        references.value.push({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          data: prepared.data,
+          preview: prepared.previewURL,
+        });
+        if (imageFiles.length <= remaining) {
+          error.value = '';
+        }
+      } catch (err) {
+        error.value = err instanceof ImageError ? err.message : t('imageFailed');
+      }
     }
+  } finally {
+    preparing.value = false;
   }
 }
 
@@ -123,21 +146,24 @@ function carriesFiles(event: DragEvent): boolean {
 }
 
 function onDragEnter(event: DragEvent): void {
-  if (!carriesFiles(event) || references.value.length >= MAX_REFERENCE_IMAGES) return;
+  if (!carriesFiles(event)) return;
   event.preventDefault();
+  dragDepth++;
   draggingRef.value = true;
 }
 
 function onDragOver(event: DragEvent): void {
-  if (!carriesFiles(event) || references.value.length >= MAX_REFERENCE_IMAGES) return;
+  if (!carriesFiles(event)) return;
   event.preventDefault();
   if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
   draggingRef.value = true;
 }
 
 function onDragLeave(event: DragEvent): void {
-  const target = event.currentTarget as HTMLElement;
-  if (event.target === target || !target.contains(event.relatedTarget as Node | null)) {
+  if (!carriesFiles(event)) return;
+  dragDepth--;
+  if (dragDepth <= 0) {
+    dragDepth = 0;
     draggingRef.value = false;
   }
 }
@@ -145,8 +171,27 @@ function onDragLeave(event: DragEvent): void {
 function onDrop(event: DragEvent): void {
   if (!carriesFiles(event)) return;
   event.preventDefault();
+  event.stopPropagation();
+  dragDepth = 0;
   draggingRef.value = false;
   void addReferenceFiles(event.dataTransfer?.files);
+}
+
+function onPaste(event: ClipboardEvent): void {
+  if (activeTab.value !== 'generate') return;
+  const items = event.clipboardData?.items;
+  if (!items) return;
+  const files: File[] = [];
+  for (const item of Array.from(items)) {
+    if (item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+  }
+  if (files.length) {
+    event.preventDefault();
+    void addReferenceFiles(files);
+  }
 }
 
 // A blob: URL is held by the document until it is released, so leaving the
@@ -278,7 +323,7 @@ function usePrompt(item: ImageGenerationRecord): void {
 
 async function generate(): Promise<void> {
   const text = prompt.value.trim();
-  if (!text || !selectedModelID.value || busy.value) return;
+  if (!text || !selectedModelID.value || busy.value || preparing.value) return;
 
   busy.value = true;
   error.value = '';
@@ -317,7 +362,7 @@ function imageSource(img: ImageGenerationItem): string {
     ref="panel"
     :title="t('imageLab')"
     :confirm-label="activeTab === 'generate' ? (busy ? t('generatingImage') : t('generateImage')) : undefined"
-    :confirmable="activeTab === 'generate' && !!prompt.trim() && !!selectedModelID"
+    :confirmable="activeTab === 'generate' && !!prompt.trim() && !!selectedModelID && !preparing"
     :footer="activeTab === 'generate'"
     :busy="busy"
     :error="error"
@@ -357,144 +402,173 @@ function imageSource(img: ImageGenerationItem): string {
     </div>
 
     <template v-if="activeTab === 'generate'">
-      <p v-if="!modelOptions.length" class="oa-field-hint">
-        {{ t('noImageCapableModel') }}
-      </p>
-      <OaSelectField
-        v-else
-        v-model="selectedModelID"
-        :label="t('chooseModel')"
-        :options="modelOptions"
-      />
+      <div
+        class="oa-image-lab-generate"
+        @dragenter="onDragEnter"
+        @dragover="onDragOver"
+        @dragleave="onDragLeave"
+        @drop="onDrop"
+        @paste="onPaste"
+      >
+        <p v-if="!modelOptions.length" class="oa-field-hint">
+          {{ t('noImageCapableModel') }}
+        </p>
+        <OaSelectField
+          v-else
+          v-model="selectedModelID"
+          :label="t('chooseModel')"
+          :options="modelOptions"
+        />
 
-      <OaSelectField
-        v-model="selectedStyle"
-        :label="t('imageStyle')"
-        :options="styleOptions"
-      />
+        <OaSelectField
+          v-model="selectedStyle"
+          :label="t('imageStyle')"
+          :options="styleOptions"
+        />
 
-      <div class="oa-field">
-        <label class="oa-field-label">{{ t('imageSize') }}</label>
-        <div class="oa-ratio-grid">
-          <button
-            v-for="opt in sizeOptions"
-            :key="opt.value"
-            type="button"
-            class="oa-ratio-tile"
-            :class="{ active: selectedSize === opt.value }"
-            @click="selectedSize = opt.value"
-          >
-            <div class="oa-ratio-icon-wrap">
-              <svg class="oa-ratio-svg" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect
-                  class="oa-ratio-rect"
-                  :class="{ auto: !opt.value }"
-                  :x="opt.box.x"
-                  :y="opt.box.y"
-                  :width="opt.box.width"
-                  :height="opt.box.height"
-                  rx="3.5"
-                />
-              </svg>
-            </div>
-            <span class="oa-ratio-name">{{ opt.name }}</span>
-            <span class="oa-ratio-sub">{{ opt.detail }}</span>
-          </button>
-        </div>
-      </div>
-
-      <div class="oa-field">
-        <label class="oa-field-label">
-          <span>{{ t('referenceImage') }}</span>
-          <span v-if="references.length" class="oa-reference-count">{{ references.length }}/{{ MAX_REFERENCE_IMAGES }}</span>
-        </label>
-        <div
-          class="oa-reference-zone"
-          :class="{ dragging: draggingRef }"
-          @dragenter="onDragEnter"
-          @dragover="onDragOver"
-          @dragleave="onDragLeave"
-          @drop="onDrop"
-        >
-          <div class="oa-reference-list">
-            <div v-for="(item, idx) in references" :key="item.id" class="oa-reference">
-              <img class="oa-reference-img" :src="item.preview" alt="" :draggable="false">
-              <OaIconButton class="oa-reference-remove" :label="t('removeImage')" @click="dropReference(idx)">
-                <IconClose :size="12" />
-              </OaIconButton>
-            </div>
+        <div class="oa-field">
+          <label class="oa-field-label">{{ t('imageSize') }}</label>
+          <div class="oa-ratio-grid">
             <button
-              v-if="references.length < MAX_REFERENCE_IMAGES"
+              v-for="opt in sizeOptions"
+              :key="opt.value"
               type="button"
-              class="oa-reference-pick"
-              :disabled="busy"
-              @click="picker?.click()"
+              class="oa-ratio-tile"
+              :class="{ active: selectedSize === opt.value }"
+              @click="selectedSize = opt.value"
             >
-              <IconImage :size="15" />
-              <span>{{ t('referenceImageAdd') }}</span>
+              <div class="oa-ratio-icon-wrap">
+                <svg class="oa-ratio-svg" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect
+                    class="oa-ratio-rect"
+                    :class="{ auto: !opt.value }"
+                    :x="opt.box.x"
+                    :y="opt.box.y"
+                    :width="opt.box.width"
+                    :height="opt.box.height"
+                    rx="3.5"
+                  />
+                </svg>
+              </div>
+              <span class="oa-ratio-name">{{ opt.name }}</span>
+              <span class="oa-ratio-sub">{{ opt.detail }}</span>
             </button>
           </div>
-          <div v-if="draggingRef" class="oa-reference-drop-hint">
-            <span>{{ t('dropHint') }}</span>
-          </div>
         </div>
-        <p class="oa-field-hint">{{ t('referenceImageHint') }}</p>
-        <input
-          ref="picker"
-          class="ai-chat-file"
-          type="file"
-          accept="image/*"
-          multiple
-          hidden
-          @change="takeReference"
-        >
-      </div>
 
-      <div class="oa-field">
-        <label class="oa-field-label" for="image-lab-prompt">{{ t('imagePrompt') }}</label>
-        <textarea
-          id="image-lab-prompt"
-          v-model="prompt"
-          class="oa-field-input"
-          :placeholder="t('promptPlaceholder')"
-          rows="4"
-          :disabled="busy"
-          @keydown.ctrl.enter="generate"
-          @keydown.meta.enter="generate"
-          @dragover="onDragOver"
-          @drop="onDrop"
-        />
-      </div>
-
-      <div v-if="busy" class="ai-chat-pending" style="margin: 16px 0;">
-        <span class="ai-chat-spinner" />
-        <span>{{ t('generatingImage') }}</span>
-      </div>
-
-      <div v-if="history.length" class="oa-image-lab-results">
-        <OaFormSection :title="t('imageResult')" />
-        <div v-for="(img, idx) in history" :key="idx" class="oa-image-lab-card">
-          <img
-            :src="imageSource(img)"
-            class="oa-image-lab-img"
-            :alt="img.revised_prompt || prompt"
-            @click="zoomedImage = { url: imageSource(img), alt: img.revised_prompt || prompt }"
-          />
-          <p v-if="img.revised_prompt" class="oa-field-hint" style="margin-top: 8px;">
-            {{ img.revised_prompt }}
-          </p>
-          <div class="oa-image-lab-actions">
-            <a
-              :href="imageSource(img)"
-              :download="`image-${Date.now()}-${idx}.png`"
-              target="_blank"
-              rel="noopener"
-              class="oa-btn primary"
-              style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
+        <div class="oa-field">
+          <label class="oa-field-label">
+            <span>{{ t('referenceImage') }}</span>
+            <span v-if="references.length" class="oa-reference-count">{{ references.length }}/{{ MAX_REFERENCE_IMAGES }}</span>
+          </label>
+          <div class="oa-reference-zone" :class="{ dragging: draggingRef }">
+            <div
+              v-if="!references.length"
+              class="oa-reference-dropzone oa-reference-pick"
+              :class="{ dragging: draggingRef, disabled: busy || preparing }"
+              role="button"
+              tabindex="0"
+              :aria-label="t('referenceImageAdd')"
+              @click="picker?.click()"
+              @keydown.enter.prevent="picker?.click()"
+              @keydown.space.prevent="picker?.click()"
             >
-              <IconDownload :size="14" />
-              <span>{{ t('downloadImage') }}</span>
-            </a>
+              <div class="oa-reference-dropzone-icon">
+                <IconImage :size="20" />
+              </div>
+              <div class="oa-reference-dropzone-text">
+                <strong>{{ draggingRef ? t('dropHint') : t('referenceImageDrop') }}</strong>
+                <span>{{ t('referenceImageDropHint') }}</span>
+              </div>
+            </div>
+
+            <div v-else class="oa-reference-list">
+              <div v-for="(item, idx) in references" :key="item.id" class="oa-reference">
+                <img class="oa-reference-img" :src="item.preview" alt="" :draggable="false">
+                <OaIconButton class="oa-reference-remove" :label="t('removeImage')" @click.stop="dropReference(idx)">
+                  <IconClose :size="12" />
+                </OaIconButton>
+              </div>
+              <button
+                v-if="references.length < MAX_REFERENCE_IMAGES"
+                type="button"
+                class="oa-reference-add-tile oa-reference-pick"
+                :class="{ dragging: draggingRef }"
+                :disabled="busy || preparing"
+                :title="t('referenceImageAdd')"
+                @click="picker?.click()"
+              >
+                <IconPlus :size="18" />
+                <span>{{ t('referenceImageAdd') }}</span>
+              </button>
+              <div v-if="draggingRef" class="oa-reference-drop-overlay">
+                <IconImage :size="18" />
+                <span>{{ t('dropHint') }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="preparing" class="oa-reference-preparing">
+            <span class="ai-chat-spinner" />
+            <span>{{ t('referenceImageProcessing') }}</span>
+          </div>
+
+          <p class="oa-field-hint">{{ t('referenceImageHint') }}</p>
+          <input
+            ref="picker"
+            class="ai-chat-file"
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            @change="takeReference"
+          >
+        </div>
+
+        <div class="oa-field">
+          <label class="oa-field-label" for="image-lab-prompt">{{ t('imagePrompt') }}</label>
+          <textarea
+            id="image-lab-prompt"
+            v-model="prompt"
+            class="oa-field-input"
+            :placeholder="t('promptPlaceholder')"
+            rows="4"
+            :disabled="busy"
+            @keydown.ctrl.enter="generate"
+            @keydown.meta.enter="generate"
+          />
+        </div>
+
+        <div v-if="busy" class="ai-chat-pending" style="margin: 16px 0;">
+          <span class="ai-chat-spinner" />
+          <span>{{ t('generatingImage') }}</span>
+        </div>
+
+        <div v-if="history.length" class="oa-image-lab-results">
+          <OaFormSection :title="t('imageResult')" />
+          <div v-for="(img, idx) in history" :key="idx" class="oa-image-lab-card">
+            <img
+              :src="imageSource(img)"
+              class="oa-image-lab-img"
+              :alt="img.revised_prompt || prompt"
+              @click="zoomedImage = { url: imageSource(img), alt: img.revised_prompt || prompt }"
+            />
+            <p v-if="img.revised_prompt" class="oa-field-hint" style="margin-top: 8px;">
+              {{ img.revised_prompt }}
+            </p>
+            <div class="oa-image-lab-actions">
+              <a
+                :href="imageSource(img)"
+                :download="`image-${Date.now()}-${idx}.png`"
+                target="_blank"
+                rel="noopener"
+                class="oa-btn primary"
+                style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
+              >
+                <IconDownload :size="14" />
+                <span>{{ t('downloadImage') }}</span>
+              </a>
+            </div>
           </div>
         </div>
       </div>
