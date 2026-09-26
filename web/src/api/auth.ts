@@ -87,6 +87,8 @@ export interface SiteInfo {
   registration_enabled: boolean;
   health_show_users?: boolean;
   allow_archive_conversations?: boolean;
+  /** Whether readers may open the leaderboard. Absent on an older server. */
+  leaderboard_show_users?: boolean;
   // True while the instance has no accounts at all: the first person to
   // register becomes the administrator.
   setup_required: boolean;
