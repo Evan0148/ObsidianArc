@@ -35,58 +35,75 @@ const GUTTER = 8;
  * the left edge than the menu is wide, so the menu ran off the screen with
  * half its text. Narrowed to the screen first, then slid back inside it.
  *
- * `translate` rather than `transform`: the open and close animation owns
- * transform, and the two compose instead of one overwriting the other. The
- * menu is still scaled for that animation while this measures, so each edge
- * is measured as if the scale had already been undone.
+ * Positions using `left`/`right` offsets from the trigger group rather than
+ * CSS `translate`: `translate` is a Level 2 property that fails silently in
+ * older WebKit/Chromium shells and mobile webviews. Using standard `left`/`right`
+ * positioning is portable to every engine and leaves `transform` entirely free
+ * for the scale transition. `transform-origin` is pointed at the trigger button
+ * so the menu scales up smoothly directly from the trigger.
  */
 function fit(): void {
   const el = panel.value;
   if (!el) return;
-  const room = document.documentElement.clientWidth - 2 * GUTTER;
+
+  const viewWidth = window.innerWidth || document.documentElement.clientWidth || 360;
+  const room = viewWidth - 2 * GUTTER;
   const menuWidth = el.offsetWidth;
-  if (menuWidth > room) {
-    el.style.maxWidth = `${room}px`;
-    el.style.minWidth = '0';
+
+  if (room < 320 || menuWidth > room) {
+    const targetMax = `${room}px`;
+    if (el.style.maxWidth !== targetMax) {
+      el.style.maxWidth = targetMax;
+      el.style.minWidth = '0';
+    }
   } else if (el.style.maxWidth) {
     el.style.maxWidth = '';
     el.style.minWidth = '';
   }
 
-  // Calculate unscaled menu screen bounds from the trigger group anchor.
-  // This avoids touching el.style.transform which causes synchronous style
-  // invalidation and layout thrashing (frame rate jank) right before animation starts.
+  const effectiveWidth = Math.min(el.offsetWidth, room);
   const g = group.value;
-  const viewWidth = document.documentElement.clientWidth;
+  const isLeft = el.classList.contains('oa-menu-left');
+  const isUp = el.classList.contains('oa-menu-up') || el.classList.contains('open-up');
+  const originY = isUp ? 'bottom' : 'top';
   let shift = 0;
 
   if (g) {
     const gRect = g.getBoundingClientRect();
-    const isLeft = el.classList.contains('oa-menu-left');
-    const unscaledLeft = isLeft ? gRect.left : gRect.right - menuWidth;
-    const unscaledRight = isLeft ? gRect.left + menuWidth : gRect.right;
+    const unscaledLeft = isLeft ? gRect.left : gRect.right - effectiveWidth;
+    const unscaledRight = isLeft ? gRect.left + effectiveWidth : gRect.right;
 
     if (unscaledLeft < GUTTER) {
       shift = GUTTER - unscaledLeft;
     } else if (unscaledRight > viewWidth - GUTTER) {
       shift = (viewWidth - GUTTER) - unscaledRight;
     }
-  } else {
-    const prevTransform = el.style.transform;
-    el.style.transform = 'none';
-    const rect = el.getBoundingClientRect();
-    el.style.transform = prevTransform;
 
-    if (rect.left < GUTTER) {
-      shift = GUTTER - rect.left;
-    } else if (rect.right > viewWidth - GUTTER) {
-      shift = (viewWidth - GUTTER) - rect.right;
+    if (shift) {
+      if (isLeft) {
+        el.style.left = `${Math.round(shift)}px`;
+        el.style.right = 'auto';
+      } else {
+        el.style.right = `${Math.round(-shift)}px`;
+        el.style.left = 'auto';
+      }
+      const triggerCenterX = gRect.left + gRect.width / 2;
+      const menuLeft = unscaledLeft + shift;
+      const originX = Math.round(triggerCenterX - menuLeft);
+      el.style.transformOrigin = `${originX}px ${originY}`;
+    } else {
+      el.style.left = '';
+      el.style.right = '';
+      el.style.transformOrigin = '';
     }
+  } else {
+    el.style.left = '';
+    el.style.right = '';
+    el.style.transformOrigin = '';
   }
 
-  const newTranslate = shift ? `${Math.round(shift)}px 0` : '';
-  if (el.style.translate !== newTranslate) {
-    el.style.translate = newTranslate;
+  if (el.style.translate) {
+    el.style.translate = '';
   }
 }
 
@@ -97,6 +114,11 @@ const open = ref(false);
 const mounted = ref(false);
 const shown = ref(false);
 let hideTimer = 0;
+let resizeObserver: ResizeObserver | null = null;
+
+function onResize(): void {
+  if (open.value) fit();
+}
 
 async function show(): Promise<void> {
   for (const other of others) if (other !== close) other();
@@ -109,12 +131,23 @@ async function show(): Promise<void> {
   await nextTick();
   if (!open.value) return;
 
+  const el = panel.value;
+  if (typeof ResizeObserver !== 'undefined' && el) {
+    resizeObserver?.disconnect();
+    resizeObserver = new ResizeObserver(() => {
+      if (open.value) fit();
+    });
+    resizeObserver.observe(el);
+  }
+  window.addEventListener('resize', onResize, { passive: true });
+
   // Resolve bounds/shift before transition starts to avoid layout thrashing during animation
   fit();
 
   // Commit transform in next animation frame for silky smooth hardware-composited 60/120fps
   requestAnimationFrame(() => {
     if (!open.value) return;
+    fit();
     shown.value = true;
   });
 }
@@ -124,6 +157,9 @@ function close(): void {
   open.value = false;
   shown.value = false;
   others.delete(close);
+  window.removeEventListener('resize', onResize);
+  resizeObserver?.disconnect();
+  resizeObserver = null;
   window.clearTimeout(hideTimer);
   hideTimer = window.setTimeout(() => {
     if (!open.value) mounted.value = false;
@@ -139,11 +175,14 @@ onClickOutside(group, () => close());
 onKeyStroke('Escape', () => close());
 
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', onResize);
+  resizeObserver?.disconnect();
+  resizeObserver = null;
   window.clearTimeout(hideTimer);
   others.delete(close);
 });
 
-defineExpose({ isOpen: () => open.value, close, open: show });
+defineExpose({ isOpen: () => open.value, close, open: show, fit });
 </script>
 
 <script lang="ts">

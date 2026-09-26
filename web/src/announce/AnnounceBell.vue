@@ -8,7 +8,7 @@
 // "have we already shown it since the tab was opened" is a property of the
 // tab and would be pointless to store.
 
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import type { Notification } from '@/api/notifications';
 import {
   fetchAnnouncements,
@@ -64,6 +64,8 @@ async function refresh(options: { popup?: boolean } = {}): Promise<void> {
   try {
     const next = await fetchAnnouncements();
     feed.value = next;
+    await nextTick();
+    menu.value?.fit();
     if (options.popup === false) return;
     // Only on the first read of a given announcement per visit. An "every
     // visit" one that has just been dismissed must not come straight back

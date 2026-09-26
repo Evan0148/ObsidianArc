@@ -884,7 +884,7 @@ body.oa-resizing * {
 }
 
 .oa-menu-announce {
-  min-width: 280px;
+  min-width: min(280px, calc(100vw - 16px));
 }
 
 /* The bell's second section, for the notification feed appended below the

@@ -248,4 +248,268 @@ describe('Non-linear animation & expand/collapse transitions', () => {
     await nextTick();
     expect(panel?.classList.contains('open')).toBe(true);
   });
+
+  it('OaMenu shifts right and anchors transform-origin to trigger when overflowing on mobile', async () => {
+    // Simulate iPhone viewport: width = 390
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(390);
+
+    const menuRef = { value: null as any };
+    app = createApp({
+      render() {
+        return h(OaMenu as any, { ref: (r: any) => { menuRef.value = r; } }, {
+          trigger: ({ toggle }: any) => h('button', { class: 'bell-btn', onClick: toggle }, 'Bell'),
+          default: () => h('div', { class: 'menu-content' }, 'Announcements'),
+        });
+      },
+    });
+    app.mount(host);
+    await nextTick();
+
+    const trigger = host.querySelector<HTMLButtonElement>('.bell-btn')!;
+    const group = host.querySelector<HTMLElement>('.oa-chip-group')!;
+
+    // Mock trigger group position in the middle of a phone header (e.g. Bell icon at x=176..212)
+    vi.spyOn(group, 'getBoundingClientRect').mockReturnValue({
+      left: 176,
+      right: 212,
+      top: 10,
+      bottom: 46,
+      width: 36,
+      height: 36,
+      x: 176,
+      y: 10,
+      toJSON: () => {},
+    });
+
+    trigger.click();
+    await nextTick();
+
+    const panel = host.querySelector<HTMLElement>('.oa-menu')!;
+    expect(panel).not.toBeNull();
+
+    // Mock menu width of 280px (.oa-menu-announce min-width)
+    Object.defineProperty(panel, 'offsetWidth', { configurable: true, value: 280 });
+
+    menuRef.value.fit();
+
+    // Default right: 0 would put left at 212 - 280 = -68px (overflows screen by 76px).
+    // Shifting right by 76px brings left to GUTTER (8px).
+    // With right: -76px, the menu is fully on-screen.
+    expect(panel.style.right).toBe('-76px');
+    expect(panel.style.left).toBe('auto');
+
+    // Trigger center is at 176 + 18 = 194. Menu left is at 8.
+    // Origin is at 194 - 8 = 186px from menu left.
+    expect(panel.style.transformOrigin).toBe('186px top');
+  });
+
+  it('OaMenu clamps maxWidth to available room on ultra-narrow viewports', async () => {
+    // Ultra narrow viewport (e.g. 260px)
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(260);
+
+    const menuRef = { value: null as any };
+    app = createApp({
+      render() {
+        return h(OaMenu as any, { ref: (r: any) => { menuRef.value = r; } }, {
+          trigger: ({ toggle }: any) => h('button', { class: 'trigger-btn', onClick: toggle }, 'Trigger'),
+          default: () => h('div', { class: 'menu-content' }, 'Content'),
+        });
+      },
+    });
+    app.mount(host);
+    await nextTick();
+
+    const trigger = host.querySelector<HTMLButtonElement>('.trigger-btn')!;
+    trigger.click();
+    await nextTick();
+
+    const panel = host.querySelector<HTMLElement>('.oa-menu')!;
+    Object.defineProperty(panel, 'offsetWidth', { configurable: true, value: 280 });
+
+    menuRef.value.fit();
+
+    // room = 260 - 2 * 8 = 244px
+    expect(panel.style.maxWidth).toBe('244px');
+    expect(panel.style.minWidth).toBe('0px');
+  });
+
+  it('OaMenu does not flap maxWidth/minWidth on subsequent fit() calls when clamped to room', async () => {
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(260);
+
+    const menuRef = { value: null as any };
+    app = createApp({
+      render() {
+        return h(OaMenu as any, { ref: (r: any) => { menuRef.value = r; } }, {
+          trigger: ({ toggle }: any) => h('button', { class: 'trigger-btn', onClick: toggle }, 'Trigger'),
+          default: () => h('div', { class: 'menu-content' }, 'Content'),
+        });
+      },
+    });
+    app.mount(host);
+    await nextTick();
+
+    const trigger = host.querySelector<HTMLButtonElement>('.trigger-btn')!;
+    trigger.click();
+    await nextTick();
+
+    const panel = host.querySelector<HTMLElement>('.oa-menu')!;
+    Object.defineProperty(panel, 'offsetWidth', { configurable: true, value: 280 });
+
+    menuRef.value.fit();
+    expect(panel.style.maxWidth).toBe('244px');
+    expect(panel.style.minWidth).toBe('0px');
+
+    // Simulate browser updating offsetWidth after style.maxWidth is set
+    Object.defineProperty(panel, 'offsetWidth', { configurable: true, value: 244 });
+
+    // Calling fit() again (e.g. from ResizeObserver) must not wipe out maxWidth
+    menuRef.value.fit();
+    expect(panel.style.maxWidth).toBe('244px');
+    expect(panel.style.minWidth).toBe('0px');
+  });
+
+  it('OaMenu anchors transformOrigin to bottom when menu has oa-menu-up', async () => {
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(390);
+
+    const menuRef = { value: null as any };
+    app = createApp({
+      render() {
+        return h(OaMenu as any, { ref: (r: any) => { menuRef.value = r; }, menuClass: 'oa-menu-up' }, {
+          trigger: ({ toggle }: any) => h('button', { class: 'up-btn', onClick: toggle }, 'Up'),
+          default: () => h('div', { class: 'menu-content' }, 'Content'),
+        });
+      },
+    });
+    app.mount(host);
+    await nextTick();
+
+    const trigger = host.querySelector<HTMLButtonElement>('.up-btn')!;
+    const group = host.querySelector<HTMLElement>('.oa-chip-group')!;
+
+    vi.spyOn(group, 'getBoundingClientRect').mockReturnValue({
+      left: 176,
+      right: 212,
+      top: 500,
+      bottom: 536,
+      width: 36,
+      height: 36,
+      x: 176,
+      y: 500,
+      toJSON: () => {},
+    });
+
+    trigger.click();
+    await nextTick();
+
+    const panel = host.querySelector<HTMLElement>('.oa-menu')!;
+    Object.defineProperty(panel, 'offsetWidth', { configurable: true, value: 280 });
+
+    menuRef.value.fit();
+
+    expect(panel.style.right).toBe('-76px');
+    // Vertical origin must be bottom for upward opening menu
+    expect(panel.style.transformOrigin).toBe('186px bottom');
+  });
+
+  it('OaMenu with oa-menu-left shifts left when overflowing right screen boundary', async () => {
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(390);
+
+    const menuRef = { value: null as any };
+    app = createApp({
+      render() {
+        return h(OaMenu as any, { ref: (r: any) => { menuRef.value = r; }, menuClass: 'oa-menu-left' }, {
+          trigger: ({ toggle }: any) => h('button', { class: 'left-btn', onClick: toggle }, 'Left'),
+          default: () => h('div', { class: 'menu-content' }, 'Content'),
+        });
+      },
+    });
+    app.mount(host);
+    await nextTick();
+
+    const trigger = host.querySelector<HTMLButtonElement>('.left-btn')!;
+    const group = host.querySelector<HTMLElement>('.oa-chip-group')!;
+
+    // Trigger near the right edge: left = 200, right = 236
+    vi.spyOn(group, 'getBoundingClientRect').mockReturnValue({
+      left: 200,
+      right: 236,
+      top: 10,
+      bottom: 46,
+      width: 36,
+      height: 36,
+      x: 200,
+      y: 10,
+      toJSON: () => {},
+    });
+
+    trigger.click();
+    await nextTick();
+
+    const panel = host.querySelector<HTMLElement>('.oa-menu')!;
+    Object.defineProperty(panel, 'offsetWidth', { configurable: true, value: 280 });
+
+    menuRef.value.fit();
+
+    // unscaledLeft = 200, unscaledRight = 200 + 280 = 480.
+    // viewWidth - GUTTER = 390 - 8 = 382.
+    // shift = 382 - 480 = -98px.
+    expect(panel.style.left).toBe('-98px');
+    expect(panel.style.right).toBe('auto');
+
+    // triggerCenter = 200 + 18 = 218. menuLeft = 200 + (-98) = 102.
+    // originX = 218 - 102 = 116px.
+    expect(panel.style.transformOrigin).toBe('116px top');
+  });
+
+  it('OaMenu resets offsets and releases maxWidth when room expands to >= 320px', async () => {
+    // Start narrow
+    const innerWidthSpy = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(260);
+
+    const menuRef = { value: null as any };
+    app = createApp({
+      render() {
+        return h(OaMenu as any, { ref: (r: any) => { menuRef.value = r; } }, {
+          trigger: ({ toggle }: any) => h('button', { class: 'trigger-btn', onClick: toggle }, 'Trigger'),
+          default: () => h('div', { class: 'menu-content' }, 'Content'),
+        });
+      },
+    });
+    app.mount(host);
+    await nextTick();
+
+    const trigger = host.querySelector<HTMLButtonElement>('.trigger-btn')!;
+    const group = host.querySelector<HTMLElement>('.oa-chip-group')!;
+
+    vi.spyOn(group, 'getBoundingClientRect').mockReturnValue({
+      left: 500,
+      right: 536,
+      top: 10,
+      bottom: 46,
+      width: 36,
+      height: 36,
+      x: 500,
+      y: 10,
+      toJSON: () => {},
+    });
+
+    trigger.click();
+    await nextTick();
+
+    const panel = host.querySelector<HTMLElement>('.oa-menu')!;
+    Object.defineProperty(panel, 'offsetWidth', { configurable: true, value: 244 });
+
+    menuRef.value.fit();
+    expect(panel.style.maxWidth).toBe('244px');
+
+    // Window expands to wide screen
+    innerWidthSpy.mockReturnValue(1000);
+    Object.defineProperty(panel, 'offsetWidth', { configurable: true, value: 280 });
+
+    menuRef.value.fit();
+    expect(panel.style.maxWidth).toBe('');
+    expect(panel.style.minWidth).toBe('');
+    expect(panel.style.left).toBe('');
+    expect(panel.style.right).toBe('');
+    expect(panel.style.transformOrigin).toBe('');
+  });
 });
