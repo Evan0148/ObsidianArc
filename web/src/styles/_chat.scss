@@ -2115,9 +2115,11 @@
 }
 
 .ai-model-chip-name {
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
 }
 
 /* The effort rides on the chip, so the state is legible without opening
@@ -2235,9 +2237,9 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-weight: 600;
+  display: flex;
+  align-items: center;
 }
 
 /* The back arrow is the same chevron the chip uses, turned to point away. */
@@ -2333,6 +2335,7 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
+  width: 100%;
 }
 
 .ai-pop-model-tag {
@@ -2352,9 +2355,11 @@
 
 .ai-pop-model-title {
   font-size: 12.5px;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
 }
 
 .ai-pop-model-sub {

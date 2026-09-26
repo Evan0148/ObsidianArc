@@ -13,6 +13,7 @@
 
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useEventListener } from '@vueuse/core';
+import OaMarquee from '@/components/OaMarquee.vue';
 import { t } from '@/composables/useI18n';
 import { IconCheck, IconChevron, IconChevronRight, IconSpark } from '@/icons';
 import {
@@ -217,7 +218,7 @@ onBeforeUnmount(() => window.clearTimeout(hideTimer));
            became one. -->
       <IconSpark v-if="thinking" class="ai-model-chip-spark" :size="13" />
       <span class="ai-model-chip-name">
-        {{ currentModel ? currentModel.display_name : t('modelNone') }}
+        <OaMarquee :text="currentModel ? currentModel.display_name : t('modelNone')" />
       </span>
       <span v-if="thinking" class="ai-model-chip-effort">{{ chipEffort }}</span>
       <IconChevron :size="12" />
@@ -232,7 +233,7 @@ onBeforeUnmount(() => window.clearTimeout(hideTimer));
           <button type="button" class="ai-pop-model" @click="morph('models')">
             <IconSpark class="ai-pop-model-mark" :size="13" />
             <span class="ai-pop-model-name">
-              {{ currentModel ? currentModel.display_name : t('modelNone') }}
+              <OaMarquee :text="currentModel ? currentModel.display_name : t('modelNone')" />
             </span>
             <IconChevronRight :size="13" />
           </button>
@@ -305,7 +306,9 @@ onBeforeUnmount(() => window.clearTimeout(hideTimer));
             >
               <span class="ai-pop-model-text">
                 <span class="ai-pop-model-title-row">
-                  <span class="ai-pop-model-title">{{ model.display_name }}</span>
+                  <span class="ai-pop-model-title">
+                    <OaMarquee :text="model.display_name" />
+                  </span>
                   <!-- Only when it draws in a conversation. A model that
                        generates in the image lab and talks here is a chat
                        model here, and a tag saying otherwise would promise
