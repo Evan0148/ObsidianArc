@@ -264,9 +264,14 @@ const (
 	LandingIntroPage = "intro"
 	// The chat itself, read-only unless a trial is enabled.
 	LandingChat = "chat"
+	// The product's own front page — written here rather than by the
+	// operator, so an instance gets one without anybody composing HTML.
+	// It says what the software is; `intro` is still how an operator says
+	// what *their* instance is.
+	LandingSite = "site"
 )
 
-var LandingModes = []string{LandingLogin, LandingIntroPage, LandingChat}
+var LandingModes = []string{LandingLogin, LandingIntroPage, LandingChat, LandingSite}
 
 func ValidLandingMode(value string) bool {
 	for _, candidate := range LandingModes {
