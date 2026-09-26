@@ -8,6 +8,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -1035,13 +1036,17 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		if description == "" {
 			description = settingsService.Get(settings.SiteDescription)
 		}
+		iconURL := settingsService.Get(settings.PWAIconURL)
+		if iconURL == "" && settingsService.SiteLogoUpdatedAt() > 0 {
+			iconURL = fmt.Sprintf("/api/site/logo?v=%d", settingsService.SiteLogoUpdatedAt())
+		}
 		return web.Manifest{
 			Name:            name,
 			ShortName:       shortName,
 			Description:     description,
 			ThemeColor:      settingsService.Get(settings.PWAThemeColor),
 			BackgroundColor: settingsService.Get(settings.PWABackgroundColor),
-			IconURL:         settingsService.Get(settings.PWAIconURL),
+			IconURL:         iconURL,
 		}
 	}))
 
@@ -1050,6 +1055,12 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 		DevServer:  devServerURL(cfg),
 		Title:      settingsService.BrowserTitle,
 		ThemeColor: func() string { return settingsService.Get(settings.PWAThemeColor) },
+		FaviconURL: func() string {
+			if settingsService.SiteLogoUpdatedAt() > 0 {
+				return fmt.Sprintf("/api/site/logo?v=%d", settingsService.SiteLogoUpdatedAt())
+			}
+			return ""
+		},
 	})
 	if err != nil {
 		return nil, err

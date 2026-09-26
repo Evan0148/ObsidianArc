@@ -59,7 +59,8 @@ onMounted(() => {
   >
     <div class="oa-auth-card">
       <div class="oa-auth-brand">
-        <span class="oa-auth-mark"><IconSpark :size="15" /></span>
+        <img v-if="siteInfo.logo_url" :src="siteInfo.logo_url" class="oa-auth-brand-logo" alt="">
+        <span v-else class="oa-auth-mark"><IconSpark :size="15" /></span>
         <span>{{ siteInfo.name }}</span>
       </div>
       <h1 class="oa-auth-title">{{ title }}</h1>

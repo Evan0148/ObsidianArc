@@ -57,6 +57,7 @@ const FALLBACK_SITE: SiteInfo = {
   landing: { mode: 'login', intro: '', trial: false, trial_turns: 0 },
   about: { title: '', body: '' },
   home_notice: { text: '', dismissible: true },
+  logo_url: '',
 };
 
 /**

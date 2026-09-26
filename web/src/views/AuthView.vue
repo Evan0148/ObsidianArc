@@ -10,7 +10,7 @@
 // sign-in arrives at that stage by redirect, with the session store already
 // saying a code is wanted, so the card opens on it.
 
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { safeNext, serverOwned } from '@/lib/next';
 import { completeSignIn, login, logout, register, type LoginResult } from '@/api/auth';
@@ -206,6 +206,9 @@ const OAUTH_REFUSALS: Record<string, StringKey> = {
 };
 
 onMounted(() => {
+  if (typeof document !== 'undefined') {
+    document.body.classList.add('has-auth-page');
+  }
   const code = route.query['oauth_error'];
   if (typeof code === 'string' && code) {
     error.value = t(OAUTH_REFUSALS[code] ?? 'oauthFailed');
@@ -221,6 +224,12 @@ onMounted(() => {
     inviteOpen.value = true;
   }
   void nextTick(() => (stage.value === 'code' ? codeField.value : identifierField.value)?.focus());
+});
+
+onUnmounted(() => {
+  if (typeof document !== 'undefined') {
+    document.body.classList.remove('has-auth-page');
+  }
 });
 
 async function onSubmit(): Promise<void> {
@@ -309,7 +318,8 @@ async function onSubmit(): Promise<void> {
   >
     <form class="oa-auth-card" novalidate @submit.prevent="stage === 'code' ? onCode() : onSubmit()">
       <div class="oa-auth-brand">
-        <span class="oa-auth-mark"><IconSpark :size="15" /></span>
+        <img v-if="site.logo_url" :src="site.logo_url" class="oa-auth-brand-logo" alt="">
+        <span v-else class="oa-auth-mark"><IconSpark :size="15" /></span>
         <span>{{ site.name }}</span>
       </div>
 

@@ -8,6 +8,7 @@ import (
 const shellFixture = `<!doctype html>
 <html><head>
 <title>Obsidian Arc</title>
+<link rel="icon" href="data:image/svg+xml,default">
 <meta name="theme-color" content="#18181b">
 <script>
   const stored = read();
@@ -54,6 +55,20 @@ func TestReplaceThemeColorLeavesMalformedShellAlone(t *testing.T) {
 	}
 }
 
+func TestReplaceFavicon(t *testing.T) {
+	out := string(replaceFavicon([]byte(shellFixture), "/api/site/logo?v=123"))
+	if !strings.Contains(out, `<link rel="icon" href="/api/site/logo?v=123">`) {
+		t.Errorf("favicon was not replaced: %s", out)
+	}
+}
+
+func TestReplaceFaviconLeavesMalformedShellAlone(t *testing.T) {
+	broken := []byte("<html><head></head></html>")
+	if got := replaceFavicon(broken, "/logo.png"); string(got) != string(broken) {
+		t.Errorf("a shell with no favicon link should be returned unchanged, got: %s", got)
+	}
+}
+
 // The whole reason serveIndex is allowed to rewrite the title and the
 // theme-color per request: the Content-Security-Policy hash in csp.go is
 // computed once, from the same embedded index.html, by hashing the exact text
@@ -69,7 +84,7 @@ func TestBrandingSubstitutionsDoNotAffectInlineScriptHash(t *testing.T) {
 		t.Fatalf("fixture has %d inline scripts, want 1", len(before))
 	}
 
-	branded := replaceThemeColor(replaceTitle([]byte(shellFixture), "A Very Different Title"), "#112233")
+	branded := replaceFavicon(replaceThemeColor(replaceTitle([]byte(shellFixture), "A Very Different Title"), "#112233"), "/api/site/logo?v=1")
 	after := inlineScriptHashes(string(branded))
 
 	if len(after) != 1 || after[0] != before[0] {

@@ -43,6 +43,8 @@ type Options struct {
 	Title func() string
 	// ThemeColor, likewise, fills the shell's theme-color meta tag.
 	ThemeColor func() string
+	// FaviconURL fills the shell's <link rel="icon"> tag with the custom logo.
+	FaviconURL func() string
 }
 
 // Handler serves static assets and falls back to index.html for any path the
@@ -126,6 +128,11 @@ func serveIndex(w http.ResponseWriter, r *http.Request, index []byte, opts Optio
 	if opts.ThemeColor != nil {
 		if color := opts.ThemeColor(); color != "" {
 			body = replaceThemeColor(body, color)
+		}
+	}
+	if opts.FaviconURL != nil {
+		if fav := opts.FaviconURL(); fav != "" {
+			body = replaceFavicon(body, fav)
 		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

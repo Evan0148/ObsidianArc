@@ -69,7 +69,8 @@ defineExpose({ body });
     <div class="oa-header">
       <span class="oa-header-leading"><slot name="leading" /></span>
       <a class="oa-brand" href="/" :title="t('backToChat')" @click="onBrand">
-        {{ siteInfo.name }}
+        <img v-if="siteInfo.logo_url" :src="siteInfo.logo_url" class="oa-brand-logo" alt="">
+        <span>{{ siteInfo.name }}</span>
       </a>
       <span class="oa-header-spacer" />
       <span class="oa-header-slot"><slot name="header" /></span>

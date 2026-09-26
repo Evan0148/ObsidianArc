@@ -242,6 +242,8 @@ func TestAdminRoutesRequireAnAdministrator(t *testing.T) {
 		{http.MethodPost, "/api/admin/attachments/purge", nil},
 		{http.MethodPut, "/api/admin/login-background/landscape_light", map[string]any{"mime": "image/jpeg", "data": "AA=="}},
 		{http.MethodDelete, "/api/admin/login-background/landscape_light", nil},
+		{http.MethodPut, "/api/admin/logo", map[string]any{"mime": "image/png", "data": "AA=="}},
+		{http.MethodDelete, "/api/admin/logo", nil},
 	}
 
 	// The list above is the whole route table, not a sample of it. A new

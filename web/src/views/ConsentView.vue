@@ -118,7 +118,8 @@ function decide(approve: boolean): void {
            sign-in card, because "am I where I think I am" is the question
            underneath every other one on this screen. -->
       <div class="oa-auth-brand">
-        <span class="oa-auth-mark"><IconSpark :size="15" /></span>
+        <img v-if="site.logo_url" :src="site.logo_url" class="oa-auth-brand-logo" alt="">
+        <span v-else class="oa-auth-mark"><IconSpark :size="15" /></span>
         <span>{{ site.name }}</span>
       </div>
 

@@ -1087,6 +1087,18 @@ const en = {
   loginBgDeleted: 'Background image cleared.',
   loginBgFallbackNote: 'If dark mode or portrait variant is not set, it falls back to the configured background image.',
 
+  // --- site logo
+  siteLogo: 'Site logo',
+  siteLogoHint: 'Custom logo used for the brand mark next to the name, browser favicon, and PWA icon. Supports PNG, JPEG, SVG, WebP, AVIF, or ICO (max 4MB).',
+  siteLogoUpload: 'Upload logo',
+  siteLogoReplace: 'Replace logo',
+  siteLogoClear: 'Clear logo',
+  siteLogoClearConfirm: 'Remove custom logo?',
+  siteLogoDropHint: 'Click or drag logo here to upload',
+  siteLogoFormats: 'PNG, JPEG, SVG, WebP, AVIF, or ICO (max 4MB)',
+  siteLogoUploaded: 'Site logo updated.',
+  siteLogoDeleted: 'Site logo cleared.',
+
   // --- landing page
   secLanding: 'Front door',
   landingMode: 'Visitors with no account see',

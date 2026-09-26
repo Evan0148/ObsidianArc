@@ -42,6 +42,15 @@
   box-shadow: 0 0 0 3px var(--ai-focus-shadow);
 }
 
+.oa-brand-logo {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  margin-right: 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
 .oa-header-spacer {
   flex: 1;
 }

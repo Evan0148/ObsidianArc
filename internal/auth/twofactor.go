@@ -1024,7 +1024,7 @@ func (s *Service) Remember(w http.ResponseWriter, account user.User) {
 // leave.
 func enrolmentAllowed(r *http.Request) bool {
 	switch r.Method + " " + r.URL.Path {
-	case "GET /api/site", "GET /api/health", "GET /api/auth/me", "POST /api/auth/logout",
+	case "GET /api/site", "GET /api/site/logo", "GET /api/health", "GET /api/auth/me", "POST /api/auth/logout",
 		"GET /api/profile/two-factor", "POST /api/profile/two-factor/setup",
 		"POST /api/profile/two-factor/enable",
 		"GET /api/preferences", "PATCH /api/preferences", "GET /api/preferences/wallpaper":

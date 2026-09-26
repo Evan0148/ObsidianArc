@@ -199,6 +199,8 @@ func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /api/admin/attachments/purge", protected("settings", h.purgeAttachments))
 	mux.Handle("PUT /api/admin/login-background/{variant}", protected("settings", h.putLoginBackground))
 	mux.Handle("DELETE /api/admin/login-background/{variant}", protected("settings", h.deleteLoginBackground))
+	mux.Handle("PUT /api/admin/logo", protected("settings", h.putLogo))
+	mux.Handle("DELETE /api/admin/logo", protected("settings", h.deleteLogo))
 
 	mux.Handle("GET /api/admin/providers", protected("providers", h.listProviders))
 	mux.Handle("POST /api/admin/providers", protected("providers", h.createProvider))

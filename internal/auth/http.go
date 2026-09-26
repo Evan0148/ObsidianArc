@@ -65,6 +65,7 @@ func NewHandlers(
 // "what needs a session" is answerable by reading this function.
 func (h *Handlers) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/site", httpx.Wrap(h.site))
+	mux.HandleFunc("GET /api/site/logo", httpx.Wrap(h.getSiteLogo))
 	mux.HandleFunc("GET /api/site/login-background/{variant}", httpx.Wrap(h.getLoginBackground))
 	mux.HandleFunc("POST /api/auth/register", httpx.Wrap(h.register))
 	mux.HandleFunc("POST /api/auth/login", httpx.Wrap(h.login))
@@ -275,7 +276,41 @@ func (h *Handlers) site(w http.ResponseWriter, r *http.Request) error {
 			"dismissible": h.settings.Bool(settings.HomeNoticeDismissible),
 		},
 		"login_background": h.loginBackgrounds(),
+		"logo_url":         h.siteLogoURL(),
 	})
+}
+
+func (h *Handlers) siteLogoURL() string {
+	if h.settings == nil || h.settings.SiteLogoUpdatedAt() == 0 {
+		return ""
+	}
+	return fmt.Sprintf("/api/site/logo?v=%d", h.settings.SiteLogoUpdatedAt())
+}
+
+func (h *Handlers) getSiteLogo(w http.ResponseWriter, r *http.Request) error {
+	if h.settings == nil {
+		return httpx.NotFound("Not available.")
+	}
+
+	mime, data, at, err := h.settings.GetSiteLogo(r.Context())
+	if err != nil {
+		if errors.Is(err, settings.ErrNoLogo) {
+			return httpx.NotFound("No site logo set.")
+		}
+		return httpx.Internal(err)
+	}
+
+	header := w.Header()
+	header.Set("Content-Type", mime)
+	header.Set("Content-Length", strconv.Itoa(len(data)))
+	header.Set("Cache-Control", "public, max-age=31536000, immutable")
+	header.Set("Content-Disposition", "inline; filename=\"logo\"")
+	header.Set("ETag", fmt.Sprintf(`"%x-%x"`, at, len(data)))
+	header.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+	header.Set("X-Content-Type-Options", "nosniff")
+
+	http.ServeContent(w, r, "", time.UnixMilli(at), bytes.NewReader(data))
+	return nil
 }
 
 func (h *Handlers) loginBackgrounds() map[string]string {

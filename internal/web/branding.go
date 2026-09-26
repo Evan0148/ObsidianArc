@@ -59,6 +59,25 @@ func replaceThemeColor(index []byte, color string) []byte {
 	return spliced(index, valueStart, valueEnd, []byte(color))
 }
 
+// replaceFavicon swaps the shell's <link rel="icon"> href value for the
+// configured custom logo or favicon URL.
+func replaceFavicon(index []byte, faviconURL string) []byte {
+	const marker = `<link rel="icon" href="`
+
+	start := bytes.Index(index, []byte(marker))
+	if start < 0 {
+		return index
+	}
+	valueStart := start + len(marker)
+	valueEnd := bytes.IndexByte(index[valueStart:], '"')
+	if valueEnd < 0 {
+		return index
+	}
+	valueEnd += valueStart
+
+	return spliced(index, valueStart, valueEnd, []byte(html.EscapeString(faviconURL)))
+}
+
 // spliced returns index with the bytes between start and end replaced by
 // replacement. Shared by both substitutions above so there is one place that
 // gets the byte arithmetic right rather than two.

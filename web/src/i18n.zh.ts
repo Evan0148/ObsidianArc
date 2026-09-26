@@ -1064,6 +1064,18 @@ export const zh: Record<StringKey, string> = {
   loginBgDeleted: '背景图已清除。',
   loginBgFallbackNote: '若未上传深色或竖屏变种，将自动回退到已配置的背景图。',
 
+  // --- site logo
+  siteLogo: '站点 Logo',
+  siteLogoHint: '自定义站点 Logo，将用作站点名称旁边的标志、浏览器标签页图标及 PWA 应用图标。支持 PNG、JPEG、SVG、WebP、AVIF 或 ICO（最大 4MB）。',
+  siteLogoUpload: '上传 Logo',
+  siteLogoReplace: '更换 Logo',
+  siteLogoClear: '清除 Logo',
+  siteLogoClearConfirm: '确认移除自定义 Logo？',
+  siteLogoDropHint: '点击或拖拽 Logo 到此处上传',
+  siteLogoFormats: 'PNG、JPEG、SVG、WebP、AVIF 或 ICO（最大 4MB）',
+  siteLogoUploaded: '站点 Logo 已更新。',
+  siteLogoDeleted: '站点 Logo 已清除。',
+
   // --- landing page
   secLanding: '未登录首页',
   landingMode: '未登录访客看到',

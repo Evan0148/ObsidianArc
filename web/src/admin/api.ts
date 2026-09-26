@@ -777,6 +777,7 @@ export const adminApi = {
       mail_configured?: boolean;
       attachments?: HeldAttachments;
       login_background?: Record<string, string>;
+      logo_url?: string;
     }>(
       '/api/admin/settings',
     ),
@@ -786,6 +787,10 @@ export const adminApi = {
     api.put<{ url: string; updated_at: number }>(`/api/admin/login-background/${variant}`, { mime, data }),
   deleteLoginBackground: (variant: string) =>
     api.delete<void>(`/api/admin/login-background/${variant}`),
+  uploadSiteLogo: (mime: string, data: string) =>
+    api.put<{ url: string; updated_at: number }>('/api/admin/logo', { mime, data }),
+  deleteSiteLogo: () =>
+    api.delete<void>('/api/admin/logo'),
   // More forgiving than saveSettings: identifiers that mean nothing on this
   // instance are cleared and named back rather than failing the whole file.
   // The daily purge, on demand. Same operation, without waiting for 03:00.

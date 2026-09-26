@@ -584,10 +584,11 @@ type Service struct {
 	mu               sync.RWMutex
 	values           map[string]string
 	loginBackgrounds map[string]int64
+	siteLogoAt       int64
 }
 
 func New(db *database.DB) *Service {
-	return &Service{db: db, values: map[string]string{}, loginBackgrounds: map[string]int64{}}
+	return &Service{db: db, values: map[string]string{}, loginBackgrounds: map[string]int64{}, siteLogoAt: 0}
 }
 
 // Load reads the table into memory. Called once at boot; after that the cache
@@ -624,9 +625,17 @@ func (s *Service) Load(ctx context.Context) error {
 		}
 	}
 
+	var logoAt int64
+	logoErr := s.db.QueryRow(ctx, `SELECT updated_at FROM site_logo WHERE id = 'default'`).Scan(&logoAt)
+	if logoErr != nil && !database.IsNotFound(logoErr) {
+		// table may not exist in minimal tests or is unmigrated; ignore not found
+		logoAt = 0
+	}
+
 	s.mu.Lock()
 	s.values = values
 	s.loginBackgrounds = bgs
+	s.siteLogoAt = logoAt
 	s.mu.Unlock()
 	return nil
 }

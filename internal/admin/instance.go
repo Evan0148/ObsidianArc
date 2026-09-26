@@ -144,6 +144,11 @@ func (h *Handlers) listSettings(w http.ResponseWriter, r *http.Request) error {
 				bgs[v] = fmt.Sprintf("/api/site/login-background/%s?v=%d", v, at)
 			}
 			out["login_background"] = bgs
+			if h.settings.SiteLogoUpdatedAt() > 0 {
+				out["logo_url"] = fmt.Sprintf("/api/site/logo?v=%d", h.settings.SiteLogoUpdatedAt())
+			} else {
+				out["logo_url"] = ""
+			}
 		}
 	}
 	return httpx.WriteJSON(w, http.StatusOK, out)
@@ -597,6 +602,54 @@ func (h *Handlers) deleteLoginBackground(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.settings.DeleteLoginBackground(r.Context(), variant); err != nil {
+		return httpx.Internal(err)
+	}
+	return httpx.NoContent(w)
+}
+
+func (h *Handlers) putLogo(w http.ResponseWriter, r *http.Request) error {
+	var body struct {
+		Mime string `json:"mime"`
+		Data string `json:"data"`
+	}
+	if err := httpx.DecodeJSON(w, r, &body, settings.MaxLogoBytes*4/3+16*1024); err != nil {
+		return err
+	}
+
+	raw := body.Data
+	if comma := strings.Index(raw, ","); comma != -1 && strings.Contains(raw[:comma], "base64") {
+		raw = raw[comma+1:]
+	}
+	raw = strings.TrimSpace(raw)
+	raw = strings.ReplaceAll(raw, " ", "")
+	raw = strings.ReplaceAll(raw, "\n", "")
+	raw = strings.ReplaceAll(raw, "\r", "")
+	raw = strings.ReplaceAll(raw, "\t", "")
+	data, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		return httpx.BadRequest("Image data is not valid base64.")
+	}
+
+	at, err := h.settings.SetSiteLogo(r.Context(), body.Mime, data)
+	if err != nil {
+		switch {
+		case errors.Is(err, settings.ErrLogoUnsupported):
+			return httpx.BadRequest("Logo must be PNG, JPEG, SVG, WebP, AVIF, GIF or ICO.")
+		case errors.Is(err, settings.ErrLogoTooLarge):
+			return httpx.BadRequest("That image is too large.")
+		default:
+			return httpx.Internal(err)
+		}
+	}
+
+	return httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"url":        fmt.Sprintf("/api/site/logo?v=%d", at),
+		"updated_at": at,
+	})
+}
+
+func (h *Handlers) deleteLogo(w http.ResponseWriter, r *http.Request) error {
+	if err := h.settings.DeleteSiteLogo(r.Context()); err != nil {
 		return httpx.Internal(err)
 	}
 	return httpx.NoContent(w)

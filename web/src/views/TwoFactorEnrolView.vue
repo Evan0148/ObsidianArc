@@ -50,7 +50,8 @@ function signOut(): void {
   >
     <div class="oa-auth-card oa-2fa-card">
       <div class="oa-auth-brand">
-        <span class="oa-auth-mark"><IconSpark :size="15" /></span>
+        <img v-if="site.logo_url" :src="site.logo_url" class="oa-auth-brand-logo" alt="">
+        <span v-else class="oa-auth-mark"><IconSpark :size="15" /></span>
         <span>{{ site.name }}</span>
       </div>
       <h1 class="oa-auth-title">{{ t('twoFactorRequiredTitle') }}</h1>

@@ -138,6 +138,8 @@ export interface SiteInfo {
   user_invites?: boolean;
   /** Background image URLs per variant (landscape_light, landscape_dark, portrait_light, portrait_dark). */
   login_background?: Record<string, string>;
+  /** Custom site logo URL, or empty if the built-in mark/favicon is used. */
+  logo_url?: string;
 }
 
 // The presentation state the server keeps for an account. Deliberately loose:

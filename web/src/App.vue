@@ -17,6 +17,20 @@ watchEffect(() => {
   document.title = siteInfo.value.browser_title || siteInfo.value.name;
 });
 
+const DEFAULT_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23a1a1aa' d='M12 2 3 7v10l9 5 9-5V7z'/%3E%3C/svg%3E";
+
+watchEffect(() => {
+  if (typeof document === 'undefined') return;
+  const icon = siteInfo.value.logo_url || DEFAULT_FAVICON;
+  let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    document.head.appendChild(link);
+  }
+  link.href = icon;
+});
+
 let router: ReturnType<typeof useRouter> | undefined;
 let route: ReturnType<typeof useRoute> | undefined;
 try {

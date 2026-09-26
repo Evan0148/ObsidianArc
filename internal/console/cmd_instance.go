@@ -681,4 +681,81 @@ func init() {
 			return nil
 		},
 	})
+
+	registerCommand(Command{
+		Name:    "logo set",
+		Group:   "instance",
+		Summary: Text{EN: "Set the site logo", ZH: "设置站点 Logo"},
+		Usage:   "logo set <file-or-base64>",
+		Help: Text{
+			EN: "Upload or set a custom site logo (used for header brand, browser favicon, and PWA icon).",
+			ZH: "设置或上传自定义站点 Logo（用作顶部导航栏图标、浏览器 Favicon 及 PWA 应用图标）。",
+		},
+		Args: []Arg{
+			{Name: "image", Hint: Text{EN: "image file path or base64 data", ZH: "图片文件路径或 base64 数据"}, Required: true},
+		},
+		Examples:   []string{"logo set /path/to/logo.png", "logo set /path/to/logo.svg"},
+		Permission: "settings",
+		Endpoints:  []string{"PUT /api/admin/logo"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			if rt.NArg() < 1 {
+				if rt.Session.Lang == "zh" {
+					return rt.Errorf("需要图片路径或数据")
+				}
+				return rt.Errorf("image is required")
+			}
+			rawImage := rt.Arg(0)
+
+			var mime, data string
+			if fileBytes, err := os.ReadFile(rawImage); err == nil {
+				mime = http.DetectContentType(fileBytes)
+				data = base64.StdEncoding.EncodeToString(fileBytes)
+			} else {
+				mime = "image/png"
+				data = rawImage
+			}
+
+			respData, _, err := rt.Call(http.MethodPut, "/api/admin/logo", map[string]string{
+				"mime": mime,
+				"data": data,
+			})
+			if err != nil {
+				return err
+			}
+			urlStr := asStr(asMap(respData)["url"])
+			if rt.Session.Lang == "zh" {
+				rt.Printf("站点 Logo 已更新：%s\n", urlStr)
+			} else {
+				rt.Printf("Site logo updated: %s\n", urlStr)
+			}
+			return nil
+		},
+	})
+
+	registerCommand(Command{
+		Name:    "logo clear",
+		Group:   "instance",
+		Summary: Text{EN: "Clear the site logo", ZH: "清除站点 Logo"},
+		Usage:   "logo clear",
+		Help: Text{
+			EN: "Remove the custom site logo and revert to the built-in mark.",
+			ZH: "移除自定义站点 Logo 并恢复内置图标。",
+		},
+		Permission:  "settings",
+		Destructive: true,
+		Examples:    []string{"logo clear", "logo clear --yes"},
+		Endpoints:   []string{"DELETE /api/admin/logo"},
+		Run: func(_ context.Context, rt *Runtime) error {
+			_, _, err := rt.Call(http.MethodDelete, "/api/admin/logo", nil)
+			if err != nil {
+				return err
+			}
+			if rt.Session.Lang == "zh" {
+				rt.Printf("已清除站点 Logo，恢复为默认图标。\n")
+			} else {
+				rt.Printf("Cleared site logo, restored default icon.\n")
+			}
+			return nil
+		},
+	})
 }

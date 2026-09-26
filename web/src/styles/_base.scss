@@ -138,9 +138,19 @@ textarea:placeholder-shown::selection {
   padding: 16px;
 }
 
+#app:has(.oa-auth),
+body.has-auth-page #app {
+  padding: 0;
+}
+
 @media (max-width: 640px) {
   #app {
     padding: 8px;
+  }
+
+  #app:has(.oa-auth),
+  body.has-auth-page #app {
+    padding: 0;
   }
 }
 

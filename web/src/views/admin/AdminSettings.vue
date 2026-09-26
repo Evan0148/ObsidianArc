@@ -32,6 +32,7 @@ view.setTitle(t('adminSettingsTitle'), t('controlSettingsSubtitle'));
 const SEARCH_GROUPS = {
   secIdentity: [
     'secIdentity', 'siteName', 'siteNameHint', 'signInNote', 'signInNoteHint', 'browserTitle', 'browserTitleHint',
+    'siteLogo', 'siteLogoHint',
   ],
   secLoginBg: [
     'secLoginBg', 'loginBgHint', 'loginBgLandscape', 'loginBgPortrait', 'loginBgLandscapeLight',
@@ -86,6 +87,9 @@ const purging = ref(false);
 const loginBackgrounds = ref<Record<string, string>>({});
 const uploadingVariant = ref('');
 const dragOverVariant = ref('');
+const siteLogoUrl = ref('');
+const uploadingLogo = ref(false);
+const dragOverLogo = ref(false);
 
 const BG_VARIANTS = [
   { id: 'landscape_light', label: 'loginBgLandscapeLight', modeIcon: IconSun },
@@ -376,6 +380,115 @@ async function clearLoginBg(variant: string): Promise<void> {
   }
 }
 
+function detectLogoType(file: File): string {
+  const type = file.type.toLowerCase();
+  if (type === 'image/jpeg' || type === 'image/jpg') return 'image/jpeg';
+  if (type === 'image/png') return 'image/png';
+  if (type === 'image/webp') return 'image/webp';
+  if (type === 'image/avif') return 'image/avif';
+  if (type === 'image/gif') return 'image/gif';
+  if (type === 'image/x-icon' || type === 'image/vnd.microsoft.icon') return 'image/x-icon';
+  if (type === 'image/svg+xml') return 'image/svg+xml';
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
+  if (name.endsWith('.png')) return 'image/png';
+  if (name.endsWith('.webp')) return 'image/webp';
+  if (name.endsWith('.avif')) return 'image/avif';
+  if (name.endsWith('.gif')) return 'image/gif';
+  if (name.endsWith('.ico')) return 'image/x-icon';
+  if (name.endsWith('.svg')) return 'image/svg+xml';
+  return '';
+}
+
+async function uploadLogoFile(file: File): Promise<void> {
+  const mime = detectLogoType(file);
+  if (!mime) {
+    flashOK.value = false;
+    flash.value = t('siteLogoFormats');
+    return;
+  }
+  if (file.size > 4 * 1024 * 1024) {
+    flashOK.value = false;
+    flash.value = t('siteLogoFormats');
+    return;
+  }
+
+  uploadingLogo.value = true;
+  flash.value = '';
+  try {
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const res = String(reader.result ?? '');
+        const comma = res.indexOf(',');
+        resolve(comma !== -1 ? res.slice(comma + 1) : res);
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+
+    const res = await adminApi.uploadSiteLogo(mime, base64);
+    siteLogoUrl.value = res.url;
+    if (site.value) {
+      site.value = {
+        ...site.value,
+        logo_url: res.url,
+      };
+    }
+    flashOK.value = true;
+    flash.value = t('siteLogoUploaded');
+  } catch (failure) {
+    flashOK.value = false;
+    flash.value = failure instanceof ApiError ? failure.message : String(failure);
+  } finally {
+    uploadingLogo.value = false;
+    dragOverLogo.value = false;
+  }
+}
+
+function chooseAndUploadLogo(): void {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon,image/avif,image/gif,.jpg,.jpeg,.png,.webp,.svg,.ico,.avif,.gif';
+  input.onchange = () => {
+    const file = input.files?.[0];
+    if (file) {
+      void uploadLogoFile(file);
+    }
+  };
+  input.click();
+}
+
+async function onDropLogo(event: DragEvent): Promise<void> {
+  dragOverLogo.value = false;
+  const file = event.dataTransfer?.files?.[0];
+  if (file) {
+    await uploadLogoFile(file);
+  }
+}
+
+async function clearSiteLogo(): Promise<void> {
+  uploadingLogo.value = true;
+  flash.value = '';
+  try {
+    await adminApi.deleteSiteLogo();
+    siteLogoUrl.value = '';
+    if (site.value) {
+      site.value = {
+        ...site.value,
+        logo_url: '',
+      };
+    }
+    flashOK.value = true;
+    flash.value = t('siteLogoDeleted');
+  } catch (failure) {
+    flashOK.value = false;
+    flash.value = failure instanceof ApiError ? failure.message : String(failure);
+  } finally {
+    uploadingLogo.value = false;
+  }
+}
+
 async function load(): Promise<void> {
   error.value = '';
   try {
@@ -386,6 +499,7 @@ async function load(): Promise<void> {
     models.value = modelsResult.models;
     held.value = data.attachments ?? { held: 0, bytes: 0 };
     loginBackgrounds.value = data.login_background ?? {};
+    siteLogoUrl.value = data.logo_url ?? site.value?.logo_url ?? '';
 
     form.value = {
       siteName: values['site.name'] ?? '',
@@ -457,6 +571,50 @@ onMounted(load);
         <OaTextField v-model="form.siteName" :label="t('siteName')" :hint="t('siteNameHint')" :max-length="60" />
         <OaTextField v-model="form.browserTitle" :label="t('browserTitle')" :hint="t('browserTitleHint')" :max-length="60" />
         <OaTextArea v-model="form.description" :label="t('signInNote')" :rows="2" :hint="t('signInNoteHint')" />
+        <div class="oa-field">
+          <label class="oa-field-label">{{ t('siteLogo') }}</label>
+          <p class="oa-field-hint">{{ t('siteLogoHint') }}</p>
+          <div class="oa-logo-setting-row">
+            <div
+              class="oa-logo-preview"
+              :class="{ empty: !siteLogoUrl, dragover: dragOverLogo }"
+              tabindex="0"
+              role="button"
+              :aria-label="t('siteLogo')"
+              @dragover.prevent="dragOverLogo = true"
+              @dragleave="dragOverLogo = false"
+              @drop.prevent="onDropLogo($event)"
+              @click="chooseAndUploadLogo"
+              @keydown.enter.prevent="chooseAndUploadLogo"
+              @keydown.space.prevent="chooseAndUploadLogo"
+            >
+              <img v-if="siteLogoUrl" :src="siteLogoUrl" class="oa-logo-preview-img" alt="" />
+              <div v-else class="oa-logo-empty">
+                <IconSpark :size="20" class="oa-logo-empty-icon" />
+              </div>
+            </div>
+            <div class="oa-logo-actions">
+              <button
+                type="button"
+                class="oa-btn small"
+                :disabled="uploadingLogo"
+                @click="chooseAndUploadLogo"
+              >
+                {{ siteLogoUrl ? t('siteLogoReplace') : t('siteLogoUpload') }}
+              </button>
+              <OaConfirmButton
+                v-if="siteLogoUrl"
+                class="oa-btn small oa-btn-danger"
+                :label="t('siteLogoClear')"
+                :armed-label="t('siteLogoClearConfirm')"
+                :armed-title="t('siteLogoClear')"
+                :resting-title="t('siteLogoClear')"
+                :disabled="uploadingLogo"
+                @confirm="clearSiteLogo"
+              />
+            </div>
+          </div>
+        </div>
       </AdminControlCard>
       <AdminControlCard id="secLoginBg" v-show="visible('secLoginBg')" :title="t('secLoginBg')" :icon="IconImage" :hint="t('loginBgHint')">
         <p class="oa-field-hint">{{ t('loginBgFallbackNote') }}</p>

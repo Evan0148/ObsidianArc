@@ -5801,6 +5801,66 @@
   margin-top: auto;
 }
 
+/* --- site logo setting ---------------------------------------------------- */
+
+.oa-logo-setting-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.oa-logo-preview {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background: var(--ai-field-bg);
+  border: 1px dashed var(--ai-outline-variant);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: pointer;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+
+  &:hover,
+  &.dragover {
+    border-color: var(--ai-primary);
+    background: var(--ai-state-hover);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--ai-focus-shadow);
+  }
+}
+
+.oa-logo-preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 6px;
+  box-sizing: border-box;
+}
+
+.oa-logo-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--ai-text-secondary);
+}
+
+.oa-logo-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* --- Page slide transition overrides for workspace pages ---------------- */
 /* Constrain horizontal sliding transitions between Chat (/), Terminal (/terminal),
    and Admin (/admin) to the inner workspace container (.oa-chat-root),

@@ -109,7 +109,8 @@ async function submit(): Promise<void> {
   >
     <form class="oa-auth-card" novalidate @submit.prevent="submit">
       <div class="oa-auth-brand">
-        <span class="oa-auth-mark"><IconSpark :size="15" /></span>
+        <img v-if="site.logo_url" :src="site.logo_url" class="oa-auth-brand-logo" alt="">
+        <span v-else class="oa-auth-mark"><IconSpark :size="15" /></span>
         <span>{{ site.name }}</span>
       </div>
 

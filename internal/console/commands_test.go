@@ -97,6 +97,7 @@ var consoleExempt = map[string]string{
 	"GET /api/auth/oauth/signup":                    "part of signing up through an identity provider",
 	"POST /api/auth/oauth/signup":                   "part of signing up through an identity provider",
 	"GET /api/site":                                 "public instance details for the sign-in page, not a setting",
+	"GET /api/site/logo":                            "the site logo image itself",
 	"GET /api/site/login-background/{variant}":      "the login background image itself",
 	"POST /api/chat":                                "holding a conversation — the chat is where that happens",
 	"POST /api/images/generate":                     "drawing a picture — the terminal cannot show one",
