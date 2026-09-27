@@ -35,7 +35,7 @@ import { compactNumber, relativeTime, tokenFigure } from '@/lib/format';
 import { maskUser, maskProvider, maskBilling } from '@/admin/safeMode';
 import AdminFailure from './AdminFailure.vue';
 import CreditsField from './CreditsField.vue';
-import StatusBadge from './StatusBadge.vue';
+import OaStatusBadge from '@/components/OaStatusBadge.vue';
 import { useAdminView } from './adminView';
 import UsageBoard from './usage/UsageBoard.vue';
 import UsageDelta from './usage/UsageDelta.vue';
@@ -953,7 +953,7 @@ let savedCustomUntil = 0;
           <OaCellStack :title="row.model_name || '—'" :sub="maskProvider(row.provider_name)" />
         </template>
         <template #cell-status="{ row }">
-          <StatusBadge :status="row.status" :error-code="row.error_code" />
+          <OaStatusBadge :status="row.status" :error-code="row.error_code" />
         </template>
       </OaTable>
     </section>

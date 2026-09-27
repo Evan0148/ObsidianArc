@@ -13,7 +13,7 @@ import { canAdmin } from '@/stores/session';
 import { maskUser, maskProvider, maskBilling } from '@/admin/safeMode';
 import AdminDashboardTrend from './AdminDashboardTrend.vue';
 import AdminFailure from './AdminFailure.vue';
-import StatusBadge from './StatusBadge.vue';
+import OaStatusBadge from '@/components/OaStatusBadge.vue';
 import { useAdminView } from './adminView';
 import UsageDelta from './usage/UsageDelta.vue';
 import UsageHeatmap from './usage/UsageHeatmap.vue';
@@ -340,7 +340,7 @@ let dashboardHeatMetric: 'requests' | 'total_tokens' = 'requests';
               <td><OaCellStack :title="row.model_name || '—'" :sub="maskProvider(row.provider_name)" /></td>
               <td class="oa-dashboard-numeric" :title="row.estimated ? t('tokensEstimatedHint') : maskBilling(row.total_tokens.toLocaleString(locale))">{{ maskBilling(tokenFigure(row.total_tokens, row.estimated)) }}</td>
               <td class="oa-dashboard-numeric">{{ formatDuration(row.duration_ms) }}</td>
-              <td><StatusBadge :status="row.status" :error-code="row.error_code" /></td>
+              <td><OaStatusBadge :status="row.status" :error-code="row.error_code" /></td>
               <td class="oa-dashboard-when" :title="new Date(row.started_at).toLocaleString(locale)">{{ relativeTime(row.started_at) }}</td>
             </tr>
           </tbody>

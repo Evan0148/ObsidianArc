@@ -630,6 +630,24 @@
   gap: 4px;
 }
 
+/* Badge rows inside table cells: table cells default to nowrap, so badge rows
+   must permit wrapping to avoid clipping longer labels (e.g. "Rate limited")
+   on narrow viewports, while keeping individual badges slightly more compact. */
+.oa-table td:has(.oa-badge-row),
+.oa-table td .oa-badge-row {
+  white-space: normal;
+}
+
+.oa-table td .oa-badge-row {
+  gap: 3px 4px;
+}
+
+.oa-table .oa-badge {
+  padding: 0 6px;
+  height: 19px;
+  font-size: 10px;
+}
+
 /* A cell's name with a badge that qualifies it — "default" beside a group. */
 .oa-cell-with-badge {
   display: flex;

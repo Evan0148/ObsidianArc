@@ -4,7 +4,7 @@ import { api } from '@/api/client';
 import { providePanelHost } from '@/composables/usePanelHost';
 import { formatErrorCode, errorCodeDescription } from '@/lib/errors';
 import UsagePanel from '@/views/UsagePanel.vue';
-import StatusBadge from '@/views/admin/StatusBadge.vue';
+import OaStatusBadge from '@/components/OaStatusBadge.vue';
 
 vi.mock('@/api/client', () => ({
   ApiError: class ApiError extends Error {},
@@ -36,7 +36,7 @@ describe('error reason formatting', () => {
   });
 });
 
-describe('StatusBadge component', () => {
+describe('OaStatusBadge component', () => {
   let app: App | null = null;
   let host: HTMLDivElement | null = null;
 
@@ -52,21 +52,27 @@ describe('StatusBadge component', () => {
     host = null;
   });
 
-  it('renders ok and stopped statuses', () => {
-    app = createApp({ render: () => h(StatusBadge, { status: 'ok' }) });
+  it('renders ok and stopped statuses, respecting hideOk', () => {
+    app = createApp({ render: () => h(OaStatusBadge, { status: 'ok' }) });
     app.mount(host!);
     expect(host!.textContent).toContain('ok');
 
     app.unmount();
     host!.textContent = '';
-    app = createApp({ render: () => h(StatusBadge, { status: 'aborted' }) });
+    app = createApp({ render: () => h(OaStatusBadge, { status: 'ok', hideOk: true }) });
+    app.mount(host!);
+    expect(host!.textContent?.trim()).toBe('');
+
+    app.unmount();
+    host!.textContent = '';
+    app = createApp({ render: () => h(OaStatusBadge, { status: 'aborted' }) });
     app.mount(host!);
     expect(host!.textContent).toContain('stopped');
   });
 
   it('renders failure badge and formatted error code badge with description tooltip', () => {
     app = createApp({
-      render: () => h(StatusBadge, { status: 'error', errorCode: 'provider_rate_limited' }),
+      render: () => h(OaStatusBadge, { status: 'error', errorCode: 'provider_rate_limited' }),
     });
     app.mount(host!);
 

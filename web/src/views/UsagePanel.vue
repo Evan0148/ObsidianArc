@@ -13,7 +13,7 @@ import { useIntervalFn } from '@vueuse/core';
 import { ApiError, api } from '@/api/client';
 import { fetchUsage, type UsageSummary } from '@/api/usage';
 import OaFormSection from '@/components/OaFormSection.vue';
-import StatusBadge from '@/views/admin/StatusBadge.vue';
+import OaStatusBadge from '@/components/OaStatusBadge.vue';
 import OaIconButton from '@/components/OaIconButton.vue';
 import OaMarkdown from '@/components/OaMarkdown.vue';
 import OaOverlay from '@/components/OaOverlay.vue';
@@ -150,9 +150,10 @@ const columns = computed<Array<Column<Turn>>>(() => [
   {
     key: 'state',
     header: t('colState'),
-    // Rendered via the cell-state slot below as a StatusBadge rather than
+    // Rendered via the cell-state slot below as an OaStatusBadge rather than
     // plain text, so the dual-badge row and tooltip show for errors.
-    width: '80px',
+    // Sized to fit two compact badges ("failed" + reason) without clipping.
+    width: '150px',
   },
 ]);
 
@@ -526,7 +527,7 @@ useIntervalFn(refreshQuietly, REFRESH_MS);
       :muted="(row) => row.status !== 'ok'"
     >
       <template #cell-state="{ row }">
-        <StatusBadge v-if="row.status !== 'ok'" :status="row.status" :error-code="row.error_code" />
+        <OaStatusBadge :status="row.status" :error-code="row.error_code" hide-ok />
       </template>
     </OaTable>
   </OaPanel>
