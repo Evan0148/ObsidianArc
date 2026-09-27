@@ -245,3 +245,38 @@ func TestClipKeepsTheTailOfAnAnswerValid(t *testing.T) {
 		t.Errorf("clip(%q, 20) = %q, want %q", "  allow  ", got, "allow")
 	}
 }
+
+// An operator's custom prompt replaces the default instruction while still
+// enforcing the JSON response contract and the mode's bias.
+func TestCustomPromptEnforcesFormatAndBias(t *testing.T) {
+	custom := "Only allow registrations from domain @example.com."
+	prompt := instructionFor(Normal, custom)
+
+	if !strings.Contains(prompt, custom) {
+		t.Errorf("prompt does not contain the operator's custom rules:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, `{"decision"`) {
+		t.Errorf("prompt does not enforce the JSON response contract:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "NORMAL") {
+		t.Errorf("prompt lost the mode bias:\n%s", prompt)
+	}
+
+	// When a custom prompt already includes the decision format, it is not duplicated.
+	withSchema := "Custom rules.\nAnswer with JSON and nothing else:\n{\"decision\": \"allow|restrict|refuse\"}"
+	promptWithSchema := instructionFor(Strict, withSchema)
+	if strings.Count(promptWithSchema, `{"decision"`) != 1 {
+		t.Errorf("schema was duplicated when already provided:\n%s", promptWithSchema)
+	}
+}
+
+// Bot/machine patterns (e.g. userXXXXX, guestXXXXX) are called out in the instructions
+// so registration machine scripts are intercepted by the screening model.
+func TestBotRegistrationMachinePatternsAreMentioned(t *testing.T) {
+	prompt := instructionFor(Normal)
+	for _, term := range []string{"user12345", "placeholder"} {
+		if !strings.Contains(prompt, term) {
+			t.Errorf("normal prompt does not mention bot registration pattern %q:\n%s", term, prompt)
+		}
+	}
+}

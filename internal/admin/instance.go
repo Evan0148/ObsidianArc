@@ -201,6 +201,7 @@ var writableSettings = map[string]bool{
 	settings.SignupReviewMode:           true,
 	settings.SignupReviewRefusal:        true,
 	settings.SignupReviewRestrictHours:  true,
+	settings.SignupReviewPrompt:         true,
 	settings.TwoFactorPolicy:            true,
 	settings.TwoFactorIssuer:            true,
 	settings.TwoFactorRememberDays:      true,
@@ -273,6 +274,12 @@ func (h *Handlers) updateSettings(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 
+	twoFactorCode := body["two_factor_code"]
+	delete(body, "two_factor_code")
+	if twoFactorCode == "" {
+		twoFactorCode = r.Header.Get("X-Two-Factor-Code")
+	}
+
 	for key, value := range body {
 		if !hasPermission(auth.MustUser(r.Context()), settingPermission(key)) {
 			return permissionDenied()
@@ -301,6 +308,23 @@ func (h *Handlers) updateSettings(w http.ResponseWriter, r *http.Request) error 
 	}
 	if err := checkTwoFactorSettings(auth.MustUser(r.Context()), body); err != nil {
 		return err
+	}
+	if newPrompt, present := body[settings.SignupReviewPrompt]; present {
+		currentPrompt := h.settings.Get(settings.SignupReviewPrompt)
+		if strings.TrimSpace(newPrompt) != strings.TrimSpace(currentPrompt) {
+			actor := auth.MustUser(r.Context())
+			if !actor.TwoFactorEnabled() {
+				return httpx.ForbiddenCode("two_factor_required",
+					"Modifying the AI review prompt requires two-step verification enabled on your account.")
+			}
+			if strings.TrimSpace(twoFactorCode) == "" {
+				return httpx.BadRequestCode("two_factor_code_required",
+					"Enter a code from your authenticator app to modify the AI review prompt.")
+			}
+			if err := h.auth.VerifyTwoFactorCode(r.Context(), actor, strings.TrimSpace(twoFactorCode), h.clientIP(r)); err != nil {
+				return auth.TranslateTwoFactorError(w, err)
+			}
+		}
 	}
 	if req, present := body[settings.QQRequirement]; present && !settings.ValidQQRequirement(req) {
 		return httpx.BadRequest("Unknown QQ requirement %q.", req)
@@ -410,6 +434,12 @@ func (h *Handlers) importSettings(w http.ResponseWriter, r *http.Request) error 
 		return httpx.BadRequest("That file contains no settings.")
 	}
 
+	twoFactorCode := body["two_factor_code"]
+	delete(body, "two_factor_code")
+	if twoFactorCode == "" {
+		twoFactorCode = r.Header.Get("X-Two-Factor-Code")
+	}
+
 	applied := map[string]string{}
 	skipped := []string{}
 
@@ -451,6 +481,14 @@ func (h *Handlers) importSettings(w http.ResponseWriter, r *http.Request) error 
 				delete(applied, key)
 				skipped = append(skipped, key)
 			}
+		}
+	}
+	if value, present := applied[settings.SignupReviewPrompt]; present && strings.TrimSpace(value) != strings.TrimSpace(h.settings.Get(settings.SignupReviewPrompt)) {
+		actor := auth.MustUser(r.Context())
+		if !actor.TwoFactorEnabled() || strings.TrimSpace(twoFactorCode) == "" ||
+			h.auth.VerifyTwoFactorCode(r.Context(), actor, strings.TrimSpace(twoFactorCode), h.clientIP(r)) != nil {
+			delete(applied, settings.SignupReviewPrompt)
+			skipped = append(skipped, settings.SignupReviewPrompt)
 		}
 	}
 	if raw, present := applied[settings.AttachmentPurgeDaily]; present && strings.TrimSpace(raw) != "" {
