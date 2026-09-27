@@ -633,6 +633,9 @@ func New(ctx context.Context, deps Deps) (*Server, error) {
 			}
 			return upstream, record.Spec(), nil
 		},
+		Prompt: func() string {
+			return settingsService.Get(settings.SignupReviewPrompt)
+		},
 	}
 	authService.ReviewSignup = func(ctx context.Context, in auth.RegisterInput, fromAddress int) (auth.SignupReview, error) {
 		if !settingsService.Bool(settings.SignupReview) ||

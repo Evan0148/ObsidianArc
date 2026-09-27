@@ -126,16 +126,16 @@ const (
 	// the server at all.
 	FeedbackShowStaffName = "feedback.show_staff_name"
 
-	// Asking a model whether a sign-up looks like a person. The prompt is not
-	// a setting: one that could be edited could be turned into "refuse
-	// everybody from this domain", and this runs before an account exists,
-	// where a mistake has no appeal. What an operator chooses is whether it
-	// runs, which model answers, and what a refusal says.
+	// Asking a model whether a sign-up looks like a person. What an operator
+	// chooses is whether it runs, which model answers, the mode, what a refusal
+	// says, and optionally custom review instructions. Modifying the custom
+	// prompt requires two-factor authentication to protect the door.
 	SignupReview              = "security.signup_review"
 	SignupReviewModel         = "security.signup_review_model"
 	SignupReviewMode          = "security.signup_review_mode"
 	SignupReviewRefusal       = "security.signup_review_refusal"
 	SignupReviewRestrictHours = "security.signup_review_restrict_hours"
+	SignupReviewPrompt        = "security.signup_review_prompt"
 	// Two-step sign-in. Who must switch it on, the name an authenticator
 	// app files the entry under, and how many days a browser may skip the
 	// code once somebody has typed one on it.
@@ -533,6 +533,7 @@ var Defaults = map[string]string{
 	// who wants to offer a way to appeal writes it here.
 	SignupReviewRefusal:       "",
 	SignupReviewRestrictHours: "24",
+	SignupReviewPrompt:        "",
 	// Optional: a policy that suddenly asked every account for a code would
 	// lock out everybody who has never heard of an authenticator app, the
 	// moment the software was upgraded.
