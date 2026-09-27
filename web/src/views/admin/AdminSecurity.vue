@@ -307,7 +307,7 @@ function removeApplication(app: SignInApplication): void {
 }
 
 // Trying the reviewer on an account that is not being created.
-const trial = ref({ username: '', email: '', qq: '', answer: '', running: false });
+const trial = ref({ username: '', email: '', qq: '', fromThisAddress: 0, answer: '', running: false });
 
 const enabledModels = computed(() => models.value.filter((entry) => entry.enabled));
 
@@ -411,22 +411,41 @@ function runTrial(): void {
     username: trial.value.username.trim(),
     email: trial.value.email.trim(),
     qq: trial.value.qq.trim(),
+    from_this_address: trial.value.fromThisAddress || 0,
     // What a browser would have sent, so the answer is about the details and
     // not about a missing user agent.
     user_agent: navigator.userAgent,
   })
     .then((result) => {
+      const reason = formatEventReason(result.reason);
       trial.value.answer = !result.ran
-        ? t('reviewTryBroken', { decision: reviewDecision(result.decision), reason: result.reason })
+        ? t('reviewTryBroken', { decision: reviewDecision(result.decision), reason })
         : t(result.decision === 'allow'
           ? 'reviewTryAllowed'
           : result.decision === 'restrict' ? 'reviewTryRestricted' : 'reviewTryRefused',
-        { reason: result.reason });
+        { reason });
     })
     .catch((failure: unknown) => {
       trial.value.answer = failure instanceof ApiError ? failure.message : String(failure);
     })
     .finally(() => { trial.value.running = false; });
+}
+
+function formatEventReason(reason: string): string {
+  if (!reason) return '';
+  if (reason === 'administrator lifted the API restriction') return t('securityReasonAPILifted');
+  if (reason === 'administrator restricted API access permanently') return t('securityReasonAPIPermanent');
+  const hoursMatch = reason.match(/^administrator restricted API access for (\d+) hours$/);
+  if (hoursMatch) {
+    return t('securityReasonAPIHours', { count: Number(hoursMatch[1]) });
+  }
+  if (reason === 'chat submission speed crossed the configured threshold') return t('securityReasonChatSpeed');
+  if (reason === 'no reviewer configured') return t('securityReasonNoReviewer');
+  if (reason === 'model unavailable') return t('securityReasonModelUnavailable');
+  if (reason === 'review failed') return t('securityReasonReviewFailed');
+  if (reason === 'unparseable answer') return t('securityReasonUnparseableAnswer');
+  if (reason === 'review returned no decision') return t('securityReasonNoDecision');
+  return reason;
 }
 
 function reviewDecision(decision: string): string {
@@ -1143,6 +1162,13 @@ onMounted(load);
           <OaTextField v-model="trial.username" :label="t('username')" placeholder="123123123123" />
           <OaTextField v-model="trial.email" :label="t('email')" placeholder="123123123123@qq.com" />
           <OaTextField v-model="trial.qq" :label="t('qq')" placeholder="123123123123" />
+          <OaNumberField
+            v-model="trial.fromThisAddress"
+            :label="t('reviewTrialFromAddress')"
+            :hint="t('reviewTrialFromAddressHint')"
+            :min="0"
+            :max="1000"
+          />
           <button type="button" class="oa-btn" :disabled="trial.running" @click="runTrial">
             {{ t('reviewTryRun') }}
           </button>
@@ -1342,7 +1368,7 @@ onMounted(load);
                 {{ t('securityLogActor', { name: `@${maskUser(event.actor_username)}` }) }}
               </span>
             </div>
-            <p v-if="event.reason" class="oa-event-reason">{{ event.reason }}</p>
+            <p v-if="event.reason" class="oa-event-reason">{{ formatEventReason(event.reason) }}</p>
           </li>
         </ol>
         <OaPagination v-bind="eventPage" :total="eventsTotal" :busy="eventsLoading" @change="changeEvents" />

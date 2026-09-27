@@ -100,13 +100,22 @@ registration.
 "Reads as generated" means a string with no word in it: no pronounceable
 syllables, consonant runs, letters and digits mixed with nothing recognisable
 between them. rtmdnx, 34yrg87tg, x7k2mq, hdkslwoq are generated. A name in any
-language, a word, a nickname, a handle somebody would type twice, and any of
-those with a number after it are not.
+language, Chinese characters (汉字), Chinese Pinyin (汉语拼音, such as
+"xiaohei", "zhangwei", "woshishui", or common abbreviations like "wyy", "nb",
+"yyds"), a word, a nickname, a handle somebody would type twice, handles with
+common Chinese numeric suffixes (such as birth years like "00", "98", or
+popular numbers like "666", "888", "520", "1314"), and any of those with a
+number after it are not.
 
 Unmistakable, in every mode:
-- the same string reused across fields: a username that is also the email
-  local part and also the QQ number. A person picks a handle and has an
-  account number; a script fills one value into every box.
+- the same random or meaningless string reused across multiple unrelated fields.
+  (Note: In China, a QQ mail address is formatted as <QQ>@qq.com, so the email
+  local part naturally matches the QQ number. If a user also uses that same QQ
+  number as their username, this is a common user convenience habit and is NOT
+  an automated script on its own. Only treat identical fields as an unmistakable
+  script when the string is random characters or when accompanied by other strong
+  bot signals like a non-browser user agent or high registration frequency from
+  the same IP).
 - a digit run or a repeated group: 123456, 111111, 123123123123, 8888888888.
   Length does not make it less obvious.
 - a keyboard run: asdfgh, qwerty, zxcvbnm, qazwsx, with or without digits.
@@ -115,7 +124,9 @@ Unmistakable, in every mode:
 
 Never suspicious on their own:
 - a QQ number, which is digits by definition. Judge the username and the
-  email; an account number being numeric means nothing.
+  email; an account number being numeric means nothing. An email with @qq.com
+  having the same digits as the QQ number, and optionally the username also
+  being that QQ number, is a common Chinese netizen convention.
 - a free mail provider, including qq.com, 163.com, outlook.com, gmail.com.
 - a short name, a non-English name, or a name you do not recognise.
 
@@ -132,8 +143,10 @@ Choose one decision:
   register and use the website while programmatic API access is held back.
 - refuse: the details are unmistakably automated, disposable, or hostile.
 
+The "reason" field will be recorded directly into the administrator security log, so write it in Simplified Chinese (简体中文). Keep it to one short sentence explaining your judgement.
+
 Answer with JSON and nothing else:
-{"decision": "allow|restrict|refuse", "reason": "<one short sentence>"}`
+{"decision": "allow|restrict|refuse", "reason": "<one short sentence in Simplified Chinese>"}`
 
 // The three biases, in the operator's own words to themselves.
 var modeInstruction = map[Mode]string{
@@ -223,12 +236,12 @@ func (r Reviewer) Review(ctx context.Context, mode Mode, facts Facts) (Verdict, 
 	if r.Registry == nil || r.Resolve == nil {
 		// Nothing configured is not a failure of the review; it is the review
 		// being off, and off allows in every mode.
-		return Verdict{Decision: DecisionAllow, Reason: "no reviewer configured"}, nil
+		return Verdict{Decision: DecisionAllow, Reason: "未配置审查模型"}, nil
 	}
 
 	upstream, spec, err := r.Resolve(ctx)
 	if err != nil {
-		return undecided("model unavailable", fmt.Errorf("screening: resolve: %w", err))
+		return undecided("审查模型不可用", fmt.Errorf("screening: resolve: %w", err))
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
@@ -254,7 +267,7 @@ func (r Reviewer) Review(ctx context.Context, mode Mode, facts Facts) (Verdict, 
 		return nil
 	})
 	if err != nil {
-		return undecided("review failed", fmt.Errorf("screening: ask: %w", err))
+		return undecided("审查请求失败", fmt.Errorf("screening: ask: %w", err))
 	}
 
 	said := result.Text
@@ -268,7 +281,7 @@ func (r Reviewer) Review(ctx context.Context, mode Mode, facts Facts) (Verdict, 
 		// this cannot read is a review that is quietly not running, and an
 		// operator who is never told has a switch that does nothing. The
 		// answer goes in the error so they can see what it actually said.
-		return undecided("unparseable answer",
+		return undecided("模型返回内容无法解析",
 			fmt.Errorf("screening: unusable answer: %q", clip(said, 200)))
 	}
 	return verdict, nil

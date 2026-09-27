@@ -168,6 +168,14 @@ func TestEachModeCarriesItsOwnBiasAndTheCommonRules(t *testing.T) {
 		if !strings.Contains(text, "digits by definition") {
 			t.Errorf("%s lost the note that a QQ number is just digits", name)
 		}
+		// The reason is shown directly in the admin security log, so every
+		// mode instructs the model to answer in Simplified Chinese.
+		if !strings.Contains(text, "Simplified Chinese") {
+			t.Errorf("%s does not tell the model to write the reason in Simplified Chinese", name)
+		}
+		if !strings.Contains(text, "Chinese Pinyin") {
+			t.Errorf("%s lost the note about Chinese naming and Pinyin conventions", name)
+		}
 	}
 
 	if !strings.Contains(strings.ToUpper(strict), "STRICT") {
