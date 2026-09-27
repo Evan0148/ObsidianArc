@@ -216,51 +216,24 @@ a handful of `ref`s in `stores/session.ts` and `chat/useChat.ts`.
 | --- | --- | --- |
 | Idle resident memory (SQLite, no traffic) | < 30 MB | ~16 MB |
 | Cold start to serving | < 100 ms | 28 ms |
-| Binary (SQLite + embedded SPA) | < 30 MB | 21.6 MB (17.9 MB `-tags nosqlite`, Linux amd64) |
-| Frontend, on the wire | < 135 kB | 208.00 kB to open the chat (170.35 JS + 37.65 CSS) |
+| Binary (SQLite + embedded SPA) | < 30 MB | 21.84 MB (18.14 MB `-tags nosqlite`, Linux amd64) |
+| Frontend, on the wire | < 135 kB | 210.44 kB to open the chat (172.69 JS + 37.75 CSS) |
 | Background goroutines at idle | 1 | 1 |
 | Under load, 200 streamed turns at 20 concurrent | — | ~54 MB peak, 11 OS threads |
 
-Remeasured on 2026-09-26 (UTC) for the leaderboard and the front page landing
-together, on top of the upstream work that arrived the same day (the login
-backgrounds, the site logo, the sliding tabs, the model-name marquee). That
-upstream tree already measured 200.05 kB before either of these, well above
-the 190.40 kB this table last recorded — the figure had drifted, which is the
-failure the rule about re-measuring exists to prevent. Against it, the two
-together add 7.95 kB to the first paint: the leaderboard panel is a column
-over the chat and is imported statically like every other panel, so its
-code, its `en` strings and its stylesheet rules are on the entry by design;
-the front page's own code stays in its chunk. Every figure here was measured
-from one build of the combined tree, gzip byte counts in decimal kB.
+Remeasured on 2026-09-26 (UTC), after adding both email verification methods,
+administrator SMTP and UserCheck configuration, and registration screening.
+That main-branch build measured 202.65 kB on the first paint and 21,766,304
+bytes with SQLite or 18,055,328 bytes with `-tags nosqlite` for Linux amd64
+(Go 1.27.1).
 
-Remeasured later on 2026-09-26 (UTC) for the front page's moving background:
-stronger drifting fields, a travelling grid, two layers of rising motes and
-a glow that follows the pointer. The stylesheet grew by 0.55 kB, which is on
-the first paint for the reason `_front.scss` is — this project ships one
-stylesheet — and the `FrontPage` chunk by 0.13 kB to 3.99 kB. Measured the
-same way as the entry below, before and after on one tree.
-
-Remeasured on 2026-09-26 (UTC) for the public front page — the `site` landing
-mode, which draws the product's own marketing page at the address instead of
-the sign-in card. The page itself is a chunk of its own, `FrontPage`, at
-3.86 kB: it is a fifth landing mode most instances will not switch on, and no
-signed-in account ever sees it, so it has no business on the first paint of
-somebody opening the chat. `test/bundle.test.ts` now expects seven build
-artifacts rather than six, and asserts that chunk stays out of the entry.
-
-What did land on the first paint is 2.47 kB of JS and 2.60 kB of CSS: the
-fifty-six new `en` keys (the English dictionary is also the fallback, so it
-cannot be split), the one-line async import in `RootView`, and
-`styles/_front.scss`, which is in the single stylesheet this project ships
-rather than a chunk of its own. The Chinese dictionary grew by 1.65 kB.
-
-Measured as a delta, not as a total: the working tree carried another agent's
-unfinished work at the time, so the figures above are this change's own cost —
-two builds of one tree, one with the page in the graph and one with it
-stripped out, nothing else differing — added to the total this table already
-carried. The binary was not remeasured: Go is not installed on the machine
-this was written on, and CI builds it. See "Known unverified ground" in
-AGENTS.md.
+Remeasured on 2026-09-27 (UTC) after adding the user leaderboard and public
+front page to that tree. The combined build measures 210.44 kB on the first
+paint, up 7.79 kB from main; the leaderboard panel and its English strings
+account for most of the increase because the panel is imported with the other
+chat columns. The front page stays in its own 3.96 kB chunk. The Linux amd64
+binary measures 21,844,128 bytes with SQLite and 18,137,248 bytes with
+`-tags nosqlite` (Go 1.27.1). Gzip figures are decimal kB.
 
 Remeasured once more on 2026-09-25 (UTC), for the invite-claim flow the first
 pass over invite codes below had not yet reached: the existing-account claim
@@ -268,14 +241,14 @@ box and its every-N progress line in the settings' invites section, the
 admin invites table's partner and claims columns, the new i18n keys both of
 those need in `en` and `zh`, and the signed-in-visitor redirect from
 `/register?invite=` to the settings claim box. The first paint grew by
-1.45 kB (1.43 JS, 0.02 CSS) to the figure above. The backoffice chunk grew
+1.45 kB (1.43 JS, 0.02 CSS). The backoffice chunk grew
 by 1.29 kB to 83.97 kB for the partner/claims columns, and the Chinese
 dictionary to 34.80 kB. The binary grew by 61 kB with SQLite (21,430,432
 bytes) and 66 kB without (17,719,456) — the larger embedded frontend, Go
 1.27.1.
 
 Remeasured for invite codes on 2026-09-25 (UTC): the first paint grew by
-3.02 kB (3.01 JS, 0.01 CSS) to the figure above — the invite field on the
+3.02 kB (3.01 JS, 0.01 CSS) — the invite field on the
 sign-up and complete-sign-up cards, which are the first paint for anybody
 signed out, and the invites section of the settings, which are columns over
 the chat rather than a chunk of their own. The backoffice grew by 3.81 kB to
@@ -285,7 +258,7 @@ grew by 188 kB with SQLite (21,368,992 bytes) and 184 kB without
 
 Remeasured once more on 2026-09-25 (UTC), for the notification bell and its
 toasts, the signed-in devices list and the new-device notice: the first
-paint grew by 7.27 kB (6.92 JS, 0.35 CSS) to the figure above. All of it is
+paint grew by 7.27 kB (6.92 JS, 0.35 CSS). All of it is
 there on purpose — the toasts and the bell are drawn over the chat for
 anybody signed in, and the devices list is part of the security settings,
 which are columns over the same page rather than a chunk of their own. The
@@ -296,7 +269,7 @@ without (17,469,600), Go 1.27.1.
 Remeasured again earlier on 2026-09-25 (UTC), after the backoffice's own code
 at its door, the security settings' redesign, the safe-mode fixes and the
 configurable browser title and web app manifest: the first paint grew by
-1.92 kB (1.37 JS, 0.55 CSS) to the figure above — the new English strings
+1.92 kB (1.37 JS, 0.55 CSS) — the new English strings
 and the redesigned settings card, mostly; the door and the manifest's form
 live in the backoffice chunk, which grew by 2.67 kB to 78.13 kB. The Chinese
 dictionary grew to 31.76 kB. The binary grew by 127 kB with SQLite (21,012,640
@@ -419,12 +392,12 @@ What each reader actually downloads:
 
 | | gzipped |
 | --- | --- |
-| English, not an administrator | 208.00 kB |
-| Chinese, not an administrator | 245.71 kB |
-| …and a conversation containing a formula | 249.34 kB |
-| Chinese administrator, backoffice open | 332.84 kB |
-| Anybody, once they open the terminal | +7.20 kB |
-| A visitor to an instance whose front door is the front page | +3.99 kB |
+| English, not an administrator | 210.44 kB |
+| Chinese, not an administrator | 249.92 kB |
+| …and a conversation containing a formula | 253.53 kB |
+| Chinese administrator, backoffice open | 341.18 kB |
+| Anybody, once they open the terminal | +7.21 kB |
+| A visitor to an instance whose front door is the front page | +3.96 kB |
 
 Route-level splitting would shave the first paint further and is deliberately
 switched off for everything but the backoffice and the terminal: /settings, /keys, /usage and

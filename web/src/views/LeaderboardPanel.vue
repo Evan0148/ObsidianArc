@@ -178,8 +178,8 @@ onMounted(load);
       <p v-if="!data.accounts.length" class="oa-menu-empty">{{ t('nothingYet') }}</p>
       <ol v-else class="oa-board-list">
         <li
-          v-for="entry in data.accounts"
-          :key="entry.rank + (entry.handle ?? entry.name ?? '')"
+          v-for="(entry, index) in data.accounts"
+          :key="index"
           class="oa-board-row"
           :class="{ self: entry.self, podium: entry.rank <= 3 }"
         >

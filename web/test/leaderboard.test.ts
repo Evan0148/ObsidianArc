@@ -106,6 +106,30 @@ describe('the leaderboard panel', () => {
     expect(text).toContain(t('boardUsersCount', { count: 2 }));
   });
 
+  it('keeps tied anonymous rows distinct when the board refreshes', async () => {
+    const get = vi.spyOn(api, 'get').mockResolvedValueOnce(board()).mockResolvedValueOnce(board({
+      identity: 'anonymous',
+      accounts: [
+        { rank: 1, value: 5000, requests: 40, tokens: 5000, models: 2 },
+        { rank: 1, value: 5000, requests: 39, tokens: 5000, models: 2 },
+      ],
+    }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await mountPanel();
+    warn.mockClear();
+
+    // Equal values share a rank, and anonymous rows have no handle or name
+    // to complete it. Changing the window patches the existing list with
+    // those tied rows, which is where duplicate Vue keys used to appear.
+    panelHost.querySelectorAll('.oa-segment')[0]!.querySelectorAll('button')[2]!.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await nextTick();
+
+    expect(get).toHaveBeenLastCalledWith('/api/leaderboard?period=month&metric=tokens');
+    expect(panelHost.querySelectorAll('.oa-board-list')[0]!.querySelectorAll('.oa-board-row')).toHaveLength(2);
+    expect(warn.mock.calls.flat().join('\n')).not.toContain('Duplicate keys found during update');
+  });
+
   it('asks the server again when the window or the measure changes', async () => {
     const get = vi.spyOn(api, 'get').mockResolvedValue(board());
     await mountPanel();

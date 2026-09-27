@@ -142,7 +142,7 @@ onMounted(load);
       </div></template>
       <p v-if="!preview || !participants" class="oa-table-empty">{{ t('nothingYet') }}</p>
       <ol v-else class="oa-board-list">
-        <li v-for="entry in preview.accounts" :key="entry.rank" class="oa-board-row">
+        <li v-for="(entry, index) in preview.accounts" :key="index" class="oa-board-row">
           <span class="oa-board-rank" :data-rank="entry.rank">{{ entry.rank }}</span>
           <span class="oa-board-main">
             <span class="oa-board-name">{{ entry.name || t('boardAnonymous', { rank: entry.rank }) }}</span>
