@@ -4,6 +4,7 @@
 import OaBadge from '@/components/OaBadge.vue';
 import OaBadgeRow from '@/components/OaBadgeRow.vue';
 import { t } from '@/composables/useI18n';
+import { formatErrorCode, errorCodeDescription } from '@/lib/errors';
 
 const props = defineProps<{
   status: string;
@@ -14,10 +15,10 @@ const props = defineProps<{
 <template>
   <OaBadge v-if="props.status === 'ok'" tone="muted">{{ t('statusOk') }}</OaBadge>
   <OaBadge v-else-if="props.status === 'aborted'" tone="muted">{{ t('statusStopped') }}</OaBadge>
-  <OaBadgeRow v-else>
+  <OaBadgeRow v-else :title="errorCodeDescription(props.errorCode)">
     <OaBadge tone="danger">
       {{ props.status === 'rejected' ? t('statusRefused') : t('statusFailed') }}
     </OaBadge>
-    <OaBadge v-if="props.errorCode" tone="muted">{{ props.errorCode }}</OaBadge>
+    <OaBadge v-if="props.errorCode" tone="muted">{{ formatErrorCode(props.errorCode) }}</OaBadge>
   </OaBadgeRow>
 </template>

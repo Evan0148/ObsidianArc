@@ -13,6 +13,7 @@ import { useIntervalFn } from '@vueuse/core';
 import { ApiError, api } from '@/api/client';
 import { fetchUsage, type UsageSummary } from '@/api/usage';
 import OaFormSection from '@/components/OaFormSection.vue';
+import StatusBadge from '@/views/admin/StatusBadge.vue';
 import OaIconButton from '@/components/OaIconButton.vue';
 import OaMarkdown from '@/components/OaMarkdown.vue';
 import OaOverlay from '@/components/OaOverlay.vue';
@@ -149,7 +150,8 @@ const columns = computed<Array<Column<Turn>>>(() => [
   {
     key: 'state',
     header: t('colState'),
-    text: (row) => (row.status === 'ok' ? '' : t(`turn_${row.status}` as 'turn_error')),
+    // Rendered via the cell-state slot below as a StatusBadge rather than
+    // plain text, so the dual-badge row and tooltip show for errors.
     width: '80px',
   },
 ]);
@@ -522,7 +524,11 @@ useIntervalFn(refreshQuietly, REFRESH_MS);
       :rows="turns"
       :empty="t('noTurnsYet')"
       :muted="(row) => row.status !== 'ok'"
-    />
+    >
+      <template #cell-state="{ row }">
+        <StatusBadge v-if="row.status !== 'ok'" :status="row.status" :error-code="row.error_code" />
+      </template>
+    </OaTable>
   </OaPanel>
 
   <OaOverlay
